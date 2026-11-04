@@ -7,6 +7,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PharmacyWarehouse.Api.Data;
+using PharmacyWarehouse.Api.Operations;
 using PharmacyWarehouse.Domain.Auth;
 using PharmacyWarehouse.Domain.Contracts;
 
@@ -16,7 +17,7 @@ namespace PharmacyWarehouse.Api.Tests;
 public sealed class TestApp : IAsyncDisposable
 {
     public const string AdminPassword = "Adm-test-pass-9X2k";
-    public const string TechnicianPassword = "Tech-test-pass-4Qz";
+    public const string StaffPassword = "Tech-test-pass-4Qz";
     public const string NewPassword = "new-secret-pass-77";
 
     private const string ConnectionStringVariable = "ConnectionStrings__Default";
@@ -32,7 +33,7 @@ public sealed class TestApp : IAsyncDisposable
 
     public static async Task<TestApp> CreateAsync()
     {
-        var dbPath = Path.Combine(Path.GetTempPath(), $"emu-test-{Guid.NewGuid():N}.db");
+        var dbPath = Path.Combine(Path.GetTempPath(), $"pharmacywarehouse-test-{Guid.NewGuid():N}.db");
 
         // Program.cs reads the connection string at startup, before the factory can inject settings.
         // Environment variables are read by WebApplication.CreateBuilder and override appsettings files.
@@ -89,12 +90,31 @@ public sealed class TestApp : IAsyncDisposable
     public Task<AppUser> AddAdminAsync(string username, bool mustChangePassword = false)
         => AddUserAsync(username, AdminPassword, Roles.Admin, mustChangePassword);
 
-    public Task<AppUser> AddTechnicianAsync(string username, bool mustChangePassword = false)
-        => AddUserAsync(username, TechnicianPassword, Roles.Technician, mustChangePassword);
+    public Task<AppUser> AddStaffAsync(string username, bool mustChangePassword = false)
+        => AddUserAsync(username, StaffPassword, Roles.Staff, mustChangePassword);
+
+    public Task<AppUser> AddKeeperAsync(string username, bool mustChangePassword = false)
+        => AddUserAsync(username, StaffPassword, Roles.Keeper, mustChangePassword);
+
+    public Task<AppUser> AddManagerAsync(string username, bool mustChangePassword = false)
+        => AddUserAsync(username, StaffPassword, Roles.Manager, mustChangePassword);
+
+    public Task<AppUser> AddUserInRoleAsync(string username, string role, bool mustChangePassword = false)
+        => AddUserAsync(username, StaffPassword, role, mustChangePassword);
+
+    // Test only: writes the last-backup marker next to the temporary database, `age` ago.
+    public void WriteBackupMarker(TimeSpan age)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<DatabaseLocation>();
+        var at = DateTime.UtcNow - age;
+        File.WriteAllText(BackupMarker.PathFor(database.FilePath),
+            at.ToString("O", System.Globalization.CultureInfo.InvariantCulture) + Environment.NewLine + "test");
+    }
 
     // A user with no role at all, to prove the policies demand one.
     public Task<AppUser> AddUserWithoutRoleAsync(string username)
-        => AddUserAsync(username, TechnicianPassword, role: null, mustChangePassword: false);
+        => AddUserAsync(username, StaffPassword, role: null, mustChangePassword: false);
 
     private async Task<AppUser> AddUserAsync(string username, string password, string? role, bool mustChangePassword)
     {
@@ -169,6 +189,33 @@ public sealed class TestApp : IAsyncDisposable
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<WarehouseDbContext>();
         await db.Database.ExecuteSqlRawAsync(sql);
+    }
+
+    // Test only: how many schema objects of this type and name exist (proves what the migration created).
+    public async Task<int> CountSqliteMasterAsync(string type, string name)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<WarehouseDbContext>();
+        var connection = db.Database.GetDbConnection();
+        await connection.OpenAsync();
+        try
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = $type AND name = $name";
+            var typeParameter = command.CreateParameter();
+            typeParameter.ParameterName = "$type";
+            typeParameter.Value = type;
+            command.Parameters.Add(typeParameter);
+            var nameParameter = command.CreateParameter();
+            nameParameter.ParameterName = "$name";
+            nameParameter.Value = name;
+            command.Parameters.Add(nameParameter);
+            return Convert.ToInt32(await command.ExecuteScalarAsync());
+        }
+        finally
+        {
+            await connection.CloseAsync();
+        }
     }
 
     public async Task<int> CountAuditAsync(Guid entityId, string entityType)

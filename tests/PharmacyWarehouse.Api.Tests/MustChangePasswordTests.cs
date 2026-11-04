@@ -10,8 +10,8 @@ public class MustChangePasswordTests : ApiTestBase
     [Fact]
     public async Task FlaggedUser_SeesTheFlag()
     {
-        await App.AddTechnicianAsync("tech-a", mustChangePassword: true);
-        using var device = await LoggedInAsync("tech-a", TestApp.TechnicianPassword);
+        await App.AddStaffAsync("tech-a", mustChangePassword: true);
+        using var device = await LoggedInAsync("tech-a", TestApp.StaffPassword);
 
         Assert.True((await GetMeAsync(device)).MustChangePassword);
     }
@@ -19,10 +19,10 @@ public class MustChangePasswordTests : ApiTestBase
     [Fact]
     public async Task ChangePassword_ClearsTheFlag_AndStaysClearedAfterNewLogin()
     {
-        await App.AddTechnicianAsync("tech-a", mustChangePassword: true);
-        using var device = await LoggedInAsync("tech-a", TestApp.TechnicianPassword);
+        await App.AddStaffAsync("tech-a", mustChangePassword: true);
+        using var device = await LoggedInAsync("tech-a", TestApp.StaffPassword);
 
-        var change = await TestApp.ChangePasswordAsync(device, TestApp.TechnicianPassword, TestApp.NewPassword);
+        var change = await TestApp.ChangePasswordAsync(device, TestApp.StaffPassword, TestApp.NewPassword);
         Assert.Equal(HttpStatusCode.NoContent, change.StatusCode);
 
         Assert.False((await GetMeAsync(device)).MustChangePassword);
@@ -38,10 +38,10 @@ public class MustChangePasswordTests : ApiTestBase
     [Fact]
     public async Task RejectedChange_KeepsTheFlag()
     {
-        await App.AddTechnicianAsync("tech-a", mustChangePassword: true);
-        using var device = await LoggedInAsync("tech-a", TestApp.TechnicianPassword);
+        await App.AddStaffAsync("tech-a", mustChangePassword: true);
+        using var device = await LoggedInAsync("tech-a", TestApp.StaffPassword);
 
-        var change = await TestApp.ChangePasswordAsync(device, TestApp.TechnicianPassword, "abcdefg");
+        var change = await TestApp.ChangePasswordAsync(device, TestApp.StaffPassword, "abcdefg");
         Assert.Equal(HttpStatusCode.UnprocessableEntity, change.StatusCode);
 
         Assert.True((await GetMeAsync(device)).MustChangePassword);

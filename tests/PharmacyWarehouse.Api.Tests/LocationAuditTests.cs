@@ -106,4 +106,15 @@ public class LocationAuditTests : ApiTestBase
 
         Assert.Contains("append-only", exception.Message);
     }
+
+    // پایگاه‌داده‌ی تازه از migration ساخته می‌شود؛ پس triggerها باید از آن آمده باشند.
+    [Theory]
+    [InlineData("AuditEntries_NoUpdate")]
+    [InlineData("AuditEntries_NoDelete")]
+    public async Task Triggers_ExistAfterFreshMigration(string trigger)
+    {
+        var count = await App.CountSqliteMasterAsync("trigger", trigger);
+
+        Assert.Equal(1, count);
+    }
 }

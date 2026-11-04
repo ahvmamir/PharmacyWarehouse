@@ -70,7 +70,7 @@ public class SessionTests : ApiTestBase
     [Fact]
     public async Task FiveWrongPasswords_LockTheAccount_Returns429()
     {
-        await App.AddTechnicianAsync("tech-a");
+        await App.AddStaffAsync("tech-a");
         using var client = App.NewClient();
 
         for (var i = 0; i < 4; i++)
@@ -84,19 +84,19 @@ public class SessionTests : ApiTestBase
         Assert.True(fifth.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.TooManyRequests);
 
         // Even the correct password is refused while locked.
-        var correct = await TestApp.LoginAsync(client, "tech-a", TestApp.TechnicianPassword);
+        var correct = await TestApp.LoginAsync(client, "tech-a", TestApp.StaffPassword);
         Assert.Equal(HttpStatusCode.TooManyRequests, correct.StatusCode);
     }
 
     [Fact]
     public async Task Login_WithPersianDigitsInUsername_Succeeds()
     {
-        await App.AddTechnicianAsync("1000007");
+        await App.AddStaffAsync("1000007");
         using var client = App.NewClient();
 
         // 1000007 typed with Persian digits.
         var persian = "۱۰۰۰۰۰۷";
-        var response = await TestApp.LoginAsync(client, persian, TestApp.TechnicianPassword);
+        var response = await TestApp.LoginAsync(client, persian, TestApp.StaffPassword);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
@@ -104,11 +104,11 @@ public class SessionTests : ApiTestBase
     [Fact]
     public async Task ChangePassword_InvalidatesOtherDeviceImmediately()
     {
-        await App.AddTechnicianAsync("tech-a");
-        using var deviceA = await LoggedInAsync("tech-a", TestApp.TechnicianPassword);
-        using var deviceB = await LoggedInAsync("tech-a", TestApp.TechnicianPassword);
+        await App.AddStaffAsync("tech-a");
+        using var deviceA = await LoggedInAsync("tech-a", TestApp.StaffPassword);
+        using var deviceB = await LoggedInAsync("tech-a", TestApp.StaffPassword);
 
-        var change = await TestApp.ChangePasswordAsync(deviceA, TestApp.TechnicianPassword, TestApp.NewPassword);
+        var change = await TestApp.ChangePasswordAsync(deviceA, TestApp.StaffPassword, TestApp.NewPassword);
         Assert.Equal(HttpStatusCode.NoContent, change.StatusCode);
 
         // No waiting: the security stamp is checked on every request.
@@ -123,16 +123,16 @@ public class SessionTests : ApiTestBase
     [Fact]
     public async Task InactiveUser_CannotLogIn_AndOpenSessionEndsImmediately()
     {
-        var technician = await App.AddTechnicianAsync("tech-a");
-        using var device = await LoggedInAsync("tech-a", TestApp.TechnicianPassword);
+        var staff = await App.AddStaffAsync("tech-a");
+        using var device = await LoggedInAsync("tech-a", TestApp.StaffPassword);
 
-        await App.SetIsActiveRawAsync(technician.Id, isActive: false);
+        await App.SetIsActiveRawAsync(staff.Id, isActive: false);
 
         var me = await device.GetAsync(ApiRoutes.Me);
         Assert.Equal(HttpStatusCode.Unauthorized, me.StatusCode);
 
         using var fresh = App.NewClient();
-        var login = await TestApp.LoginAsync(fresh, "tech-a", TestApp.TechnicianPassword);
+        var login = await TestApp.LoginAsync(fresh, "tech-a", TestApp.StaffPassword);
         Assert.Equal(HttpStatusCode.Unauthorized, login.StatusCode);
     }
 

@@ -63,7 +63,7 @@ public class StaffPolicyTests : ApiTestBase
     {
         var user = await App.AddUserWithoutRoleAsync("no-role");
 
-        Assert.False(await App.PassesPolicyAsync(user.Id, Permissions.EquipmentView));
+        Assert.False(await App.PassesPolicyAsync(user.Id, Permissions.StockView));
     }
 
     [Fact]
@@ -72,7 +72,7 @@ public class StaffPolicyTests : ApiTestBase
         var admin = await App.AddAdminAsync("admin-a");
         await App.SetIsActiveRawAsync(admin.Id, isActive: false);
 
-        Assert.False(await App.PassesPolicyAsync(admin.Id, Permissions.EquipmentView));
+        Assert.False(await App.PassesPolicyAsync(admin.Id, Permissions.StockView));
     }
 
     [Fact]
@@ -80,18 +80,18 @@ public class StaffPolicyTests : ApiTestBase
     {
         var admin = await App.AddAdminAsync("admin-a", mustChangePassword: true);
 
-        Assert.False(await App.PassesPolicyAsync(admin.Id, Permissions.EquipmentView));
+        Assert.False(await App.PassesPolicyAsync(admin.Id, Permissions.StockView));
     }
 
     [Fact]
     public async Task Me_ReturnsTheEffectivePermissions()
     {
-        await App.AddTechnicianAsync("tech-a");
-        using var device = await LoggedInAsync("tech-a", TestApp.TechnicianPassword);
+        await App.AddStaffAsync("tech-a");
+        using var device = await LoggedInAsync("tech-a", TestApp.StaffPassword);
 
         var me = await GetMeAsync(device);
 
-        Assert.Contains(Permissions.EquipmentManage, me.Permissions);
+        Assert.Contains(Permissions.WithdrawalCreate, me.Permissions);
         Assert.DoesNotContain(Permissions.UsersManage, me.Permissions);
     }
 
@@ -109,23 +109,23 @@ public class StaffPolicyTests : ApiTestBase
     {
         await App.AddAdminAsync("admin-a");
         using var admin = await LoggedInAsync("admin-a", TestApp.AdminPassword);
-        var user = await App.AddTechnicianAsync("tech-a");
+        var user = await App.AddStaffAsync("tech-a");
 
         var created = await admin.PostAsJsonAsync(ApiRoutes.Roles,
-            new SaveRoleRequest { Name = "انباردار", Permissions = [Permissions.EquipmentView, Permissions.DataExport] });
+            new SaveRoleRequest { Name = "custom-role", Permissions = [Permissions.StockView, Permissions.DataExport] });
         Assert.Equal(HttpStatusCode.OK, created.StatusCode);
         var role = await created.Content.ReadFromJsonAsync<RoleItem>();
 
         await UseAsync(admin, user.Id, new UpdateUserRequest { UserName = "tech-a", DisplayName = "tech-a", Role = role!.Name });
 
         Assert.True(await App.PassesPolicyAsync(user.Id, Permissions.DataExport));
-        Assert.False(await App.PassesPolicyAsync(user.Id, Permissions.EquipmentManage));
+        Assert.False(await App.PassesPolicyAsync(user.Id, Permissions.ProductsManage));
 
         var edit = await admin.PutAsJsonAsync(ApiRoutes.ById(ApiRoutes.Roles, role.Id),
-            new SaveRoleRequest { Name = role.Name, Permissions = [Permissions.EquipmentManage] });
+            new SaveRoleRequest { Name = role.Name, Permissions = [Permissions.ProductsManage] });
         Assert.Equal(HttpStatusCode.OK, edit.StatusCode);
 
-        Assert.True(await App.PassesPolicyAsync(user.Id, Permissions.EquipmentManage));
+        Assert.True(await App.PassesPolicyAsync(user.Id, Permissions.ProductsManage));
         Assert.False(await App.PassesPolicyAsync(user.Id, Permissions.DataExport));
     }
 
@@ -134,19 +134,19 @@ public class StaffPolicyTests : ApiTestBase
     {
         await App.AddAdminAsync("admin-a");
         using var admin = await LoggedInAsync("admin-a", TestApp.AdminPassword);
-        var user = await App.AddTechnicianAsync("tech-a");
+        var user = await App.AddStaffAsync("tech-a");
 
         await UseAsync(admin, user.Id, new UpdateUserRequest
         {
             UserName = "tech-a",
             DisplayName = "tech-a",
-            Role = Roles.Technician,
-            Grants = [Permissions.EquipmentDelete],
-            Denies = [Permissions.EquipmentMove]
+            Role = Roles.Staff,
+            Grants = [Permissions.StockAdjust],
+            Denies = [Permissions.WithdrawalCreate]
         });
 
-        Assert.True(await App.PassesPolicyAsync(user.Id, Permissions.EquipmentDelete));
-        Assert.False(await App.PassesPolicyAsync(user.Id, Permissions.EquipmentMove));
+        Assert.True(await App.PassesPolicyAsync(user.Id, Permissions.StockAdjust));
+        Assert.False(await App.PassesPolicyAsync(user.Id, Permissions.WithdrawalCreate));
     }
 
     [Fact]
@@ -154,12 +154,12 @@ public class StaffPolicyTests : ApiTestBase
     {
         await App.AddAdminAsync("admin-a");
         using var admin = await LoggedInAsync("admin-a", TestApp.AdminPassword);
-        var user = await App.AddTechnicianAsync("tech-a");
+        var user = await App.AddStaffAsync("tech-a");
 
         var response = await admin.PutAsJsonAsync(ApiRoutes.ById(ApiRoutes.Users, user.Id), new UpdateUserRequest
         {
-            UserName = "tech-a", DisplayName = "tech-a", Role = Roles.Technician,
-            Grants = [Permissions.EquipmentMove], Denies = [Permissions.EquipmentMove]
+            UserName = "tech-a", DisplayName = "tech-a", Role = Roles.Staff,
+            Grants = [Permissions.WithdrawalCreate], Denies = [Permissions.WithdrawalCreate]
         });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -187,13 +187,13 @@ public class StaffPolicyTests : ApiTestBase
     {
         await App.AddAdminAsync("admin-a");
         using var admin = await LoggedInAsync("admin-a", TestApp.AdminPassword);
-        var user = await App.AddTechnicianAsync("tech-a");
+        var user = await App.AddStaffAsync("tech-a");
         var roles = await admin.GetFromJsonAsync<List<RoleItem>>(ApiRoutes.Roles);
-        var technician = roles!.Single(r => r.Name == Roles.Technician);
+        var staffRole = roles!.Single(r => r.Name == Roles.Staff);
 
-        var dependencies = await admin.GetFromJsonAsync<DependencyList>(ApiRoutes.Dependencies(ApiRoutes.Roles, technician.Id));
+        var dependencies = await admin.GetFromJsonAsync<DependencyList>(ApiRoutes.Dependencies(ApiRoutes.Roles, staffRole.Id));
         Assert.Contains(dependencies!.Items, i => i.Label == "tech-a");
-        Assert.Equal(HttpStatusCode.Conflict, (await admin.DeleteAsync(ApiRoutes.ById(ApiRoutes.Roles, technician.Id))).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await admin.DeleteAsync(ApiRoutes.ById(ApiRoutes.Roles, staffRole.Id))).StatusCode);
 
         var created = await admin.PostAsJsonAsync(ApiRoutes.Roles, new SaveRoleRequest { Name = "empty-role", Permissions = [] });
         var empty = await created.Content.ReadFromJsonAsync<RoleItem>();
@@ -205,14 +205,14 @@ public class StaffPolicyTests : ApiTestBase
     {
         await App.AddAdminAsync("admin-a");
         using var admin = await LoggedInAsync("admin-a", TestApp.AdminPassword);
-        var user = await App.AddTechnicianAsync("tech-a");
-        using var open = await LoggedInAsync("tech-a", TestApp.TechnicianPassword);
+        var user = await App.AddStaffAsync("tech-a");
+        using var open = await LoggedInAsync("tech-a", TestApp.StaffPassword);
 
         await UseAsync(admin, user.Id, new UpdateUserRequest { UserName = "tech-a", DisplayName = "tech-a", Role = Roles.Admin });
 
         Assert.Equal(HttpStatusCode.Unauthorized, (await open.GetAsync(ApiRoutes.Me)).StatusCode);
 
-        using var fresh = await LoggedInAsync("tech-a", TestApp.TechnicianPassword);
+        using var fresh = await LoggedInAsync("tech-a", TestApp.StaffPassword);
         Assert.Contains(Roles.Admin, (await GetMeAsync(fresh)).Roles);
     }
 
@@ -221,13 +221,13 @@ public class StaffPolicyTests : ApiTestBase
     {
         await App.AddAdminAsync("admin-a");
         using var admin = await LoggedInAsync("admin-a", TestApp.AdminPassword);
-        var user = await App.AddTechnicianAsync("tech-a");
+        var user = await App.AddStaffAsync("tech-a");
 
-        await UseAsync(admin, user.Id, new UpdateUserRequest { UserName = "tech-b", DisplayName = "tech-b", Role = Roles.Technician });
+        await UseAsync(admin, user.Id, new UpdateUserRequest { UserName = "tech-b", DisplayName = "tech-b", Role = Roles.Staff });
 
         using var client = App.NewClient();
-        Assert.Equal(HttpStatusCode.Unauthorized, (await TestApp.LoginAsync(client, "tech-a", TestApp.TechnicianPassword)).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await TestApp.LoginAsync(client, "tech-b", TestApp.TechnicianPassword)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await TestApp.LoginAsync(client, "tech-a", TestApp.StaffPassword)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await TestApp.LoginAsync(client, "tech-b", TestApp.StaffPassword)).StatusCode);
     }
 
     [Fact]
@@ -235,10 +235,10 @@ public class StaffPolicyTests : ApiTestBase
     {
         await App.AddAdminAsync("admin-a");
         using var admin = await LoggedInAsync("admin-a", TestApp.AdminPassword);
-        var user = await App.AddTechnicianAsync("tech-a");
+        var user = await App.AddStaffAsync("tech-a");
 
         var response = await admin.PutAsJsonAsync(ApiRoutes.ById(ApiRoutes.Users, user.Id),
-            new UpdateUserRequest { UserName = "admin-a", DisplayName = "x", Role = Roles.Technician });
+            new UpdateUserRequest { UserName = "admin-a", DisplayName = "x", Role = Roles.Staff });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
@@ -250,7 +250,7 @@ public class StaffPolicyTests : ApiTestBase
         using var admin = await LoggedInAsync("admin-a", TestApp.AdminPassword);
 
         var role = await admin.PutAsJsonAsync(ApiRoutes.ById(ApiRoutes.Users, me.Id),
-            new UpdateUserRequest { UserName = "admin-a", DisplayName = "x", Role = Roles.Technician });
+            new UpdateUserRequest { UserName = "admin-a", DisplayName = "x", Role = Roles.Staff });
         Assert.Equal(HttpStatusCode.BadRequest, role.StatusCode);
 
         await UseAsync(admin, me.Id, new UpdateUserRequest { UserName = "admin-a", DisplayName = "Renamed", Role = Roles.Admin });
@@ -261,15 +261,15 @@ public class StaffPolicyTests : ApiTestBase
     {
         var me = await App.AddAdminAsync("admin-a");
         using var admin = await LoggedInAsync("admin-a", TestApp.AdminPassword);
-        var raw = await App.AddTechnicianAsync("tech-raw");
+        var raw = await App.AddStaffAsync("tech-raw");
 
         Assert.Equal(HttpStatusCode.Conflict, (await admin.DeleteAsync(ApiRoutes.ById(ApiRoutes.Users, me.Id))).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await admin.DeleteAsync(ApiRoutes.ById(ApiRoutes.Users, raw.Id))).StatusCode);
 
-        // کاربری که کاری کرده: ساخت یک واحد ردیف تاریخچه با نام او می‌سازد.
+        // کاربری که کاری کرده: ساخت یک محل ردیف تاریخچه با نام او می‌سازد.
         var worker = await App.AddAdminAsync("admin-b");
         using var workerDevice = await LoggedInAsync("admin-b", TestApp.AdminPassword);
-        (await workerDevice.PostAsJsonAsync(ApiRoutes.Units, new SaveUnitRequest { Name = "unit-x" })).EnsureSuccessStatusCode();
+        (await workerDevice.PostAsJsonAsync(ApiRoutes.Locations, new SaveStorageLocationRequest { Name = "TEST-LOC-X" })).EnsureSuccessStatusCode();
 
         var dependencies = await admin.GetFromJsonAsync<DependencyList>(ApiRoutes.Dependencies(ApiRoutes.Users, worker.Id));
         Assert.False(dependencies!.CanDelete);

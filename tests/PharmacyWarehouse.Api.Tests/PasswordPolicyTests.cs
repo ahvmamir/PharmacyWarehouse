@@ -14,10 +14,10 @@ public class PasswordPolicyTests : ApiTestBase
     [InlineData("aaaaaaaaaaaa")]                                                        // too few distinct characters
     public async Task RejectedNewPassword_Returns422(string newPassword)
     {
-        await App.AddTechnicianAsync("tech-a");
-        using var device = await LoggedInAsync("tech-a", TestApp.TechnicianPassword);
+        await App.AddStaffAsync("tech-a");
+        using var device = await LoggedInAsync("tech-a", TestApp.StaffPassword);
 
-        var response = await TestApp.ChangePasswordAsync(device, TestApp.TechnicianPassword, newPassword);
+        var response = await TestApp.ChangePasswordAsync(device, TestApp.StaffPassword, newPassword);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -25,25 +25,25 @@ public class PasswordPolicyTests : ApiTestBase
     [Fact]
     public async Task PasswordOf128Characters_IsAccepted_And129IsRejected()
     {
-        await App.AddTechnicianAsync("tech-a");
-        using var device = await LoggedInAsync("tech-a", TestApp.TechnicianPassword);
+        await App.AddStaffAsync("tech-a");
+        using var device = await LoggedInAsync("tech-a", TestApp.StaffPassword);
 
         var source = string.Concat(Enumerable.Repeat("abcdefghij", 13));
 
-        var tooLong = await TestApp.ChangePasswordAsync(device, TestApp.TechnicianPassword, source[..129]);
+        var tooLong = await TestApp.ChangePasswordAsync(device, TestApp.StaffPassword, source[..129]);
         Assert.Equal(HttpStatusCode.UnprocessableEntity, tooLong.StatusCode);
 
-        var maxLength = await TestApp.ChangePasswordAsync(device, TestApp.TechnicianPassword, source[..128]);
+        var maxLength = await TestApp.ChangePasswordAsync(device, TestApp.StaffPassword, source[..128]);
         Assert.Equal(HttpStatusCode.NoContent, maxLength.StatusCode);
     }
 
     [Fact]
-    public async Task Technician_PasswordOf8Characters_IsAccepted()
+    public async Task Staff_PasswordOf8Characters_IsAccepted()
     {
-        await App.AddTechnicianAsync("tech-a");
-        using var device = await LoggedInAsync("tech-a", TestApp.TechnicianPassword);
+        await App.AddStaffAsync("tech-a");
+        using var device = await LoggedInAsync("tech-a", TestApp.StaffPassword);
 
-        var response = await TestApp.ChangePasswordAsync(device, TestApp.TechnicianPassword, "aB3dE6gH");
+        var response = await TestApp.ChangePasswordAsync(device, TestApp.StaffPassword, "aB3dE6gH");
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }

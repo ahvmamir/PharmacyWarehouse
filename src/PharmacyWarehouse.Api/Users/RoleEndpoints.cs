@@ -99,7 +99,7 @@ public static class RoleEndpoints
 
         if (role.Name != name)
         {
-            // نام نقش Technician در کد فقط پیش‌فرض است؛ تغییرش چیزی را نمی‌شکند.
+            // نام نقش Staff در کد فقط پیش‌فرض است؛ تغییرش چیزی را نمی‌شکند.
             var renamed = await roles.SetRoleNameAsync(role, name);
             if (!renamed.Succeeded) return Results.Problem(title: "نام نقش عوض نشد.", statusCode: StatusCodes.Status500InternalServerError);
             await roles.UpdateAsync(role);

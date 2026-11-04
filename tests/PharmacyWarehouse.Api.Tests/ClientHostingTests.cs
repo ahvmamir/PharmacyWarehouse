@@ -8,8 +8,8 @@ public class ClientHostingTests : ApiTestBase
 {
     [Theory]
     [InlineData("/")]
-    [InlineData("/equipment")]
-    [InlineData("/equipment/new")]
+    [InlineData("/locations")]
+    [InlineData("/alerts")]
     [InlineData("/admin/users")]
     public async Task ClientRoute_ReturnsTheClientPage(string path)
     {

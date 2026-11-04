@@ -50,7 +50,7 @@ public class StorageLocationTests : ApiTestBase
     public async Task UserWithoutRole_GetsForbidden()
     {
         await App.AddUserWithoutRoleAsync("nobody");
-        using var client = await LoggedInAsync("nobody", TestApp.TechnicianPassword);
+        using var client = await LoggedInAsync("nobody", TestApp.StaffPassword);
 
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync(ApiRoutes.Locations)).StatusCode);
         var create = await client.PostAsJsonAsync(ApiRoutes.Locations, new SaveStorageLocationRequest { Name = "TEST-LOC-01" });

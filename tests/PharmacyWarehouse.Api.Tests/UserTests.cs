@@ -13,7 +13,7 @@ public class UserTests : ApiTestBase
         return await LoggedInAsync("admin-a", TestApp.AdminPassword);
     }
 
-    private static async Task<CreateUserResponse> CreateUserAsync(HttpClient admin, string username = "tech-new", string role = Roles.Technician)
+    private static async Task<CreateUserResponse> CreateUserAsync(HttpClient admin, string username = "tech-new", string role = Roles.Staff)
     {
         var response = await admin.PostAsJsonAsync(ApiRoutes.Users,
             new CreateUserRequest { UserName = username, DisplayName = "Test User", Role = role });
@@ -22,14 +22,14 @@ public class UserTests : ApiTestBase
     }
 
     [Fact]
-    public async Task Technician_CannotReachUsers()
+    public async Task Staff_CannotReachUsers()
     {
-        await App.AddTechnicianAsync("tech-a");
-        using var technician = await LoggedInAsync("tech-a", TestApp.TechnicianPassword);
+        await App.AddStaffAsync("tech-a");
+        using var staff = await LoggedInAsync("tech-a", TestApp.StaffPassword);
 
-        Assert.Equal(HttpStatusCode.Forbidden, (await technician.GetAsync(ApiRoutes.Users)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await staff.GetAsync(ApiRoutes.Users)).StatusCode);
 
-        var create = await technician.PostAsJsonAsync(ApiRoutes.Users,
+        var create = await staff.PostAsJsonAsync(ApiRoutes.Users,
             new CreateUserRequest { UserName = "x", DisplayName = "x", Role = Roles.Admin });
         Assert.Equal(HttpStatusCode.Forbidden, create.StatusCode);
     }
@@ -46,11 +46,11 @@ public class UserTests : ApiTestBase
         Assert.True((await GetMeAsync(device)).MustChangePassword);
 
         // Blocked from the app until the password is changed.
-        Assert.Equal(HttpStatusCode.Forbidden, (await device.GetAsync(ApiRoutes.Equipment)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await device.GetAsync(ApiRoutes.Locations)).StatusCode);
 
         var set = await device.PostAsJsonAsync(ApiRoutes.SetInitialPassword, new SetInitialPasswordRequest { NewPassword = TestApp.NewPassword });
         Assert.Equal(HttpStatusCode.NoContent, set.StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await device.GetAsync(ApiRoutes.Equipment)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await device.GetAsync(ApiRoutes.Locations)).StatusCode);
     }
 
     [Fact]
@@ -60,16 +60,16 @@ public class UserTests : ApiTestBase
         await CreateUserAsync(admin);
 
         var response = await admin.PostAsJsonAsync(ApiRoutes.Users,
-            new CreateUserRequest { UserName = "tech-new", DisplayName = "Other", Role = Roles.Technician });
+            new CreateUserRequest { UserName = "tech-new", DisplayName = "Other", Role = Roles.Staff });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
 
     [Theory]
-    [InlineData("", "Name", Roles.Technician)]
-    [InlineData("user-1", " ", Roles.Technician)]
+    [InlineData("", "Name", Roles.Staff)]
+    [InlineData("user-1", " ", Roles.Staff)]
     [InlineData("user-1", "Name", "Owner")]
-    [InlineData("امیر", "Name", Roles.Technician)] // a Persian username is not typable on the login form's English keyboard
+    [InlineData("امیر", "Name", Roles.Staff)] // a Persian username is not typable on the login form's English keyboard
     public async Task InvalidNewUser_Returns400(string username, string displayName, string role)
     {
         using var admin = await AdminAsync();
@@ -84,17 +84,17 @@ public class UserTests : ApiTestBase
     public async Task ResetPassword_ReplacesPassword_KillsSessions_AndSetsTheFlag()
     {
         using var admin = await AdminAsync();
-        var technician = await App.AddTechnicianAsync("tech-a");
-        using var open = await LoggedInAsync("tech-a", TestApp.TechnicianPassword);
+        var staff = await App.AddStaffAsync("tech-a");
+        using var open = await LoggedInAsync("tech-a", TestApp.StaffPassword);
 
-        var response = await admin.PostAsync(ApiRoutes.UserResetPassword(technician.Id), null);
+        var response = await admin.PostAsync(ApiRoutes.UserResetPassword(staff.Id), null);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<ResetPasswordResponse>();
 
         Assert.Equal(HttpStatusCode.Unauthorized, (await open.GetAsync(ApiRoutes.Me)).StatusCode);
 
         using var fresh = App.NewClient();
-        var oldLogin = await TestApp.LoginAsync(fresh, "tech-a", TestApp.TechnicianPassword);
+        var oldLogin = await TestApp.LoginAsync(fresh, "tech-a", TestApp.StaffPassword);
         Assert.Equal(HttpStatusCode.Unauthorized, oldLogin.StatusCode);
 
         using var device = await LoggedInAsync("tech-a", body!.NewPassword);
@@ -105,20 +105,20 @@ public class UserTests : ApiTestBase
     public async Task Deactivate_EndsSessionNow_AndBlocksLogin_ActivateRestores()
     {
         using var admin = await AdminAsync();
-        var technician = await App.AddTechnicianAsync("tech-a");
-        using var open = await LoggedInAsync("tech-a", TestApp.TechnicianPassword);
+        var staff = await App.AddStaffAsync("tech-a");
+        using var open = await LoggedInAsync("tech-a", TestApp.StaffPassword);
 
-        var off = await admin.PostAsync(ApiRoutes.Deactivate(ApiRoutes.Users, technician.Id), null);
+        var off = await admin.PostAsync(ApiRoutes.Deactivate(ApiRoutes.Users, staff.Id), null);
         Assert.Equal(HttpStatusCode.OK, off.StatusCode);
 
         Assert.Equal(HttpStatusCode.Unauthorized, (await open.GetAsync(ApiRoutes.Me)).StatusCode);
 
         using var fresh = App.NewClient();
-        Assert.Equal(HttpStatusCode.Unauthorized, (await TestApp.LoginAsync(fresh, "tech-a", TestApp.TechnicianPassword)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await TestApp.LoginAsync(fresh, "tech-a", TestApp.StaffPassword)).StatusCode);
 
-        var on = await admin.PostAsync(ApiRoutes.Activate(ApiRoutes.Users, technician.Id), null);
+        var on = await admin.PostAsync(ApiRoutes.Activate(ApiRoutes.Users, staff.Id), null);
         Assert.Equal(HttpStatusCode.OK, on.StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await TestApp.LoginAsync(fresh, "tech-a", TestApp.TechnicianPassword)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await TestApp.LoginAsync(fresh, "tech-a", TestApp.StaffPassword)).StatusCode);
     }
 
     [Fact]
@@ -155,6 +155,6 @@ public class UserTests : ApiTestBase
         var users = await admin.GetFromJsonAsync<List<UserItem>>(ApiRoutes.Users);
 
         Assert.Contains(users!, u => u.UserName == "admin-a" && u.Role == Roles.Admin && !u.MustChangePassword);
-        Assert.Contains(users!, u => u.UserName == "tech-new" && u.Role == Roles.Technician && u.MustChangePassword);
+        Assert.Contains(users!, u => u.UserName == "tech-new" && u.Role == Roles.Staff && u.MustChangePassword);
     }
 }

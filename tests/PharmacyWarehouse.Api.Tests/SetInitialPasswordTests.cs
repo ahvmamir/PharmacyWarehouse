@@ -13,8 +13,8 @@ public class SetInitialPasswordTests : ApiTestBase
     [Fact]
     public async Task FlaggedUser_CanSetPasswordWithoutCurrent_AndFlagIsCleared()
     {
-        await App.AddTechnicianAsync("tech-a", mustChangePassword: true);
-        using var device = await LoggedInAsync("tech-a", TestApp.TechnicianPassword);
+        await App.AddStaffAsync("tech-a", mustChangePassword: true);
+        using var device = await LoggedInAsync("tech-a", TestApp.StaffPassword);
 
         var response = await SetAsync(device, TestApp.NewPassword);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
@@ -23,7 +23,7 @@ public class SetInitialPasswordTests : ApiTestBase
         Assert.False((await GetMeAsync(device)).MustChangePassword);
 
         using var fresh = App.NewClient();
-        var oldPassword = await TestApp.LoginAsync(fresh, "tech-a", TestApp.TechnicianPassword);
+        var oldPassword = await TestApp.LoginAsync(fresh, "tech-a", TestApp.StaffPassword);
         Assert.Equal(HttpStatusCode.Unauthorized, oldPassword.StatusCode);
 
         var newPassword = await TestApp.LoginAsync(fresh, "tech-a", TestApp.NewPassword);
@@ -33,9 +33,9 @@ public class SetInitialPasswordTests : ApiTestBase
     [Fact]
     public async Task SetInitialPassword_InvalidatesOtherDeviceImmediately()
     {
-        await App.AddTechnicianAsync("tech-a", mustChangePassword: true);
-        using var deviceA = await LoggedInAsync("tech-a", TestApp.TechnicianPassword);
-        using var deviceB = await LoggedInAsync("tech-a", TestApp.TechnicianPassword);
+        await App.AddStaffAsync("tech-a", mustChangePassword: true);
+        using var deviceA = await LoggedInAsync("tech-a", TestApp.StaffPassword);
+        using var deviceB = await LoggedInAsync("tech-a", TestApp.StaffPassword);
 
         var response = await SetAsync(deviceA, TestApp.NewPassword);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
@@ -50,14 +50,14 @@ public class SetInitialPasswordTests : ApiTestBase
     [Fact]
     public async Task NotFlaggedUser_Returns403_AndPasswordIsUnchanged()
     {
-        await App.AddTechnicianAsync("tech-a");
-        using var device = await LoggedInAsync("tech-a", TestApp.TechnicianPassword);
+        await App.AddStaffAsync("tech-a");
+        using var device = await LoggedInAsync("tech-a", TestApp.StaffPassword);
 
         var response = await SetAsync(device, TestApp.NewPassword);
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
 
         using var fresh = App.NewClient();
-        var login = await TestApp.LoginAsync(fresh, "tech-a", TestApp.TechnicianPassword);
+        var login = await TestApp.LoginAsync(fresh, "tech-a", TestApp.StaffPassword);
         Assert.Equal(HttpStatusCode.OK, login.StatusCode);
     }
 
@@ -79,8 +79,8 @@ public class SetInitialPasswordTests : ApiTestBase
     [InlineData("aaaaaaaaaaaa")]                                                        // too few distinct characters
     public async Task RejectedPassword_Returns422_AndKeepsFlagAndOldPassword(string newPassword)
     {
-        await App.AddTechnicianAsync("tech-a", mustChangePassword: true);
-        using var device = await LoggedInAsync("tech-a", TestApp.TechnicianPassword);
+        await App.AddStaffAsync("tech-a", mustChangePassword: true);
+        using var device = await LoggedInAsync("tech-a", TestApp.StaffPassword);
 
         var response = await SetAsync(device, newPassword);
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
@@ -88,17 +88,17 @@ public class SetInitialPasswordTests : ApiTestBase
         Assert.True((await GetMeAsync(device)).MustChangePassword);
 
         using var fresh = App.NewClient();
-        var login = await TestApp.LoginAsync(fresh, "tech-a", TestApp.TechnicianPassword);
+        var login = await TestApp.LoginAsync(fresh, "tech-a", TestApp.StaffPassword);
         Assert.Equal(HttpStatusCode.OK, login.StatusCode);
     }
 
     [Fact]
     public async Task SameAsInitialPassword_Returns422()
     {
-        await App.AddTechnicianAsync("tech-a", mustChangePassword: true);
-        using var device = await LoggedInAsync("tech-a", TestApp.TechnicianPassword);
+        await App.AddStaffAsync("tech-a", mustChangePassword: true);
+        using var device = await LoggedInAsync("tech-a", TestApp.StaffPassword);
 
-        var response = await SetAsync(device, TestApp.TechnicianPassword);
+        var response = await SetAsync(device, TestApp.StaffPassword);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
         Assert.True((await GetMeAsync(device)).MustChangePassword);
@@ -117,8 +117,8 @@ public class SetInitialPasswordTests : ApiTestBase
     [Fact]
     public async Task EmptyPassword_Returns400()
     {
-        await App.AddTechnicianAsync("tech-a", mustChangePassword: true);
-        using var device = await LoggedInAsync("tech-a", TestApp.TechnicianPassword);
+        await App.AddStaffAsync("tech-a", mustChangePassword: true);
+        using var device = await LoggedInAsync("tech-a", TestApp.StaffPassword);
 
         var response = await SetAsync(device, "");
 
