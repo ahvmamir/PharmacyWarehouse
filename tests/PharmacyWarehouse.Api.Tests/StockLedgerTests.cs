@@ -1,4 +1,9 @@
 using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using PharmacyWarehouse.Api.Data;
+using PharmacyWarehouse.Api.Stock;
+using PharmacyWarehouse.Domain.Stock;
 
 namespace PharmacyWarehouse.Api.Tests;
 
@@ -46,6 +51,30 @@ public class StockLedgerTests : ApiTestBase
         await App.AddBatchRawAsync(product, "TEST-BATCH-02", null);
 
         await App.AssertLedgerConsistentAsync();
+    }
+
+    [Fact]
+    public async Task Post_DetachedBatch_Throws()
+    {
+        using var scope = App.CreateScope();
+        var ledger = scope.ServiceProvider.GetRequiredService<StockLedger>();
+        var batch = new Batch { Id = Guid.NewGuid(), ProductId = Guid.NewGuid(), BatchNumber = "TEST-BATCH-01", BatchKey = "TEST-BATCH-01" };
+
+        Assert.Throws<InvalidOperationException>(() => ledger.Post(batch, StockMovementKind.Receipt, 1, DateTime.UtcNow));
+        await Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task Post_ZeroQuantity_Throws()
+    {
+        var product = await App.AddProductRawAsync("TEST-DRUG-01", null);
+        var batchId = await App.AddBatchRawAsync(product, "TEST-BATCH-01", null, onHand: 2);
+        using var scope = App.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<WarehouseDbContext>();
+        var ledger = scope.ServiceProvider.GetRequiredService<StockLedger>();
+        var batch = await db.Batches.FirstAsync(b => b.Id == batchId);
+
+        Assert.Throws<InvalidOperationException>(() => ledger.Post(batch, StockMovementKind.Receipt, 0, DateTime.UtcNow));
     }
 
     private static SqliteException FindSqlite(Exception ex)

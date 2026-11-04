@@ -229,6 +229,7 @@ app.MapAuthEndpoints();
 app.MapAccountEndpoints();
 app.MapStorageLocationEndpoints();
 app.MapProductEndpoints();
+app.MapReceiptEndpoints();
 app.MapUserEndpoints();
 app.MapRoleEndpoints();
 app.MapBackupEndpoints();

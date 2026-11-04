@@ -90,6 +90,9 @@ public sealed class TestApp : IAsyncDisposable
         return client;
     }
 
+    // Test only: a DI scope of the test host (own DbContext, StockLedger).
+    public IServiceScope CreateScope() => _factory.Services.CreateScope();
+
     public Task<AppUser> AddAdminAsync(string username, bool mustChangePassword = false)
         => AddUserAsync(username, AdminPassword, Roles.Admin, mustChangePassword);
 
@@ -253,7 +256,7 @@ public sealed class TestApp : IAsyncDisposable
             Id = Guid.NewGuid(),
             ProductId = productId,
             BatchNumber = batchNumber,
-            BatchKey = TextNormalizer.Key(batchNumber)!,
+            BatchKey = TextNormalizer.ScanKey(batchNumber)!,
             LocationId = locationId,
             ExpiryDate = expiry,
             CreatedAtUtc = DateTime.UtcNow

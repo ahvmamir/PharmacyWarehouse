@@ -35,8 +35,7 @@ public static class ProductEndpoints
         manage.MapDelete("{id:guid}/barcodes/{barcodeId:guid}", RemoveBarcodeAsync);
     }
 
-    // «امروز» به وقت محلی (LocalDay)، نه UTC.
-    private static DateOnly Today() => DateOnly.FromDateTime((DateTime.UtcNow + LocalDay.OffsetFromUtc).Date);
+    private static DateOnly Today() => BatchMapping.Today();
 
     private static string BuildSearchText(Product p, IEnumerable<string> codes) =>
         TextNormalizer.SearchKey(string.Join(' ', new[] { p.Name, p.Brand, p.PackDescription }.Concat(codes).Where(s => !string.IsNullOrEmpty(s))))!;
@@ -76,9 +75,7 @@ public static class ProductEndpoints
             LocationId = p.LocationId,
             Batches = batches
                 .OrderBy(b => b.ExpiryDate is null).ThenBy(b => b.ExpiryDate).ThenBy(b => b.BatchNumber, StringComparer.Ordinal)
-                .Select(b => new BatchItem(b.Id, b.BatchNumber, b.ExpiryDate, b.ExpiryPrecision, b.ExpiryCalendar,
-                    b.ExpiryDate is { } d ? ExpiryDate.Display(new ExpiryValue(d, b.ExpiryPrecision, b.ExpiryCalendar)) : null,
-                    PathOf(locations, b.LocationId), b.OnHand, b.ExpiryDate is { } e && e < today, b.Version))
+                .Select(b => BatchMapping.ToItem(b, locations.Paths, p.LocationId, today))
                 .ToList(),
             Barcodes = barcodes.OrderBy(b => b.Code, StringComparer.Ordinal).Select(b => new BarcodeItem(b.Id, b.Code)).ToList()
         };

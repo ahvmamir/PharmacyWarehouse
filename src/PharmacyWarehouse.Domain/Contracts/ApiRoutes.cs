@@ -12,6 +12,7 @@ public static class ApiRoutes
 
     public const string Locations = "/api/locations";
     public const string Products = "/api/products";
+    public const string Receipts = "/api/receipts";
     public const string Users = "/api/users";
     public const string Roles = "/api/roles";
     public const string DataBackup = "/api/data/backup";

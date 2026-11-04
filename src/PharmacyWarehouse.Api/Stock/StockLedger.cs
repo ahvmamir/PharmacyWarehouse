@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using PharmacyWarehouse.Api.Data;
 using PharmacyWarehouse.Domain.Stock;
 using PharmacyWarehouse.Domain.Text;
@@ -20,6 +21,9 @@ public sealed class StockLedger
 
     public void Post(Batch batch, StockMovementKind kind, int quantity, DateTime occurredAtUtc, string? note = null)
     {
+        if (quantity == 0) throw new InvalidOperationException("مقدار حرکت نمی‌تواند صفر باشد.");
+        if (_db.Entry(batch).State == EntityState.Detached) throw new InvalidOperationException("بچ باید در DbContext ردیابی شود.");
+
         var next = batch.OnHand + quantity;
         if (next < 0) throw new InvalidOperationException("موجودی بچ نمی‌تواند منفی شود.");
 
