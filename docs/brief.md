@@ -32,6 +32,7 @@
 
 **۲۰۲۶-۱۱-۰۴:**
 - **برش ۰ تمام شد:** کپی زیرساخت Emu، تغییر نام، حذف دامنه‌ی تجهیزات، محل‌های درختی با تاریخچه، نقش‌ها و مجوزهای تازه، migration اولیه‌ی تازه، نام‌های استقرار، نشست ۳۰ روزه، `CLAUDE.md`، `docs\deploy.md` (آزموده‌نشده روی سرور داروخانه؛ برش ۷).
+- **اصلاح‌های بازبینی برش ۰ انجام شد:** ترتیب درختی (`LocationTree.Ordered`)، `IsUsable` برای شاخه‌های غیرفعال، `StorageLocation.KeyOf`، رهگیر ستون‌های `*Key` را ثبت نمی‌کند. الگوهای حذف‌شده: `git show 241d144:src/PharmacyWarehouse.Api/DataTools/DataEndpoints.cs`، `...:src/PharmacyWarehouse.Api/Reports/ReportEndpoints.cs`، `...:src/PharmacyWarehouse.Client/Components/HistoryTimeline.razor`.
 - **برش ۱ بعدی است** (قلم، بارکد، بچ، ورود جنس).
 - **پیش‌نیاز برش ۱:** خروجی بارکدخوان در Notepad و نوع بارکد روی جعبه‌ها هنوز در دست نیست. برش ۱ طبق بخش ۹.۱ `docs\spec.md` با فرض بارکد یک‌بعدی پیش می‌رود و پس از آزمایش اصلاح می‌شود.
 - **روی هر دو سیستم (خانه و کار):** دیتابیس توسعه‌ی قدیمی با schema Emu باید حذف شود (فایل `.db` در پوشه‌ی `src\PharmacyWarehouse.Api`)، سپس `dotnet ef database update --project src\PharmacyWarehouse.Api` و `create-admin <username>`.
