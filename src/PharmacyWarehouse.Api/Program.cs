@@ -8,6 +8,7 @@ using PharmacyWarehouse.Api.Alerts;
 using PharmacyWarehouse.Api.Auth;
 using PharmacyWarehouse.Api.Data;
 using PharmacyWarehouse.Api.DataTools;
+using PharmacyWarehouse.Api.Stock;
 using PharmacyWarehouse.Api.Storage;
 using PharmacyWarehouse.Api.Operations;
 using PharmacyWarehouse.Api.Users;
@@ -227,6 +228,7 @@ app.MapGet(ApiRoutes.AppInfo, () => Results.Ok(new AppInfoResponse
 app.MapAuthEndpoints();
 app.MapAccountEndpoints();
 app.MapStorageLocationEndpoints();
+app.MapProductEndpoints();
 app.MapUserEndpoints();
 app.MapRoleEndpoints();
 app.MapBackupEndpoints();

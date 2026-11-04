@@ -11,6 +11,7 @@ public static class ApiRoutes
     public const string SetInitialPassword = "/api/auth/set-initial-password";
 
     public const string Locations = "/api/locations";
+    public const string Products = "/api/products";
     public const string Users = "/api/users";
     public const string Roles = "/api/roles";
     public const string DataBackup = "/api/data/backup";
@@ -22,5 +23,9 @@ public static class ApiRoutes
     public static string Deactivate(string collection, Guid id) => $"{collection}/{id}/deactivate";
     public static string Activate(string collection, Guid id) => $"{collection}/{id}/activate";
     public static string Dependencies(string collection, Guid id) => $"{collection}/{id}/dependencies";
+    public static string ProductByCode(string code) => $"{Products}/by-code/{Uri.EscapeDataString(code)}";
+    public static string ProductBarcodes(Guid id) => $"{Products}/{id}/barcodes";
+    public static string ProductBarcode(Guid id, Guid barcodeId) => $"{Products}/{id}/barcodes/{barcodeId}";
+    public static string ProductHistory(Guid id) => $"{Products}/{id}/history";
     public static string UserResetPassword(Guid id) => $"{Users}/{id}/reset-password";
 }
