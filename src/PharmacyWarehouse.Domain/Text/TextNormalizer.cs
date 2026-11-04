@@ -74,4 +74,28 @@ public static class TextNormalizer
         var cleaned = Clean(value);
         return cleaned?.Replace(ZeroWidthNonJoiner.ToString(), "").ToUpperInvariant();
     }
+
+    // چیدمان استاندارد فارسی ویندوز ← حرف لاتین هم‌کلید (اسکنر keyboard-wedge روی چیدمان فارسی).
+    private const string PersianKeys = "ضصثقفغعهخحجچشسیبلاتنمکگظطزرذدپوي";
+    private const string LatinKeys   = "qwertyuiop[]asdfghjkl;'zxcvbnm,d";
+
+    // کلید جست‌وجوی بارکد/بچ: ارقام لاتین، حروف فارسی صفحه‌کلید به لاتین، حروف بزرگ، بدون فاصله، * ابتدا و انتها حذف.
+    // ك عربی همان کلید ; است. خالی ← null.
+    public static string? ScanKey(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return null;
+
+        var builder = new StringBuilder(value.Length);
+        foreach (var original in ToAsciiDigits(value))
+        {
+            if (char.IsWhiteSpace(original) || original == ZeroWidthNonJoiner) continue;
+
+            var c = original == 'ك' ? ';' : original;
+            var index = PersianKeys.IndexOf(c);
+            builder.Append(index >= 0 ? LatinKeys[index] : c);
+        }
+
+        var result = builder.ToString().Trim('*').ToUpperInvariant();
+        return result.Length == 0 ? null : result;
+    }
 }
