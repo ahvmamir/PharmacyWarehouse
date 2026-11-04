@@ -242,7 +242,7 @@ public sealed class TestApp : IAsyncDisposable
     }
 
     // Test only: adds a batch; when onHand > 0 it also posts a matching Import movement so the ledger stays consistent.
-    public async Task<Guid> AddBatchRawAsync(Guid productId, string batchNumber, Guid? locationId, int onHand = 0)
+    public async Task<Guid> AddBatchRawAsync(Guid productId, string batchNumber, Guid? locationId, int onHand = 0, DateOnly? expiry = null)
     {
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<WarehouseDbContext>();
@@ -255,6 +255,7 @@ public sealed class TestApp : IAsyncDisposable
             BatchNumber = batchNumber,
             BatchKey = TextNormalizer.Key(batchNumber)!,
             LocationId = locationId,
+            ExpiryDate = expiry,
             CreatedAtUtc = DateTime.UtcNow
         };
         db.Batches.Add(batch);
