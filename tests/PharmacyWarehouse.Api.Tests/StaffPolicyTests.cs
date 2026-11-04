@@ -18,22 +18,44 @@ public class StaffPolicyTests : ApiTestBase
         }
     }
 
-    [Theory]
-    [InlineData(Permissions.EquipmentView, true)]
-    [InlineData(Permissions.EquipmentManage, true)]
-    [InlineData(Permissions.ReportsView, true)]
-    [InlineData(Permissions.EquipmentDelete, false)]
-    [InlineData(Permissions.EquipmentRestore, false)]
-    [InlineData(Permissions.LocationsManage, false)]
-    [InlineData(Permissions.UsersManage, false)]
-    [InlineData(Permissions.RolesManage, false)]
-    [InlineData(Permissions.DataImport, false)]
-    [InlineData(Permissions.BackupDownload, false)]
-    public async Task Technician_HasTheDefaultPermissions(string permission, bool expected)
+    // جدول بخش ۱۱ spec: نقش‌های پیش‌فرض دقیقاً همین مجوزها را دارند (migration اولیه آن‌ها را می‌کارد).
+    public static TheoryData<string, string, bool> DefaultRolePermissions()
     {
-        var technician = await App.AddTechnicianAsync("tech-a");
+        var granted = new Dictionary<string, string[]>
+        {
+            [Roles.Staff] = [Permissions.StockView, Permissions.WithdrawalCreate],
+            [Roles.Keeper] =
+            [
+                Permissions.StockView, Permissions.WithdrawalCreate, Permissions.WithdrawalReview, Permissions.StockReceive,
+                Permissions.StockAdjust, Permissions.ProductsManage, Permissions.DashboardView, Permissions.ReportsView,
+                Permissions.DataImport, Permissions.DataExport, Permissions.BackupDownload
+            ],
+            [Roles.Manager] =
+            [
+                Permissions.StockView, Permissions.DashboardView, Permissions.ReportsView, Permissions.SettingsManage,
+                Permissions.UsersManage, Permissions.RolesManage
+            ]
+        };
 
-        Assert.Equal(expected, await App.PassesPolicyAsync(technician.Id, permission));
+        var data = new TheoryData<string, string, bool>();
+        foreach (var (role, permissions) in granted)
+        {
+            foreach (var permission in Permissions.All)
+            {
+                data.Add(role, permission.Key, permissions.Contains(permission.Key));
+            }
+        }
+
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(DefaultRolePermissions))]
+    public async Task DefaultRole_HasExactlySpecPermissions(string role, string permission, bool expected)
+    {
+        var user = await App.AddUserInRoleAsync($"user-{role.ToLowerInvariant()}", role);
+
+        Assert.Equal(expected, await App.PassesPolicyAsync(user.Id, permission));
     }
 
     [Fact]

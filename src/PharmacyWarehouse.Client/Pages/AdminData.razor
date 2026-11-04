@@ -1,469 +1,50 @@
 @page "/admin/data"
 @attribute [Authorize]
-@inject ReportsClient ReportsApi
-@inject CatalogClient Catalog
+@inject BackupClient BackupApi
 @inject ApiAuthenticationStateProvider Session
 @inject ToastService Toasts
 @inject IJSRuntime JS
 
-<PageTitle>بکاپ و Excel | سامانه تجهیزات IT</PageTitle>
+<PageTitle>پشتیبان | انبار داروخانه</PageTitle>
 
 <div class="page-head">
     <div>
-        <h1>بکاپ و Excel</h1>
+        <h1>پشتیبان</h1>
+        <p>هر روز یک نسخه دانلود کنید و روی لپ‌تاپ خودتان نگه دارید. پشتیبان شبانه‌ی سرور جای آن را نمی‌گیرد.</p>
     </div>
 </div>
 
-@if (Session.Can(Permissions.BackupDownload) || Session.Can(Permissions.DataExport))
-{
+<RequirePermission Permission="@Permissions.BackupDownload">
     <section class="card-emu">
-        <div class="card-emu-head"><h2>بکاپ</h2></div>
         <div class="card-emu-body">
-            @if (Session.Can(Permissions.DataExport))
-            {
-                <div class="linked-item">
-                    <span style="flex:1;">
-                        <strong>Excel همه‌ی داده‌ها</strong>
-                        <span class="cell-sub">خوانا: تجهیزات، قطعات، ساختمان‌ها، طبقه‌ها و واحدها. برگه‌ی تجهیزات را می‌شود دوباره وارد کرد.</span>
-                    </span>
-                    <button type="button" class="btn btn-quiet" disabled="@_busy" @onclick="() => SaveAsync(ReportsApi.ExportAllAsync)"><AppIcon Name="download" /> دانلود</button>
-                </div>
-            }
-            @if (Session.Can(Permissions.BackupDownload))
-            {
-                <div class="linked-item">
-                    <span style="flex:1;">
-                        <strong>فایل کامل دیتابیس (.db)</strong>
-                        <span class="cell-sub">همه‌چیز، با تاریخچه و کاربران. جای امن نگهش دارید؛ hash رمزها در آن است. بازگردانی طبق <code>docs\deploy.md</code>.</span>
-                    </span>
-                    <button type="button" class="btn btn-quiet" disabled="@_busy" @onclick="() => SaveAsync(ReportsApi.BackupAsync)"><AppIcon Name="download" /> دانلود</button>
-                </div>
-            }
+            <div class="linked-item">
+                <span style="flex:1;">
+                    <strong>فایل کامل دیتابیس (.db)</strong>
+                    <span class="cell-sub">همه‌چیز، با تاریخچه و کاربران. جای امن نگهش دارید؛ hash رمزها در آن است. بازگردانی طبق <code>docs\deploy.md</code>.</span>
+                </span>
+                <button type="button" class="btn btn-quiet" disabled="@_busy" @onclick="SaveAsync"><AppIcon Name="download" /> دانلود</button>
+            </div>
         </div>
     </section>
-}
-
-@if (Session.Can(Permissions.DataImport))
-{
-    <section class="card-emu">
-        <div class="card-emu-head">
-            <h2>ورود لیست از Excel</h2>
-        </div>
-        <div class="card-emu-body">
-            <p class="muted">
-                فقط دستگاه جدید اضافه می‌شود؛ چیزی عوض یا حذف نمی‌شود. فایل xlsx، برگه‌ی اول، بدون قطعات.
-            </p>
-
-            <div class="import-step">
-                <span class="step-no">۱</span>
-                <div>
-                    <strong>این فایل شامل چه تجهیزاتی است؟</strong>
-                    <div class="chip-row mt-2" role="group" aria-label="نوع تجهیزات فایل">
-                        @foreach (var type in TypeOrder)
-                        {
-                            <button type="button" class="chip-toggle @(_types.Contains(type) ? "selected" : "")" aria-pressed="@(_types.Contains(type) ? "true" : "false")"
-                                    disabled="@_busy" @onclick="() => ToggleTypeAsync(type)">
-                                <AppIcon Name="@type.ToString()" Size="15" /> @AuditLabels.Type(type)
-                            </button>
-                        }
-                    </div>
-                    <div class="cell-sub mt-1">
-                        @if (_types.Count == 0)
-                        {
-                            <span>یک یا چند نوع را انتخاب کنید؛ مثلاً کیس و مانیتور با هم.</span>
-                        }
-                        else if (_types.Count == 1)
-                        {
-                            <span>همه‌ی ردیف‌ها @AuditLabels.Type(_types[0]) حساب می‌شوند و ستون «نوع» لازم نیست.</span>
-                        }
-                        else
-                        {
-                            <span>ستون «نوع» لازم است و هر ردیف باید یکی از این‌ها باشد: @string.Join("، ", _types.Select(AuditLabels.Type)).</span>
-                        }
-                    </div>
-                </div>
-            </div>
-
-            <div class="import-step">
-                <span class="step-no">۲</span>
-                <div>
-                    <strong>فایل نمونه‌ی همین نوع را پر کنید</strong>
-                    <div class="mt-2">
-                        <button type="button" class="btn btn-sm btn-quiet" disabled="@(_busy || _types.Count == 0)" @onclick="() => SaveAsync(() => ReportsApi.TemplateAsync(_types))">
-                            <AppIcon Name="download" Size="15" /> دانلود فایل نمونه
-                        </button>
-                        <span class="cell-sub">فقط ستون‌هایی که برای این نوع معنی دارند.</span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="import-step">
-                <span class="step-no">۳</span>
-                <div style="flex:1;">
-                    <label for="import-file"><strong>فایل را انتخاب کنید</strong></label>
-                    <InputFile id="import-file" class="form-control mt-2" accept=".xlsx" disabled="@(_types.Count == 0)" OnChange="OnFileAsync" />
-                    <div class="form-check mt-2">
-                        <input id="create-missing" class="form-check-input" type="checkbox" checked="@_createMissing" @onchange="OnCreateMissingAsync" />
-                        <label class="form-check-label" for="create-missing">ساختمان، طبقه و واحدی که تعریف نشده را خودکار بساز</label>
-                    </div>
-                </div>
-            </div>
-
-            @if (_error is not null)
-            {
-                <div class="form-alert" role="alert"><AppIcon Name="warning" /> <span>@_error</span></div>
-            }
-
-            @if (_busy)
-            {
-                <div class="loading-line">در حال پردازش…</div>
-            }
-            else if (_done is { } done)
-            {
-                <div class="form-alert success" role="status">
-                    <AppIcon Name="check" />
-                    <span>@Number(done.Imported) دستگاه اضافه شد. @(done.Problems.Count > 0 ? $"{Number(done.Problems.Count)} ردیف خطادار کنار گذاشته شد." : "")</span>
-                </div>
-            }
-            else if (_result is { } result)
-            {
-                <div class="import-step">
-                    <span class="step-no">۴</span>
-                    <div style="flex:1;min-width:0;">
-                        <strong>بررسی و اصلاح</strong>
-
-                        <div class="stats mt-2" style="grid-template-columns:repeat(3,minmax(0,160px));">
-                            <div class="stat" style="cursor:default;"><strong>@Number(result.Total)</strong><span>ردیف در فایل</span></div>
-                            <div class="stat" style="cursor:default;"><strong>@Number(result.Valid)</strong><span>آماده‌ی ورود</span></div>
-                            <div class="stat @(result.Problems.Count > 0 ? "stat-danger" : "")" style="cursor:default;"><strong>@Number(result.Problems.Count)</strong><span>دارای خطا</span></div>
-                        </div>
-
-                        @if (result.WillCreate.Length > 0)
-                        {
-                            <p class="mb-1"><strong>ساخته می‌شوند:</strong></p>
-                            <ul class="dependency-list mb-3" style="max-height:140px;margin-top:0;">
-                                @foreach (var item in result.WillCreate)
-                                {
-                                    <li>@item</li>
-                                }
-                            </ul>
-                        }
-
-                        @if (ErrorRows.Count > 0)
-                        {
-                            <h3 class="import-subhead">ردیف‌های خطادار؛ همین‌جا اصلاح کنید</h3>
-                            <div class="table-card import-grid mb-2">
-                                <table class="data-table">
-                                    <thead>
-                                        <tr>
-                                            <th>سطر</th>
-                                            @foreach (var column in result.Columns)
-                                            {
-                                                <th>@column</th>
-                                            }
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @foreach (var row in ErrorRows)
-                                        {
-                                            <tr class="import-row-bad" @key="row.Row">
-                                                <td rowspan="2">@Number(row.Row)</td>
-                                                @foreach (var column in result.Columns)
-                                                {
-                                                    <td>
-                                                        <input class="form-control form-control-sm" dir="auto" aria-label="@column سطر @row.Row"
-                                                               list="@ListFor(column)" value="@Value(row, column)" @onchange="e => Edit(row, column, e)" />
-                                                    </td>
-                                                }
-                                            </tr>
-                                            <tr class="import-row-errors">
-                                                <td colspan="@result.Columns.Length">
-                                                    @foreach (var message in row.Errors)
-                                                    {
-                                                        <div><AppIcon Name="warning" Size="13" /> @message</div>
-                                                    }
-                                                </td>
-                                            </tr>
-                                        }
-                                    </tbody>
-                                </table>
-                            </div>
-                            <div class="mb-3">
-                                <button type="button" class="btn btn-quiet" disabled="@(!_dirty)" @onclick="CheckAsync"><AppIcon Name="check" /> بررسی دوباره</button>
-                                @if (_dirty)
-                                {
-                                    <span class="cell-sub">تغییرها هنوز بررسی نشده‌اند.</span>
-                                }
-                            </div>
-                        }
-
-                        @if (ValidRows.Count > 0)
-                        {
-                            <details class="mb-3" open="@(ErrorRows.Count == 0)">
-                                <summary class="import-subhead">ردیف‌های آماده‌ی ورود (@Number(ValidRows.Count))</summary>
-                                <div class="table-card import-grid mt-2">
-                                    <table class="data-table">
-                                        <thead>
-                                            <tr>
-                                                <th>سطر</th>
-                                                @foreach (var column in result.Columns)
-                                                {
-                                                    <th>@column</th>
-                                                }
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            @foreach (var row in ValidRows.Take(MaxVisibleValid))
-                                            {
-                                                <tr @key="row.Row">
-                                                    <td>@Number(row.Row)</td>
-                                                    @foreach (var column in result.Columns)
-                                                    {
-                                                        <td><bdi>@Value(row, column)</bdi></td>
-                                                    }
-                                                </tr>
-                                            }
-                                        </tbody>
-                                    </table>
-                                </div>
-                                @if (ValidRows.Count > MaxVisibleValid)
-                                {
-                                    <div class="cell-sub">@Number(MaxVisibleValid) ردیف اول نمایش داده شد؛ همه ثبت می‌شوند.</div>
-                                }
-                            </details>
-                        }
-
-                        @if (result.Valid > 0)
-                        {
-                            <button type="button" class="btn btn-primary" disabled="@_dirty" @onclick="CommitAsync">
-                                <AppIcon Name="upload" />
-                                @(result.Problems.Count == 0
-                                    ? $"ثبت همه‌ی {Number(result.Valid)} دستگاه"
-                                    : $"ثبت {Number(result.Valid)} ردیف سالم و کنار گذاشتن {Number(result.Problems.Count)} ردیف خطادار")
-                            </button>
-                            @if (_dirty)
-                            {
-                                <span class="cell-sub">اول «بررسی دوباره» را بزنید.</span>
-                            }
-                        }
-                    </div>
-                </div>
-            }
-
-            <datalist id="dl-units">
-                @foreach (var unit in _units)
-                {
-                    <option value="@unit.Name"></option>
-                }
-            </datalist>
-            <datalist id="dl-buildings">
-                @foreach (var building in _buildings)
-                {
-                    <option value="@building.Name"></option>
-                }
-            </datalist>
-            <datalist id="dl-floors">
-                @foreach (var floor in _floors.Select(f => f.Name).Distinct())
-                {
-                    <option value="@floor"></option>
-                }
-            </datalist>
-            <datalist id="dl-types">
-                @foreach (var type in TypeOrder)
-                {
-                    <option value="@AuditLabels.Type(type)"></option>
-                }
-            </datalist>
-            <datalist id="dl-status">
-                @foreach (var status in Enum.GetValues<EquipmentStatus>())
-                {
-                    <option value="@AuditLabels.Status(status)"></option>
-                }
-            </datalist>
-        </div>
-    </section>
-}
-
-@if (!Session.Can(Permissions.DataImport) && !Session.Can(Permissions.DataExport) && !Session.Can(Permissions.BackupDownload))
-{
-    <div class="empty-state">
-        <h2>اجازه‌ی دیدن این صفحه را ندارید</h2>
-        <p>برای دسترسی به این بخش با مدیر سیستم صحبت کنید.</p>
-    </div>
-}
+</RequirePermission>
 
 @code {
-    private const long MaxFileBytes = 20 * 1024 * 1024;
-
-    // مرورگر با هزاران ردیف ویرایشی کند می‌شود؛ ردیف‌های سالم فقط برای نگاه‌اند.
-    private const int MaxVisibleValid = 200;
-
-    // کیس و مانیتور، رایج‌ترین ورود، اول.
-    private static readonly EquipmentType[] TypeOrder =
-        [EquipmentType.Case, EquipmentType.Monitor, EquipmentType.Laptop, EquipmentType.Printer, EquipmentType.Scanner, EquipmentType.Peripheral];
-
-    private byte[]? _file;
-    private string _fileName = "";
-    private bool _createMissing;
     private bool _busy;
-    private bool _dirty;
-    private string? _error;
-    private ImportResult? _result;
-    private ImportResult? _done;
-    private List<EquipmentType> _types = [];
-    private List<UnitItem> _units = [];
-    private List<BuildingItem> _buildings = [];
-    private List<FloorItem> _floors = [];
 
-    private List<ImportRow> ErrorRows => _result?.Rows.Where(r => r.Errors.Length > 0).ToList() ?? [];
-    private List<ImportRow> ValidRows => _result?.Rows.Where(r => r.Errors.Length == 0).ToList() ?? [];
-
-    private static string Number(int value) => JalaliDate.ToPersianDigits(value.ToString());
-
-    protected override async Task OnInitializedAsync()
-    {
-        if (!Session.Can(Permissions.DataImport)) return;
-
-        // پیشنهاد نام‌های موجود هنگام اصلاح؛ اشتباه تایپی رایج‌ترین خطای ورود است.
-        _units = (await Catalog.UnitsAsync()).Value ?? [];
-        _buildings = (await Catalog.BuildingsAsync()).Value ?? [];
-        _floors = (await Catalog.FloorsAsync()).Value ?? [];
-    }
-
-    private static string? ListFor(string column) => column switch
-    {
-        "واحد صاحب اموال" or "واحد محل" => "dl-units",
-        "ساختمان" => "dl-buildings",
-        "طبقه" => "dl-floors",
-        "نوع" => "dl-types",
-        "وضعیت" => "dl-status",
-        _ => null
-    };
-
-    private static string? Value(ImportRow row, string column) => row.Values.GetValueOrDefault(column);
-
-    private void Edit(ImportRow row, string column, ChangeEventArgs e)
-    {
-        var text = e.Value?.ToString();
-        row.Values[column] = string.IsNullOrWhiteSpace(text) ? null : text;
-        _dirty = true;
-    }
-
-    private async Task SaveAsync(Func<Task<ApiResult<DownloadedFile>>> download)
+    private async Task SaveAsync()
     {
         _busy = true;
         try
         {
-            var file = await download();
+            var file = await BackupApi.BackupAsync();
             if (file.IsSuccess)
             {
                 await FileSaver.SaveAsync(JS, file.Value!);
+                Toasts.Show("پشتیبان دانلود شد.");
             }
             else
             {
                 Toasts.Show(file.ErrorMessage, isWarning: true);
-            }
-        }
-        finally
-        {
-            _busy = false;
-        }
-    }
-
-    // تغییر نوع، قواعد ستون «نوع» را عوض می‌کند؛ اگر فایل انتخاب شده، از نو بررسی می‌شود.
-    private async Task ToggleTypeAsync(EquipmentType type)
-    {
-        if (!_types.Remove(type))
-        {
-            _types.Add(type);
-            _types = TypeOrder.Where(_types.Contains).ToList();
-        }
-
-        _done = null;
-        if (_file is not null && _types.Count > 0) await PreviewFileAsync();
-        else _result = null;
-    }
-
-    private async Task OnFileAsync(InputFileChangeEventArgs e)
-    {
-        _error = null;
-        _result = null;
-        _done = null;
-        _file = null;
-
-        if (e.File.Size > MaxFileBytes)
-        {
-            _error = "حجم فایل بیشتر از ۲۰ مگابایت است.";
-            return;
-        }
-
-        using var buffer = new MemoryStream();
-        await e.File.OpenReadStream(MaxFileBytes).CopyToAsync(buffer);
-        _file = buffer.ToArray();
-        _fileName = e.File.Name;
-
-        await PreviewFileAsync();
-    }
-
-    // اگر ردیفی اصلاح شده، تغییر این گزینه همان ردیف‌های اصلاح‌شده را بررسی می‌کند، نه فایل اصلی را.
-    private async Task OnCreateMissingAsync(ChangeEventArgs e)
-    {
-        _createMissing = e.Value is true;
-        if (_result is not null) await CheckAsync();
-    }
-
-    private async Task PreviewFileAsync()
-    {
-        if (_file is null) return;
-        await RunAsync(() => ReportsApi.ImportAsync(_file, _fileName, _createMissing, commit: false, _types));
-    }
-
-    private ImportRowsRequest Request() => new() { Rows = _result?.Rows ?? [], CreateMissing = _createMissing, Types = _types.ToArray() };
-
-    private Task CheckAsync() => RunAsync(() => ReportsApi.CheckRowsAsync(Request()));
-
-    private async Task CommitAsync()
-    {
-        if (_result is null || _dirty) return;
-
-        _busy = true;
-        _error = null;
-        try
-        {
-            var result = await ReportsApi.CommitRowsAsync(Request());
-            if (result.IsSuccess)
-            {
-                // همان ردیف‌ها نباید با یک کلیک دیگر دوباره وارد شوند.
-                _done = result.Value;
-                _result = null;
-                _file = null;
-            }
-            else
-            {
-                _error = result.ErrorMessage;
-            }
-        }
-        finally
-        {
-            _busy = false;
-        }
-    }
-
-    private async Task RunAsync(Func<Task<ApiResult<ImportResult>>> call)
-    {
-        _busy = true;
-        _error = null;
-        try
-        {
-            var result = await call();
-            if (result.IsSuccess)
-            {
-                _result = result.Value;
-                _dirty = false;
-            }
-            else
-            {
-                _error = result.ErrorMessage;
             }
         }
         finally

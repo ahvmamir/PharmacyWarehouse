@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using PharmacyWarehouse.Api.Assets;
 using PharmacyWarehouse.Api.Data;
 
 namespace PharmacyWarehouse.Api.Operations;
@@ -26,7 +25,7 @@ public sealed class WarmUpService : BackgroundService
 
             using var scope = _services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<WarehouseDbContext>();
-            await EquipmentEndpoints.WarmUpAsync(db, stoppingToken);
+            await db.StorageLocations.AsNoTracking().AnyAsync(stoppingToken);
             await db.Users.AsNoTracking().AnyAsync(stoppingToken);
 
             // همان الگوریتم hash ورود؛ فقط برای JIT، نتیجه دور ریخته می‌شود.

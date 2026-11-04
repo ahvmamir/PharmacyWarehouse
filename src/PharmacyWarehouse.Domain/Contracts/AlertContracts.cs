@@ -11,14 +11,8 @@ public static class AlertSeverity
 
 public static class AlertKeys
 {
-    public const string DuplicateComputerNames = "duplicate-computer-names";
-    public const string TemporaryAssets = "temporary-assets";
-    public const string LongRepair = "long-repair";
     public const string Backup = "backup";
     public const string DiskSpace = "disk-space";
-    public const string DuplicateSerials = "duplicate-serials";
-    public const string LinkedPlaceMismatch = "linked-place-mismatch";
-    public const string HubWithoutComponents = "hub-without-components";
 }
 
 public sealed class AlertItem
@@ -35,5 +29,4 @@ public sealed class AlertEntry
 {
     public string Text { get; init; } = "";
     public string? Sub { get; init; }
-    public Guid? EquipmentId { get; init; }
 }

@@ -91,7 +91,7 @@
     // رمز اولیه: رمز فعلی را کاربر همین الان تایپ کرده، پس دوباره نمی‌پرسیم.
     private bool ForcedMode => Session.CurrentUser is { MustChangePassword: true };
 
-    private static string RoleLabel(string role) => RoleText.Label(role);
+    private static string RoleLabel(string role) => Roles.Label(role);
 
     private void OnCurrentInput(ChangeEventArgs e) => _currentPassword = e.Value?.ToString() ?? "";
     private void OnNewInput(ChangeEventArgs e) => _newPassword = e.Value?.ToString() ?? "";

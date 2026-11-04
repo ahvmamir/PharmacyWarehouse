@@ -1,7 +1,0 @@
-@using PharmacyWarehouse.Domain.Assets
-
-<span class="status-badge status-@Status.ToString().ToLowerInvariant()">@AuditLabels.Status(Status)</span>
-
-@code {
-    [Parameter, EditorRequired] public EquipmentStatus Status { get; set; }
-}

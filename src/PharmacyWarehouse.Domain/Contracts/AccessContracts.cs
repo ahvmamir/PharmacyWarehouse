@@ -36,4 +36,5 @@ public sealed class DependencyList
     public int Total { get; init; }
 }
 
-public sealed record DependencyItem(string Kind, string Label, Guid? EquipmentId = null);
+// SubjectId: رکوردی که وابستگی به آن است و صفحه‌ی جزئیات دارد (برش ۱: قلم)، تا پنجره‌ی حذف به آن پیوند بدهد.
+public sealed record DependencyItem(string Kind, string Label, Guid? SubjectId = null);

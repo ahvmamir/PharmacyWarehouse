@@ -16,14 +16,7 @@
             {
                 <li>
                     <span class="muted">@item.Kind:</span>
-                    @if (item.EquipmentId is { } id)
-                    {
-                        <a href="equipment/@id"><bdi>@item.Label</bdi></a>
-                    }
-                    else
-                    {
-                        <bdi>@item.Label</bdi>
-                    }
+                    <bdi>@item.Label</bdi>
                 </li>
             }
         </ul>

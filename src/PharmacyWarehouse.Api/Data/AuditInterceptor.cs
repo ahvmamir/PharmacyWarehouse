@@ -13,7 +13,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     // مشتق‌اند یا کلید؛ تغییرشان خبر تازه‌ای نیست.
     private static readonly HashSet<string> Ignored =
     [
-        "Id", "Version", "SearchText", "AssetNumberKey", "ComputerNameKey", "NameKey", "ParentKey", "CreatedAtUtc", "UpdatedAtUtc", "EquipmentId", "Position"
+        "Id", "Version", "SearchText", "NameKey", "ParentKey", "CreatedAtUtc", "UpdatedAtUtc"
     ];
 
     private readonly AuditContext _audit;
@@ -71,14 +71,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
                 UserName = _audit.UserName,
                 EntityType = entry.Metadata.ClrType.Name,
                 EntityId = entry.Entity.Id,
-                EquipmentId = entry.Entity switch
-                {
-                    Equipment equipment => equipment.Id,
-                    Component component => component.EquipmentId,
-                    RepairRecord repair => repair.EquipmentId,
-                    _ => null
-                },
-                EntityLabel = entry.Entity is Component part ? part.Kind.ToString() : null,
+                SubjectId = AuditSubject.Of(entry.Entity),
                 Action = action,
                 Field = field,
                 OldValue = oldValue,
@@ -116,19 +109,6 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             }
         }
 
-        // «آخرین تغییر» فقط با تغییر واقعی جلو می‌رود، نه با ذخیره‌ی بی‌تغییر؛ تغییر قطعه هم مال دستگاهش است.
-        var devices = db.ChangeTracker.Entries<Equipment>().ToDictionary(e => e.Entity.Id);
-        // تأیید حضور (انبارگردانی) و سابقه‌ی تعمیر تغییر مشخصات نیستند و «آخرین تغییر» را جلو نمی‌برند.
-        foreach (var equipmentId in rows
-                     .Where(r => r.EquipmentId is not null && r.Field != "LastVerifiedAtUtc" && r.EntityType != nameof(RepairRecord))
-                     .Select(r => r.EquipmentId!.Value).Distinct())
-        {
-            if (devices.TryGetValue(equipmentId, out var device) && device.State != EntityState.Deleted)
-            {
-                device.Property(e => e.UpdatedAtUtc).CurrentValue = now;
-            }
-        }
-
         db.AuditEntries.AddRange(rows);
     }
 
@@ -162,19 +142,6 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             (StorageLocation, "ParentId") =>
                 db.ChangeTracker.Entries<StorageLocation>().FirstOrDefault(e => e.Entity.Id == id)?.Entity.Name
                 ?? await db.StorageLocations.AsNoTracking().Where(l => l.Id == id).Select(l => l.Name).FirstOrDefaultAsync(ct),
-            (_, "OwnerUnitId" or "LocationUnitId") =>
-                await db.Units.AsNoTracking().Where(u => u.Id == id).Select(u => u.Name).FirstOrDefaultAsync(ct),
-            (_, "BuildingId") =>
-                await db.Buildings.AsNoTracking().Where(b => b.Id == id).Select(b => b.Name).FirstOrDefaultAsync(ct),
-            (_, "FloorId") =>
-                await db.Floors.AsNoTracking().Where(f => f.Id == id).Select(f => f.Name).FirstOrDefaultAsync(ct),
-            // مرکزی که همین حالا ثبت می‌شود هنوز در دیتابیس نیست؛ پس اول در حافظه می‌گردیم.
-            (Equipment, "ParentId") =>
-                db.ChangeTracker.Entries<Equipment>().FirstOrDefault(e => e.Entity.Id == id)?.Entity.AssetNumber
-                ?? await db.Equipment.AsNoTracking()
-                    .Where(e => e.Id == id)
-                    .Select(e => e.AssetNumber ?? e.ComputerName ?? e.Model ?? e.Type.ToString())
-                    .FirstOrDefaultAsync(ct),
             _ => null
         };
 

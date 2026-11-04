@@ -2,9 +2,9 @@
 @attribute [Authorize]
 @inject AlertsClient AlertsApi
 
-<PageTitle>اعلان‌ها | سامانه تجهیزات IT</PageTitle>
+<PageTitle>اعلان‌ها | انبار داروخانه</PageTitle>
 
-<RequirePermission Permission="@Permissions.EquipmentView">
+<RequirePermission Permission="@Permissions.StockView">
 <div class="page-head">
     <div>
         <h1>اعلان‌ها</h1>
@@ -49,14 +49,7 @@ else
                     @foreach (var entry in expanded ? alert.Entries : alert.Entries.Take(CollapsedEntries))
                     {
                         <li>
-                            @if (entry.EquipmentId is { } id)
-                            {
-                                <a href="equipment/@id"><bdi>@entry.Text</bdi></a>
-                            }
-                            else
-                            {
-                                <bdi>@entry.Text</bdi>
-                            }
+                            <bdi>@entry.Text</bdi>
                             @if (entry.Sub is not null)
                             {
                                 <span class="cell-sub">@entry.Sub</span>

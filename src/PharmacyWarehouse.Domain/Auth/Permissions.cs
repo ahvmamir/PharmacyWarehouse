@@ -11,42 +11,36 @@ public static class Permissions
     public const string UserDenyClaimType = "perm.deny";
 
     public const string StockView = "stock.view";
+    public const string WithdrawalCreate = "withdrawal.create";
+    public const string WithdrawalReview = "withdrawal.review";
+    public const string StockReceive = "stock.receive";
+    public const string StockAdjust = "stock.adjust";
     public const string ProductsManage = "products.manage";
-    public const string EquipmentView = "equipment.view";
-    public const string EquipmentManage = "equipment.manage";
-    public const string EquipmentMove = "equipment.move";
-    public const string EquipmentLink = "equipment.link";
-    public const string EquipmentChangeStatus = "equipment.status";
-    public const string EquipmentRestore = "equipment.restore";
-    public const string EquipmentDelete = "equipment.delete";
-    public const string EquipmentVerify = "equipment.verify";
-    public const string LocationsManage = "locations.manage";
+    public const string DashboardView = "dashboard.view";
+    public const string ReportsView = "reports.view";
+    public const string DataImport = "data.import";
+    public const string DataExport = "data.export";
+    public const string BackupDownload = "backup.download";
+    public const string SettingsManage = "settings.manage";
     public const string UsersManage = "users.manage";
     public const string RolesManage = "roles.manage";
-    public const string ReportsView = "reports.view";
-    public const string DataExport = "data.export";
-    public const string DataImport = "data.import";
-    public const string BackupDownload = "backup.download";
 
     public static readonly IReadOnlyList<PermissionInfo> All =
     [
         new(StockView, "دیدن اقلام، موجودی و محل‌ها", "انبار"),
+        new(WithdrawalCreate, "ثبت برداشت", "انبار"),
+        new(StockReceive, "ورود جنس", "انبار"),
+        new(StockAdjust, "اصلاح شمارش، اسقاط و انبارگردانی", "انبار"),
         new(ProductsManage, "تعریف قلم، بارکد، محل و حداقل موجودی", "انبار"),
-        new(EquipmentView, "دیدن و جست‌وجوی تجهیزات", "تجهیزات"),
-        new(EquipmentManage, "ثبت و ویرایش دستگاه", "تجهیزات"),
-        new(EquipmentMove, "جابه‌جایی دستگاه", "تجهیزات"),
-        new(EquipmentLink, "اتصال و جدا کردن", "تجهیزات"),
-        new(EquipmentChangeStatus, "تغییر وضعیت و اسقاط", "تجهیزات"),
-        new(EquipmentRestore, "بازگرداندن از اسقاط", "تجهیزات"),
-        new(EquipmentDelete, "حذف دستگاه", "تجهیزات"),
-        new(EquipmentVerify, "تأیید حضور (انبارگردانی)", "تجهیزات"),
-        new(LocationsManage, "مدیریت ساختمان، طبقه و واحد", "مدیریت"),
+        new(WithdrawalReview, "تأیید و رد برداشت‌ها", "بررسی و گزارش"),
+        new(DashboardView, "دیدن داشبورد", "بررسی و گزارش"),
+        new(ReportsView, "دیدن گزارش‌ها و تاریخچه", "بررسی و گزارش"),
+        new(DataImport, "ورود از Excel", "داده"),
+        new(DataExport, "خروجی Excel", "داده"),
+        new(BackupDownload, "دانلود پشتیبان", "داده"),
+        new(SettingsManage, "تنظیمات (آستانه‌ی انقضا)", "مدیریت"),
         new(UsersManage, "مدیریت کاربران", "مدیریت"),
-        new(RolesManage, "مدیریت نقش‌ها و مجوزها", "مدیریت"),
-        new(ReportsView, "دیدن گزارش‌ها و آخرین تغییرات", "گزارش و داده"),
-        new(DataExport, "خروجی Excel", "گزارش و داده"),
-        new(DataImport, "ورود لیست از Excel", "گزارش و داده"),
-        new(BackupDownload, "دانلود بکاپ", "گزارش و داده")
+        new(RolesManage, "مدیریت نقش‌ها و مجوزها", "مدیریت")
     ];
 
     public static bool IsKnown(string key) => All.Any(p => p.Key == key);

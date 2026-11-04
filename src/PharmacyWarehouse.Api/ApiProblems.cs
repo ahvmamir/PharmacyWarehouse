@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using PharmacyWarehouse.Api.Data;
-using PharmacyWarehouse.Domain.Assets;
 using PharmacyWarehouse.Domain.Contracts;
 
 namespace PharmacyWarehouse.Api;

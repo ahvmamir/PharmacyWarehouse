@@ -28,38 +28,16 @@
         <nav class="sidebar-nav">
             @if (Session.CurrentUser is { MustChangePassword: false })
             {
-                <NavLink class="@(OnEquipment ? "sidebar-link active" : "sidebar-link")" href="" Match="NavLinkMatch.All">
-                    <AppIcon Name="list" /> تجهیزات
-                </NavLink>
                 @if (Session.Can(Permissions.StockView))
                 {
-                    <NavLink class="sidebar-link" href="locations">
+                    <NavLink class="sidebar-link" href="" Match="NavLinkMatch.All">
                         <AppIcon Name="building" /> محل‌ها
                     </NavLink>
                 }
-                @if (Session.Can(Permissions.EquipmentVerify))
-                {
-                    <NavLink class="sidebar-link" href="stocktake">
-                        <AppIcon Name="scan" /> انبارگردانی
-                    </NavLink>
-                }
-                @if (Session.Can(Permissions.ReportsView))
-                {
-                    <NavLink class="sidebar-link" href="reports">
-                        <AppIcon Name="report" /> گزارش‌ها
-                    </NavLink>
-                }
 
-                @if (Session.Can(Permissions.LocationsManage) || Session.Can(Permissions.UsersManage) || Session.Can(Permissions.RolesManage)
-                     || Session.Can(Permissions.DataImport) || Session.Can(Permissions.DataExport) || Session.Can(Permissions.BackupDownload))
+                @if (Session.Can(Permissions.UsersManage) || Session.Can(Permissions.RolesManage) || Session.Can(Permissions.BackupDownload))
                 {
                     <div class="nav-section">تنظیمات</div>
-                }
-                @if (Session.Can(Permissions.LocationsManage))
-                {
-                    <NavLink class="sidebar-link" href="admin/locations">
-                        <AppIcon Name="building" /> ساختمان و واحد
-                    </NavLink>
                 }
                 @if (Session.Can(Permissions.UsersManage))
                 {
@@ -73,10 +51,10 @@
                         <AppIcon Name="key" /> نقش‌ها و مجوزها
                     </NavLink>
                 }
-                @if (Session.Can(Permissions.DataImport) || Session.Can(Permissions.DataExport) || Session.Can(Permissions.BackupDownload))
+                @if (Session.Can(Permissions.BackupDownload))
                 {
                     <NavLink class="sidebar-link" href="admin/data">
-                        <AppIcon Name="box" /> بکاپ و Excel
+                        <AppIcon Name="box" /> پشتیبان
                     </NavLink>
                 }
             }
@@ -88,7 +66,7 @@
                 <div class="sidebar-user-row">
                     <div class="sidebar-user-name">
                         <bdi>@user.DisplayName</bdi>
-                        <small>@RoleText.Label(user.Roles.FirstOrDefault())</small>
+                        <small>@Roles.Label(user.Roles.FirstOrDefault())</small>
                     </div>
                     <ThemeToggle />
                     @AlertBell
@@ -136,7 +114,7 @@
             _organization = info.Organization;
         }
 
-        if (Session.CurrentUser is { MustChangePassword: false } && Session.Can(Permissions.EquipmentView))
+        if (Session.CurrentUser is { MustChangePassword: false } && Session.Can(Permissions.StockView))
         {
             var alerts = (await AlertsApi.ListAsync()).Value ?? [];
             _alertCount = alerts.Count;
@@ -153,7 +131,7 @@
     // زنگوله‌ی گرد اعلان‌ها کنار نام کاربر؛ عدد روی گوشه‌اش، نارنجی اگر هشدار هست.
     private RenderFragment AlertBell => __builder =>
     {
-        if (Session.CurrentUser is not { MustChangePassword: false } || !Session.Can(Permissions.EquipmentView)) return;
+        if (Session.CurrentUser is not { MustChangePassword: false } || !Session.Can(Permissions.StockView)) return;
 
         var label = _alertCount > 0 ? $"اعلان‌ها، {_alertCount} مورد" : "اعلان‌ها";
         <a class="@(OnAlerts ? "alert-bell active" : "alert-bell")" href="alerts" title="اعلان‌ها" aria-label="@label">
@@ -170,7 +148,6 @@
     private void Reload() => Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
 
     // هر صفحه‌ی زیر تجهیزات، همین منو را روشن نگه می‌دارد تا کاربر بداند کجاست.
-    private bool OnEquipment => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("equipment", StringComparison.OrdinalIgnoreCase);
     private bool _loggingOut;
 
     // بعد از بارگذاری مجدد، کاربر کمی دیرتر از ساخت این منو معلوم می‌شود.

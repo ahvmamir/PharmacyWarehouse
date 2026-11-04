@@ -35,7 +35,7 @@ else
                 @foreach (var role in _roles)
                 {
                     <tr @key="role.Id">
-                        <td style="font-weight:600;">@RoleText.Label(role.Name)</td>
+                        <td style="font-weight:600;">@Roles.Label(role.Name)</td>
                         <td>@JalaliDate.ToPersianDigits(role.UserCount.ToString())</td>
                         <td>@(role.IsLocked ? "همه‌ی مجوزها" : $"{JalaliDate.ToPersianDigits(role.Permissions.Length.ToString())} از {JalaliDate.ToPersianDigits(Permissions.All.Count.ToString())}")</td>
                         <td style="text-align:left;white-space:nowrap;">
@@ -93,7 +93,7 @@ else
 
 @if (_deleting is { } target)
 {
-    <DeleteDialog Title="حذف نقش" ItemName="@RoleText.Label(target.Name)"
+    <DeleteDialog Title="حذف نقش" ItemName="@Roles.Label(target.Name)"
                   Load="() => UsersApi.RoleDependenciesAsync(target.Id)"
                   Delete="() => UsersApi.DeleteRoleAsync(target.Id)"
                   OnCancel="() => _deleting = null"
@@ -132,7 +132,7 @@ else
     {
         _editId = null;
         _name = "";
-        _selected = [Permissions.EquipmentView];
+        _selected = [Permissions.StockView];
         _dialogError = null;
         _editing = true;
     }

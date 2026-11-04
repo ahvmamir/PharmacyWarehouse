@@ -5,14 +5,11 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting.WindowsServices;
 using PharmacyWarehouse.Api.Alerts;
-using PharmacyWarehouse.Api.Assets;
 using PharmacyWarehouse.Api.Auth;
 using PharmacyWarehouse.Api.Data;
 using PharmacyWarehouse.Api.DataTools;
-using PharmacyWarehouse.Api.Locations;
 using PharmacyWarehouse.Api.Storage;
 using PharmacyWarehouse.Api.Operations;
-using PharmacyWarehouse.Api.Reports;
 using PharmacyWarehouse.Api.Users;
 using PharmacyWarehouse.Domain.Auth;
 using PharmacyWarehouse.Domain.Contracts;
@@ -197,12 +194,6 @@ if (args.Length > 0 && args[0] == "backup")
     return;
 }
 
-if (args.Length > 0 && args[0] == "seed-demo")
-{
-    Environment.ExitCode = await OperationCommands.SeedDemoAsync(app);
-    return;
-}
-
 // ترتیب مهم است: no-store ← CORS ← فایل‌های Client ← هدر CSRF ← احراز هویت ← مجوز ← endpointها
 // no-store اول است تا پاسخ‌های ردشده در مراحل بعد هم آن را داشته باشند.
 app.UseMiddleware<NoStoreMiddleware>();
@@ -234,13 +225,10 @@ app.MapGet(ApiRoutes.AppInfo, () => Results.Ok(new AppInfoResponse
 }));
 app.MapAuthEndpoints();
 app.MapAccountEndpoints();
-app.MapLocationEndpoints();
 app.MapStorageLocationEndpoints();
-app.MapEquipmentEndpoints();
 app.MapUserEndpoints();
 app.MapRoleEndpoints();
-app.MapReportEndpoints();
-app.MapDataEndpoints();
+app.MapBackupEndpoints();
 app.MapAlertEndpoints();
 
 // مسیر ناشناخته‌ی زیر /api باید ۴۰۴ بماند، نه صفحه‌ی Client؛ بقیه‌ی مسیرها را Router کلاینت می‌فهمد.
