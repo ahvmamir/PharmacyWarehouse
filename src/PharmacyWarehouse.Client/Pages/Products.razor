@@ -1,0 +1,331 @@
+@page "/"
+@page "/products"
+@attribute [Authorize]
+@using PharmacyWarehouse.Domain.Stock
+@inject ProductsClient ProductsApi
+@inject LocationsClient LocationsApi
+@inject ToastService Toasts
+@inject NavigationManager Navigation
+@inject ApiAuthenticationStateProvider Session
+
+<PageTitle>اقلام | انبار داروخانه</PageTitle>
+
+<RequirePermission Permission="@Permissions.StockView">
+<div class="page-head">
+    <div>
+        <h1>اقلام</h1>
+        <p>بارکد را اسکن کنید یا با نام قلم جست‌وجو کنید. موجودی به «جعبه» است.</p>
+    </div>
+    @if (CanManage)
+    {
+        <a class="btn btn-primary" href="products/new"><AppIcon Name="plus" Size="15" /> قلم جدید</a>
+    }
+</div>
+
+<div class="search-row">
+    <div style="flex:1;min-width:240px;">
+        <ScanInput @ref="_scan" OnScan="OnScanAsync" Placeholder="اسکن بارکد (یا نام قلم و Enter)" />
+    </div>
+</div>
+
+<form class="filters" @onsubmit="SearchAsync" @onsubmit:preventDefault="true">
+    <div>
+        <label for="product-q">جست‌وجو</label>
+        <input id="product-q" class="form-control" @bind="_query" @bind:event="oninput" placeholder="نام، برند، بسته یا بارکد" />
+    </div>
+    <div>
+        <label for="product-location">محل</label>
+        <select id="product-location" class="form-select" @bind="_locationText" @bind:after="LoadAsync">
+            <option value="">— همه‌ی محل‌ها —</option>
+            @foreach (var location in _locations)
+            {
+                <option value="@location.Id">@location.Path</option>
+            }
+        </select>
+    </div>
+    <div>
+        <label for="product-filter">وضعیت موجودی</label>
+        <select id="product-filter" class="form-select" @bind="_filter" @bind:after="LoadAsync">
+            <option value="">همه</option>
+            <option value="zero">موجودی صفر</option>
+            <option value="belowMin">کمتر از حداقل</option>
+            <option value="expiring">نزدیک انقضا</option>
+        </select>
+    </div>
+    <div class="filters-actions">
+        <button type="submit" class="btn btn-primary">جست‌وجو</button>
+        @if (CanManage)
+        {
+            <label class="d-flex align-items-center gap-2 mb-0">
+                <input type="checkbox" class="form-check-input" @bind="_includeInactive" @bind:after="LoadAsync" /> غیرفعال‌ها هم
+            </label>
+        }
+    </div>
+</form>
+
+@if (_error is not null)
+{
+    <div class="form-alert" role="alert">
+        <AppIcon Name="warning" /> <span>@_error</span>
+        <button type="button" class="btn btn-sm btn-quiet" @onclick="LoadAsync">تازه‌سازی</button>
+    </div>
+}
+
+@if (!_loaded)
+{
+    <div class="loading-line">در حال بارگذاری…</div>
+}
+else if (_items.Count == 0)
+{
+    <div class="empty-state">
+        <AppIcon Name="box" Size="36" />
+        <p>@(HasCriteria ? "قلمی با این شرایط پیدا نشد." : "هنوز قلمی تعریف نشده.")</p>
+    </div>
+}
+else
+{
+    <section class="table-card">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>نام</th>
+                    <th>برند</th>
+                    <th>بسته</th>
+                    <th>محل</th>
+                    <th>موجودی (جعبه)</th>
+                    <th>نزدیک‌ترین انقضا</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in _items)
+                {
+                    <tr @key="item.Id">
+                        <td>
+                            <a href="products/@item.Id">@item.Name</a>
+                            @if (!item.IsActive)
+                            {
+                                <span class="status-badge status-retired">غیرفعال</span>
+                            }
+                        </td>
+                        <td>@item.Brand</td>
+                        <td>@item.PackDescription</td>
+                        <td><bdi>@item.LocationPath</bdi></td>
+                        <td>
+                            @JalaliDate.ToPersianDigits(item.OnHand.ToString())
+                            @if (item.MinStock is { } min && item.UsableOnHand < min)
+                            {
+                                <span class="status-badge status-pending" title="موجودی منقضی‌نشده کمتر از حداقل (@JalaliDate.ToPersianDigits(min.ToString())) است">کم</span>
+                            }
+                            @if (item.OnHand > item.UsableOnHand)
+                            {
+                                <span class="status-badge status-expired" title="بخشی از موجودی منقضی شده است">منقضی دارد</span>
+                            }
+                        </td>
+                        <td>
+                            @if (item.NearestExpiry is { } expiry)
+                            {
+                                <span>@ExpiryText(expiry)</span>
+                                @if (expiry < Today())
+                                {
+                                    <span class="status-badge status-expired">منقضی</span>
+                                }
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+}
+
+@if (_unknownCode is { } code)
+{
+    <ModalDialog Title="این بارکد مال کدام قلم است؟" OnClose="CloseUnknown">
+        <p>بارکد <bdi class="mono">@code</bdi> هنوز به قلمی وصل نیست. قلم را پیدا کنید و ثبت کنید.</p>
+        <div class="form-field">
+            <label for="unknown-q">جست‌وجوی قلم</label>
+            <input id="unknown-q" class="form-control" @bind="_pickQuery" @bind:event="oninput" @onkeydown="OnPickKeyDown" placeholder="نام قلم" />
+        </div>
+        <div class="mt-2">
+            <button type="button" class="btn btn-sm btn-quiet" @onclick="SearchPickAsync">جست‌وجو</button>
+        </div>
+
+        @if (_pickResults is not null)
+        {
+            @if (_pickResults.Count == 0)
+            {
+                <div class="form-hint mt-2">قلمی پیدا نشد.</div>
+            }
+            else
+            {
+                <div class="mt-2" style="max-height:260px;overflow:auto;">
+                    @foreach (var item in _pickResults)
+                    {
+                        <label class="linked-item" @key="item.Id">
+                            <input type="radio" name="pick-product" class="form-check-input" checked="@(_pickId == item.Id)" @onchange="() => _pickId = item.Id" />
+                            <span style="flex:1;">
+                                <strong>@item.Name</strong>
+                                <small class="cell-sub">@string.Join(" · ", new[] { item.Brand, item.PackDescription }.Where(s => !string.IsNullOrEmpty(s)))</small>
+                            </span>
+                        </label>
+                    }
+                </div>
+            }
+        }
+
+        @if (_dialogError is not null)
+        {
+            <div class="form-alert mt-3 mb-0" role="alert">@_dialogError</div>
+        }
+
+        <div class="modal-actions">
+            <button type="button" class="btn btn-primary" disabled="@(_busy || _pickId is null)" @onclick="RegisterBarcodeAsync">@(_busy ? "در حال ثبت…" : "ثبت بارکد")</button>
+            <button type="button" class="btn btn-quiet" @onclick="CloseUnknown">انصراف</button>
+        </div>
+    </ModalDialog>
+}
+</RequirePermission>
+
+@code {
+    private List<ProductListItem> _items = [];
+    private List<StorageLocationItem> _locations = [];
+    private bool _loaded;
+    private string? _error;
+
+    private string _query = "";
+    private string _locationText = "";
+    private string _filter = "";
+    private bool _includeInactive;
+
+    private ScanInput? _scan;
+
+    // جریان بارکد ناشناخته
+    private string? _unknownCode;
+    private string _pickQuery = "";
+    private List<ProductListItem>? _pickResults;
+    private Guid? _pickId;
+    private string? _dialogError;
+    private bool _busy;
+
+    private bool CanManage => Session.Can(Permissions.ProductsManage);
+
+    private bool HasCriteria => !string.IsNullOrWhiteSpace(_query) || _locationText != "" || _filter != "";
+
+    private static DateOnly Today() => DateOnly.FromDateTime(DateTime.UtcNow + LocalDay.OffsetFromUtc);
+
+    // فهرست فقط تاریخ دقیق دارد، نه تقویم ورودی؛ پس میلادی روزانه نشان داده می‌شود.
+    private static string ExpiryText(DateOnly date) =>
+        ExpiryDate.Display(new ExpiryValue(date, ExpiryPrecision.Day, CalendarKind.Gregorian));
+
+    protected override async Task OnInitializedAsync()
+    {
+        var locations = await LocationsApi.ListAsync();
+        if (locations.IsSuccess) _locations = locations.Value!;
+        await LoadAsync();
+    }
+
+    private Task SearchAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        var result = await ProductsApi.ListAsync(
+            _query, Guid.TryParse(_locationText, out var location) ? location : null,
+            _filter, CanManage && _includeInactive);
+        if (!result.IsSuccess)
+        {
+            _error = result.ErrorMessage;
+            return;
+        }
+
+        _items = result.Value!;
+        _loaded = true;
+    }
+
+    // اسم‌گونه: حرف فارسی یا فاصله دارد. بارکد واقعی هیچ‌کدام را ندارد.
+    private static bool LooksLikeName(string text) =>
+        text.Any(c => c == ' ' || (c >= '؀' && c <= 'ۿ' && char.IsLetter(c)));
+
+    private async Task OnScanAsync(string text)
+    {
+        var result = await ProductsApi.ByCodeAsync(text);
+        if (result.IsSuccess)
+        {
+            Navigation.NavigateTo($"products/{result.Value!.Summary.Id}");
+            return;
+        }
+
+        if (result.Outcome != ApiOutcome.NotFound)
+        {
+            _error = result.ErrorMessage;
+            return;
+        }
+
+        if (LooksLikeName(text))
+        {
+            _query = text;
+            await LoadAsync();
+            return;
+        }
+
+        if (CanManage)
+        {
+            _unknownCode = text;
+            _pickQuery = "";
+            _pickResults = null;
+            _pickId = null;
+            _dialogError = null;
+        }
+        else
+        {
+            Toasts.Show("بارکد ناشناخته؛ با نام جست‌وجو کنید و به انباردار بگویید", isWarning: true);
+        }
+    }
+
+    private async Task OnPickKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await SearchPickAsync();
+    }
+
+    private async Task SearchPickAsync()
+    {
+        _dialogError = null;
+        var result = await ProductsApi.ListAsync(_pickQuery);
+        if (!result.IsSuccess)
+        {
+            _dialogError = result.ErrorMessage;
+            return;
+        }
+
+        _pickResults = result.Value!;
+        if (_pickId is { } id && _pickResults.All(p => p.Id != id)) _pickId = null;
+    }
+
+    private async Task RegisterBarcodeAsync()
+    {
+        if (_unknownCode is not { } code || _pickId is not { } id) return;
+
+        _busy = true;
+        _dialogError = null;
+        var result = await ProductsApi.AddBarcodeAsync(id, code);
+        _busy = false;
+
+        if (!result.IsSuccess)
+        {
+            _dialogError = result.ErrorMessage;
+            return;
+        }
+
+        Toasts.Show($"بارکد ثبت شد: {result.Value!.Summary.Name}");
+        CloseUnknown();
+        Navigation.NavigateTo($"products/{id}");
+    }
+
+    private async Task CloseUnknownAsync()
+    {
+        _unknownCode = null;
+        if (_scan is not null) await _scan.FocusAsync();
+    }
+
+    private void CloseUnknown() => _ = CloseUnknownAsync();
+}

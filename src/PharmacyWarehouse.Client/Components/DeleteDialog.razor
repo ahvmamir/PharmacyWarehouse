@@ -16,7 +16,14 @@
             {
                 <li>
                     <span class="muted">@item.Kind:</span>
-                    <bdi>@item.Label</bdi>
+                    @if (item.SubjectId is { } subjectId && item.Kind == "قلم")
+                    {
+                        <a href="products/@subjectId"><bdi>@item.Label</bdi></a>
+                    }
+                    else
+                    {
+                        <bdi>@item.Label</bdi>
+                    }
                 </li>
             }
         </ul>

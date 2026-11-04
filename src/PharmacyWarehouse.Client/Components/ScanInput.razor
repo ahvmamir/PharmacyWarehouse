@@ -1,0 +1,42 @@
+@* فیلد اسکن برای بارکدخوان صفحه‌کلیدی: کد را تایپ می‌کند و Enter می‌زند. متن خام می‌رود؛ ScanKey را سرور اعمال می‌کند. *@
+<input @ref="_input" class="form-control scan-input" type="text" dir="ltr" autocomplete="off" inputmode="text"
+       placeholder="@Placeholder" aria-label="@Placeholder"
+       @bind="_text" @bind:event="oninput" @onkeydown="OnKeyDown" />
+
+@code {
+    [Parameter] public EventCallback<string> OnScan { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "بارکد را اسکن کنید";
+    [Parameter] public bool AutoFocus { get; set; } = true;
+
+    private ElementReference _input;
+    private string _text = "";
+    private bool _busy;
+
+    public ValueTask FocusAsync() => _input.FocusAsync();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && AutoFocus) await _input.FocusAsync();
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter" || _busy) return;
+
+        var value = _text.Trim();
+        _text = "";
+        if (value.Length == 0) return;
+
+        _busy = true;
+        try
+        {
+            await OnScan.InvokeAsync(value);
+        }
+        finally
+        {
+            _busy = false;
+            // بعد از هر اسکن، فوکوس روی همین فیلد می‌ماند.
+            await _input.FocusAsync();
+        }
+    }
+}
