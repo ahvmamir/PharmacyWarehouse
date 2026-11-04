@@ -38,7 +38,7 @@
 
 ## ۳. معماری
 
-- [تصمیم] همان ساختار Emu: `PharmacyWarehouse.Api` (ASP.NET Core Minimal API، EF Core، SQLite، Identity)، `PharmacyWarehouse.Client` (Blazor WebAssembly)، `PharmacyWarehouse.Domain` (قواعد و قراردادهای مشترک، بدون وابستگی خارجی)، `tests/PharmacyWarehouse.Api.Tests`، و `tests/PharmacyWarehouse.Domain.Tests` (تازه؛ Emu این پروژه را ندارد).
+- [تصمیم] همان ساختار Emu: `PharmacyWarehouse.Api` (ASP.NET Core Minimal API، EF Core، SQLite، Identity)، `PharmacyWarehouse.Client` (Blazor WebAssembly)، `PharmacyWarehouse.Domain` (قواعد و قراردادهای مشترک، بدون وابستگی خارجی)، `tests/PharmacyWarehouse.Api.Tests`، و `tests/PharmacyWarehouse.Domain.Tests` (از `tests/Emu.Domain.Tests`).
 - [تصمیم] نام پروژه `PharmacyWarehouse` (نه `Stock`: «stock» مفهومی داخل دامنه است و با نام namespace تداخل می‌کند).
 - نسخه‌ها از Emu: `net10.0`، بسته‌های `Microsoft.*` نسخه‌ی `10.0.14`. در برش ۰ از `.csproj` Emu خوانده و هم‌نسخه می‌شوند.
 - تولید: Api فایل‌های Client را هم سرو می‌کند (یک آدرس، بدون CORS). توسعه: دو پورت.
@@ -364,8 +364,8 @@
 
 | برش | محتوا | migration |
 |---|---|---|
-| ۰ | کپی Emu، تغییر نام، حذف دامنه‌ی تجهیزات، `CLAUDE.md` و `docs/brief.md` | migration اولیه (Identity + Audit) |
-| ۱ | محل‌های درختی، قلم، بارکد قلم، بچ، ورود جنس، فیلد اسکن، `ExpiryDate`، `ScanKey` | بله |
+| ۰ | کپی Emu، تغییر نام، حذف دامنه‌ی تجهیزات، **محل‌های درختی** (جایگزین موجودیت تجهیزات در تست‌های تاریخچه، حذف و هم‌زمانی)، `CLAUDE.md` و `docs/brief.md` | migration اولیه (Identity + Audit + محل) |
+| ۱ | قلم، بارکد قلم، بچ، ورود جنس، فیلد اسکن، `ExpiryDate`، `ScanKey` | بله |
 | ۲ | برداشت، `BatchAllocator`، صفحه‌ی گوشی، برداشت‌های من | بله |
 | ۳ | بررسی برداشت | شاید |
 | ۴ | ورود Excel (چند شیت، قواعد ۱۲.۲)، قالب، خروجی | خیر |
