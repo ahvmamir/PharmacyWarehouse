@@ -178,6 +178,15 @@ public sealed class TestApp : IAsyncDisposable
         return await db.AuditEntries.CountAsync(a => a.EntityId == entityId && a.EntityType == entityType);
     }
 
+    // Test only: the history rows of one record, oldest first.
+    public async Task<List<AuditEntry>> AuditRowsAsync(Guid entityId)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<WarehouseDbContext>();
+        var rows = await db.AuditEntries.AsNoTracking().Where(a => a.EntityId == entityId).ToListAsync();
+        return rows.OrderBy(a => a.AtUtc).ToList();
+    }
+
     public static Task<HttpResponseMessage> LoginAsync(HttpClient client, string username, string password)
         => client.PostAsJsonAsync(ApiRoutes.Login, new LoginRequest { Username = username, Password = password });
 

@@ -13,7 +13,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     // مشتق‌اند یا کلید؛ تغییرشان خبر تازه‌ای نیست.
     private static readonly HashSet<string> Ignored =
     [
-        "Id", "Version", "SearchText", "AssetNumberKey", "ComputerNameKey", "NameKey", "CreatedAtUtc", "UpdatedAtUtc", "EquipmentId", "Position"
+        "Id", "Version", "SearchText", "AssetNumberKey", "ComputerNameKey", "NameKey", "ParentKey", "CreatedAtUtc", "UpdatedAtUtc", "EquipmentId", "Position"
     ];
 
     private readonly AuditContext _audit;
@@ -105,8 +105,8 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
                         rows.Add(Row(
                             AuditActions.Updated,
                             name,
-                            await DescribeAsync(db, name, property.OriginalValue, ct),
-                            await DescribeAsync(db, name, property.CurrentValue, ct)));
+                            await DescribeAsync(db, entry.Entity, name, property.OriginalValue, ct),
+                            await DescribeAsync(db, entry.Entity, name, property.CurrentValue, ct)));
                     }
 
                     // endpoint مقدار OriginalValue را از Version دیده‌شده‌ی Client پر کرده است.
@@ -152,20 +152,24 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     };
 
     // شناسه‌ها به شکل id|name: تغییر نام بعدی یک واحد، تاریخچه را گمراه نمی‌کند.
-    private static async Task<string?> DescribeAsync(WarehouseDbContext db, string field, object? value, CancellationToken ct)
+    // ParentId در چند موجودیت هست؛ معنی‌اش به نوع موجودیت بستگی دارد.
+    private static async Task<string?> DescribeAsync(WarehouseDbContext db, IAudited entity, string field, object? value, CancellationToken ct)
     {
         if (value is not Guid id) return Format(value);
 
-        var name = field switch
+        var name = (entity, field) switch
         {
-            "OwnerUnitId" or "LocationUnitId" =>
+            (StorageLocation, "ParentId") =>
+                db.ChangeTracker.Entries<StorageLocation>().FirstOrDefault(e => e.Entity.Id == id)?.Entity.Name
+                ?? await db.StorageLocations.AsNoTracking().Where(l => l.Id == id).Select(l => l.Name).FirstOrDefaultAsync(ct),
+            (_, "OwnerUnitId" or "LocationUnitId") =>
                 await db.Units.AsNoTracking().Where(u => u.Id == id).Select(u => u.Name).FirstOrDefaultAsync(ct),
-            "BuildingId" =>
+            (_, "BuildingId") =>
                 await db.Buildings.AsNoTracking().Where(b => b.Id == id).Select(b => b.Name).FirstOrDefaultAsync(ct),
-            "FloorId" =>
+            (_, "FloorId") =>
                 await db.Floors.AsNoTracking().Where(f => f.Id == id).Select(f => f.Name).FirstOrDefaultAsync(ct),
             // مرکزی که همین حالا ثبت می‌شود هنوز در دیتابیس نیست؛ پس اول در حافظه می‌گردیم.
-            "ParentId" =>
+            (Equipment, "ParentId") =>
                 db.ChangeTracker.Entries<Equipment>().FirstOrDefault(e => e.Entity.Id == id)?.Entity.AssetNumber
                 ?? await db.Equipment.AsNoTracking()
                     .Where(e => e.Id == id)
