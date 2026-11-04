@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Run on the Emu VM: create the nightly backup task, run it once and check the result.
+  Run on the pharmacy server PC: create the nightly backup task, run it once and check the result.
 
 .DESCRIPTION
   Workgroup (no domain): the task runs as a local user that has the SAME name and password
@@ -10,30 +10,30 @@
   Steps:
     1. create (or update) the local user, password never expires, member of Administrators
        (the database folder is readable only by Administrators, SYSTEM and the service)
-    2. register "Emu nightly backup" (daily) as that user; output goes to DataDir\backup-last.log
+    2. register "PharmacyWarehouse nightly backup" (daily) as that user; output goes to DataDir\backup-last.log
     3. run it now, wait, and report success (new backup time) or the log on failure
 
   Re-running is safe: the task is replaced, the user's password is updated.
 
 .EXAMPLE
-  .\setup-backup.ps1 -BackupDir \\BACKUP-PC\EmuBackups
+  .\setup-backup.ps1 -BackupDir \\BACKUP-PC\PharmacyWarehouseBackups
 #>
 #Requires -RunAsAdministrator
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
     [string]$BackupDir,
-    [string]$User = 'emubackup',
+    [string]$User = 'pwbackup',
     [string]$Time = '02:30',
-    [string]$InstallDir = 'C:\Emu\app'
+    [string]$InstallDir = 'C:\PharmacyWarehouse\app'
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$TaskName = 'Emu nightly backup'
+$TaskName = 'PharmacyWarehouse nightly backup'
 $InstallDir = [IO.Path]::GetFullPath($InstallDir)
-$Exe = Join-Path $InstallDir 'Emu.Api.exe'
+$Exe = Join-Path $InstallDir 'PharmacyWarehouse.Api.exe'
 $settingsPath = Join-Path $InstallDir 'appsettings.Production.json'
 
 function Step([string]$text) { Write-Host "==> $text" -ForegroundColor Cyan }
@@ -43,10 +43,10 @@ function Plain([SecureString]$secure) {
 }
 
 # ---------- checks ----------
-if (-not (Test-Path $Exe)) { throw "$Exe not found. Install Emu first (install.ps1) or pass -InstallDir." }
+if (-not (Test-Path $Exe)) { throw "$Exe not found. Install PharmacyWarehouse first (install.ps1) or pass -InstallDir." }
 if (-not (Test-Path $settingsPath)) { throw "$settingsPath not found." }
 if (-not $BackupDir.StartsWith('\\')) {
-    Write-Warning "$BackupDir is not a network path. A backup on this VM is lost together with the VM; prefer a share on another computer."
+    Write-Warning "$BackupDir is not a network path. A backup on this PC is lost together with the PC; prefer a share on another computer."
 }
 
 $settings = Get-Content -Raw -Path $settingsPath | ConvertFrom-Json
@@ -72,7 +72,7 @@ if (Get-LocalUser -Name $User -ErrorAction SilentlyContinue) {
 }
 else {
     New-LocalUser -Name $User -Password $password -PasswordNeverExpires -AccountNeverExpires `
-        -Description 'Emu nightly backup' | Out-Null
+        -Description 'PharmacyWarehouse nightly backup' | Out-Null
 }
 # S-1-5-32-544 = Administrators (name differs on non-English Windows). Add directly instead of listing
 # members first: Get-LocalGroupMember fails on groups that contain a deleted account.
@@ -85,7 +85,7 @@ Step "Scheduling '$TaskName' daily at $Time to $BackupDir"
 $command = "/c `"`"$Exe`" backup `"$BackupDir`" > `"$log`" 2>&1`""
 $action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument $command -WorkingDirectory $InstallDir
 $trigger = New-ScheduledTaskTrigger -Daily -At $Time
-# Missed runs (VM off at night) run at the next start; a run never takes more than an hour.
+# Missed runs (PC off at night) run at the next start; a run never takes more than an hour.
 $taskSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 1)
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $taskSettings -RunLevel Highest `
     -User "$env:COMPUTERNAME\$User" -Password $plain -Force | Out-Null
@@ -107,8 +107,8 @@ $after = if (Test-Path $marker) { (Get-Item $marker).LastWriteTimeUtc } else { [
 
 Write-Host ''
 if ($result -eq 0 -and $after -gt $before) {
-    Write-Host "Backup works. A new emu-*.db is in $BackupDir; the task runs daily at $Time." -ForegroundColor Green
-    Write-Host 'The "no backup" alert in Emu disappears on the next page change.'
+    Write-Host "Backup works. A new pharmacywarehouse-*.db is in $BackupDir; the task runs daily at $Time." -ForegroundColor Green
+    Write-Host 'The "no backup" alert in PharmacyWarehouse disappears on the next page change.'
     Write-Host 'Next: test a restore once (docs\deploy.md, restore section).'
 }
 else {

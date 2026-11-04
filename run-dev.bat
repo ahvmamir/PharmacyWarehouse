@@ -1,4 +1,4 @@
 @echo off
 cd /d "%~dp0"
-start "Emu Api" cmd /k dotnet run --project src\Emu.Api
-start "Emu Client" cmd /k dotnet run --project src\Emu.Client
+start "PharmacyWarehouse Api" cmd /k dotnet run --project src\PharmacyWarehouse.Api
+start "PharmacyWarehouse Client" cmd /k dotnet run --project src\PharmacyWarehouse.Client

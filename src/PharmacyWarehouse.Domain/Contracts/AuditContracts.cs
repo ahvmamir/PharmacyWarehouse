@@ -15,7 +15,7 @@ public sealed class AuditEntryItem
     public string? NewValue { get; init; }
     public string? Reason { get; init; }
 
-    // ردیفی که مال دستگاه دیگری است ولی به این دستگاه مربوط است (وصل یا جدا شدن آن)، مثل «مانیتور TEST-2».
+    // ردیفی که مال موجودیت دیگری است ولی به این موجودیت مربوط است (مثلاً زیرمحل یا نمونه‌ی وابسته).
     public string? Subject { get; init; }
 
     // متن خوانای مقدار، وقتی خود مقدار شناسه است (مثلاً «متصل به» ← «کیس TEST-1»).

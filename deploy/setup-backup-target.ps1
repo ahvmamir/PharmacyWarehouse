@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-  Run on the BACKUP computer (not the Emu VM): create the backup user, folder and share.
+  Run on the BACKUP computer (not the pharmacy server PC): create the backup user, folder and share.
 
 .DESCRIPTION
-  Workgroup (no domain): the Emu VM reaches this share with a local account that has the
-  SAME name and password on both computers. Run setup-backup.ps1 on the VM afterwards with
+  Workgroup (no domain): the pharmacy server PC reaches this share with a local account that has the
+  SAME name and password on both computers. Run setup-backup.ps1 on the server PC afterwards with
   the same user name and password.
 
   Steps:
@@ -13,14 +13,14 @@
     3. share it with change access for that user only
 
 .EXAMPLE
-  .\setup-backup-target.ps1 -Folder D:\EmuBackups
+  .\setup-backup-target.ps1 -Folder D:\PharmacyWarehouseBackups
 #>
 #Requires -RunAsAdministrator
 [CmdletBinding()]
 param(
-    [string]$Folder = 'C:\EmuBackups',
-    [string]$ShareName = 'EmuBackups',
-    [string]$User = 'emubackup'
+    [string]$Folder = 'C:\PharmacyWarehouseBackups',
+    [string]$ShareName = 'PharmacyWarehouseBackups',
+    [string]$User = 'pwbackup'
 )
 
 Set-StrictMode -Version Latest
@@ -30,7 +30,7 @@ function Step([string]$text) { Write-Host "==> $text" -ForegroundColor Cyan }
 
 function Read-NewPassword([string]$user) {
     while ($true) {
-        $first = Read-Host -AsSecureString "Password for '$user' (use the same one on the Emu VM)"
+        $first = Read-Host -AsSecureString "Password for '$user' (use the same one on the pharmacy server PC)"
         $second = Read-Host -AsSecureString "Repeat the password"
         $a = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($first))
         $b = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($second))
@@ -49,7 +49,7 @@ if (Get-LocalUser -Name $User -ErrorAction SilentlyContinue) {
 }
 else {
     New-LocalUser -Name $User -Password $password -PasswordNeverExpires -AccountNeverExpires `
-        -Description 'Emu nightly backup (writes to the backup share only)' | Out-Null
+        -Description 'PharmacyWarehouse nightly backup (writes to the backup share only)' | Out-Null
 }
 
 Step "Folder $Folder"
@@ -70,13 +70,13 @@ Grant-SmbShareAccess -Name $ShareName -AccountName "$env:COMPUTERNAME\$User" -Ac
 # File sharing must be allowed through this computer's firewall.
 $sharing = Get-NetFirewallRule -Group '@FirewallAPI.dll,-28502' -ErrorAction SilentlyContinue | Where-Object { $_.Direction -eq 'Inbound' }
 if ($sharing -and -not ($sharing | Where-Object { $_.Enabled -eq 'True' })) {
-    Write-Warning 'File and Printer Sharing is blocked by the firewall here. Enable it for the network the Emu VM is on.'
+    Write-Warning 'File and Printer Sharing is blocked by the firewall here. Enable it for the network the pharmacy server PC is on.'
 }
 
 $address = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } | Select-Object -ExpandProperty IPAddress)
 Write-Host ''
-Write-Host 'Done. On the Emu VM run (same user and password):' -ForegroundColor Green
+Write-Host 'Done. On the pharmacy server PC run (same user and password):' -ForegroundColor Green
 Write-Host "  .\setup-backup.ps1 -BackupDir \\$env:COMPUTERNAME\$ShareName"
 if ($address.Count -gt 0) {
-    Write-Host "  If the name does not resolve from the VM, use the IP instead: \\$($address[0])\$ShareName"
+    Write-Host "  If the name does not resolve from the server PC, use the IP instead: \\$($address[0])\$ShareName"
 }

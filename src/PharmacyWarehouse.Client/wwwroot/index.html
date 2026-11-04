@@ -4,14 +4,14 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>سامانه تجهیزات IT</title>
+    <title>انبار داروخانه</title>
     <base href="/" />
     <script>
         // پوسته پیش از بارگذاری CSS تعیین می‌شود تا صفحه‌ی تیره یک لحظه سفید نشود.
         // حالت‌ها: auto (مثل ویندوز)، light، dark؛ انتخاب در همین مرورگر می‌ماند.
-        window.emuTheme = (function () {
+        window.pwTheme = (function () {
             var media = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
-            function read() { try { return localStorage.getItem("emu-theme") || "auto"; } catch (e) { return "auto"; } }
+            function read() { try { return localStorage.getItem("pw-theme") || "auto"; } catch (e) { return "auto"; } }
             function apply(mode) {
                 var dark = mode === "dark" || (mode !== "light" && media && media.matches);
                 var root = document.documentElement;
@@ -22,7 +22,7 @@
             if (media && media.addEventListener) media.addEventListener("change", function () { if (read() === "auto") apply("auto"); });
             return {
                 get: read,
-                set: function (mode) { try { localStorage.setItem("emu-theme", mode); } catch (e) { } apply(mode); }
+                set: function (mode) { try { localStorage.setItem("pw-theme", mode); } catch (e) { } apply(mode); }
             };
         })();
     </script>
@@ -46,7 +46,7 @@
         <span class="dismiss">🗙</span>
     </div>
     <script>
-        window.emuSaveFile = (name, type, base64) => {
+        window.pwSaveFile = (name, type, base64) => {
             const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
             const url = URL.createObjectURL(new Blob([bytes], { type }));
             const link = document.createElement("a");

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Install a new Emu version over an existing install.ps1 installation.
+  Install a new PharmacyWarehouse version over an existing install.ps1 installation.
 
 .DESCRIPTION
   Run from the extracted NEW package folder (the one that contains .\app) in an
@@ -12,37 +12,37 @@
 
   Rollback (migrations are not reversible): stop the service, copy
   InstallDir.previous back over InstallDir, restore the pre-update backup as
-  emu.db (see docs\deploy.md), start the service.
+  pharmacywarehouse.db (see docs\deploy.md), start the service.
 #>
 #Requires -RunAsAdministrator
 [CmdletBinding()]
 param(
-    [string]$InstallDir = 'C:\Emu\app',
+    [string]$InstallDir = 'C:\PharmacyWarehouse\app',
     [int]$Port = 0
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$ServiceName = 'Emu'
+$ServiceName = 'PharmacyWarehouse'
 $Source = Join-Path $PSScriptRoot 'app'
 $InstallDir = [IO.Path]::GetFullPath($InstallDir)
-$Exe = Join-Path $InstallDir 'Emu.Api.exe'
+$Exe = Join-Path $InstallDir 'PharmacyWarehouse.Api.exe'
 $Previous = "$($InstallDir.TrimEnd('\')).previous"
 $settingsPath = Join-Path $InstallDir 'appsettings.Production.json'
 
 function Step([string]$text) { Write-Host "==> $text" -ForegroundColor Cyan }
 
-function Invoke-Emu([string[]]$arguments) {
+function Invoke-PharmacyWarehouse([string[]]$arguments) {
     Push-Location $InstallDir
     try {
         & $Exe @arguments
-        if ($LASTEXITCODE -ne 0) { throw "Emu.Api.exe $($arguments -join ' ') failed with exit code $LASTEXITCODE." }
+        if ($LASTEXITCODE -ne 0) { throw "PharmacyWarehouse.Api.exe $($arguments -join ' ') failed with exit code $LASTEXITCODE." }
     }
     finally { Pop-Location }
 }
 
-if (-not (Test-Path (Join-Path $Source 'Emu.Api.exe'))) { throw "New package .\app\Emu.Api.exe not found next to this script." }
+if (-not (Test-Path (Join-Path $Source 'PharmacyWarehouse.Api.exe'))) { throw "New package .\app\PharmacyWarehouse.Api.exe not found next to this script." }
 if (-not (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue)) { throw "Service '$ServiceName' not found. Use install.ps1 first." }
 if (-not (Test-Path $settingsPath)) { throw "$settingsPath not found." }
 
@@ -55,7 +55,7 @@ if ($Port -eq 0) {
 }
 
 Step "Backing up the database to $DataDir\pre-update"
-Invoke-Emu @('backup', (Join-Path $DataDir 'pre-update'))
+Invoke-PharmacyWarehouse @('backup', (Join-Path $DataDir 'pre-update'))
 
 Step "Stopping service"
 Stop-Service -Name $ServiceName
@@ -72,11 +72,11 @@ try {
     if ($LASTEXITCODE -ge 8) { throw "robocopy (new version) failed with exit code $LASTEXITCODE." }
 
     Step "Migrating database"
-    Invoke-Emu @('migrate')
+    Invoke-PharmacyWarehouse @('migrate')
 }
 catch {
     Write-Warning "Update failed: $($_.Exception.Message)"
-    Write-Warning "The service is stopped. To roll back: copy $Previous over $InstallDir, restore the newest file from $DataDir\pre-update as emu.db (docs\deploy.md), then Start-Service $ServiceName."
+    Write-Warning "The service is stopped. To roll back: copy $Previous over $InstallDir, restore the newest file from $DataDir\pre-update as pharmacywarehouse.db (docs\deploy.md), then Start-Service $ServiceName."
     throw
 }
 
@@ -97,5 +97,5 @@ if ($healthy) {
     Write-Host "Update finished. Users should reload the page with Ctrl+F5." -ForegroundColor Green
 }
 else {
-    Write-Warning "Service started but /api/health did not answer. Check Event Viewer > Application (source: Emu)."
+    Write-Warning "Service started but /api/health did not answer. Check Event Viewer > Application (source: PharmacyWarehouse)."
 }

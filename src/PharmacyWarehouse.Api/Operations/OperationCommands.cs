@@ -33,7 +33,7 @@ public static class OperationCommands
         var directory = Path.GetFullPath(args[1]);
         Directory.CreateDirectory(directory);
 
-        var target = Path.Combine(directory, $"emu-{DateTime.UtcNow:yyyyMMdd-HHmmss}.db");
+        var target = Path.Combine(directory, $"pharmacywarehouse-{DateTime.UtcNow:yyyyMMdd-HHmmss}.db");
 
         using var scope = app.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<WarehouseDbContext>();
@@ -49,7 +49,7 @@ public static class OperationCommands
         }
 
         // نام فایل زمان را دارد، پس مرتب‌سازی نزولی یعنی جدیدترین اول.
-        foreach (var old in Directory.GetFiles(directory, "emu-*.db").OrderDescending().Skip(keep))
+        foreach (var old in Directory.GetFiles(directory, "pharmacywarehouse-*.db").OrderDescending().Skip(keep))
         {
             File.Delete(old);
         }

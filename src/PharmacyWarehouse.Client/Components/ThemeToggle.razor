@@ -20,13 +20,13 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
-        _mode = await JS.InvokeAsync<string>("emuTheme.get");
+        _mode = await JS.InvokeAsync<string>("pwTheme.get");
         StateHasChanged();
     }
 
     private async Task NextAsync()
     {
         _mode = _mode switch { "auto" => "light", "light" => "dark", _ => "auto" };
-        await JS.InvokeVoidAsync("emuTheme.set", _mode);
+        await JS.InvokeVoidAsync("pwTheme.set", _mode);
     }
 }

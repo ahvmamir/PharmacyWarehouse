@@ -5,7 +5,7 @@
 @inject ToastService Toasts
 @inject IJSRuntime JS
 
-<PageTitle>کاربران | سامانه تجهیزات IT</PageTitle>
+<PageTitle>کاربران | انبار داروخانه</PageTitle>
 
 <RequirePermission Permission="@Permissions.UsersManage">
 <div class="page-head">
@@ -62,7 +62,7 @@ else
                             }
                             else if (user.MustChangePassword)
                             {
-                                <span class="status-badge status-inrepair">منتظر تعیین رمز</span>
+                                <span class="status-badge status-pending">منتظر تعیین رمز</span>
                             }
                             else
                             {

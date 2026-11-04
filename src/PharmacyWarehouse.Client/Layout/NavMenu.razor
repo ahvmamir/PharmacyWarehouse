@@ -31,7 +31,7 @@
                 @if (Session.Can(Permissions.StockView))
                 {
                     <NavLink class="sidebar-link" href="" Match="NavLinkMatch.All">
-                        <AppIcon Name="building" /> محل‌ها
+                        <AppIcon Name="storage" /> محل‌ها
                     </NavLink>
                 }
 
@@ -147,7 +147,7 @@
 
     private void Reload() => Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
 
-    // هر صفحه‌ی زیر تجهیزات، همین منو را روشن نگه می‌دارد تا کاربر بداند کجاست.
+    // منوی فعال بر اساس نشانی صفحه روشن می‌ماند تا کاربر بداند کجاست.
     private bool _loggingOut;
 
     // بعد از بارگذاری مجدد، کاربر کمی دیرتر از ساخت این منو معلوم می‌شود.

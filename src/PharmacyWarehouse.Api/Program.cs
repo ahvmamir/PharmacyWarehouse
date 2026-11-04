@@ -89,7 +89,7 @@ builder.Services
     .AddEntityFrameworkStores<WarehouseDbContext>()
     .AddSignInManager();
 
-// مدت اعتبار کوکی (ساعت). پیش‌فرض ۱۲؛ از تنظیم Auth:CookieLifetimeHours قابل تغییر است.
+// مدت اعتبار کوکی (ساعت). پیش‌فرض ۱۲ (برنامه‌ی واقعی ۷۲۰ از appsettings.json)؛ از تنظیم Auth:CookieLifetimeHours قابل تغییر است.
 var cookieHours = builder.Configuration.GetValue<int?>("Auth:CookieLifetimeHours") ?? 12;
 if (cookieHours <= 0)
 {

@@ -755,7 +755,7 @@ h1:focus { outline: none; }
 
 .status-active { background: var(--st-active-bg); color: var(--st-active-fg); }
 .status-instorage { background: var(--st-storage-bg); color: var(--st-storage-fg); }
-.status-inrepair { background: var(--warning-tint); color: var(--warning); }
+.status-pending { background: var(--warning-tint); color: var(--warning); }
 .status-retired { background: var(--st-retired-bg); color: var(--st-retired-fg); }
 
 .empty-state {

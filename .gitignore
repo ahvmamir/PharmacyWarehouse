@@ -480,14 +480,14 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
-# Emu (SQLite databases and backups)
+# PharmacyWarehouse (SQLite databases and backups)
 *.db
 *.db-shm
 *.db-wal
 *.db.bak
 backups/
 
-# Emu: certificates and production settings never go into Git
+# PharmacyWarehouse: certificates and production settings never go into Git
 *.pfx
 *.cer
 appsettings.Production.json

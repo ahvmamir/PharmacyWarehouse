@@ -4,7 +4,7 @@ namespace PharmacyWarehouse.Domain.Contracts;
 // چون صفحه‌ی ورود هم آن را نشان می‌دهد. نام بیمارستان در کد و Git نیست.
 public sealed class AppInfoResponse
 {
-    public const string ProductName = "سامانه تجهیزات IT";
+    public const string ProductName = "انبار داروخانه";
 
     public string Product { get; init; } = ProductName;
     public string? Organization { get; init; }

@@ -18,7 +18,7 @@ public class SessionTests : ApiTestBase
     }
 
     [Fact]
-    public async Task Login_ReturnsTheUserAndRole_AndSetsTheEmuCookie()
+    public async Task Login_ReturnsTheUserAndRole_AndSetsTheAuthCookie()
     {
         await App.AddAdminAsync("admin-a");
         using var client = App.NewClient();
@@ -31,6 +31,24 @@ public class SessionTests : ApiTestBase
         var me = await response.Content.ReadFromJsonAsync<CurrentUserResponse>();
         Assert.Equal("admin-a", me!.UserName);
         Assert.Equal([Roles.Admin], me.Roles);
+    }
+
+    [Fact]
+    public async Task CookieLifetime_Is30Days()
+    {
+        await App.AddAdminAsync("admin-a");
+        using var client = App.NewClient();
+
+        var response = await TestApp.LoginAsync(client, "admin-a", TestApp.AdminPassword);
+
+        var cookie = response.Headers.GetValues("Set-Cookie")
+            .Single(c => c.StartsWith("PharmacyWarehouse.Auth=", StringComparison.Ordinal));
+        var expiresText = cookie.Split(';').Select(p => p.Trim())
+            .Single(p => p.StartsWith("expires=", StringComparison.OrdinalIgnoreCase))["expires=".Length..];
+        var expires = DateTimeOffset.Parse(expiresText, System.Globalization.CultureInfo.InvariantCulture);
+        var hours = (expires - DateTimeOffset.UtcNow).TotalHours;
+
+        Assert.InRange(hours, 719, 721);
     }
 
     [Fact]
