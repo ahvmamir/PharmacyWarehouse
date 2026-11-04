@@ -31,6 +31,18 @@
                 @if (Session.Can(Permissions.StockView))
                 {
                     <NavLink class="sidebar-link" href="" Match="NavLinkMatch.All">
+                        <AppIcon Name="box" /> اقلام
+                    </NavLink>
+                }
+                @if (Session.Can(Permissions.StockReceive))
+                {
+                    <NavLink class="sidebar-link" href="receive">
+                        <AppIcon Name="plus" /> ورود جنس
+                    </NavLink>
+                }
+                @if (Session.Can(Permissions.StockView))
+                {
+                    <NavLink class="sidebar-link" href="locations">
                         <AppIcon Name="storage" /> محل‌ها
                     </NavLink>
                 }

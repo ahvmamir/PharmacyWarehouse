@@ -138,10 +138,10 @@ else
     </section>
 }
 
-@if (_unknownCode is { } code)
+@if (_unknownCode is { } unknown)
 {
     <ModalDialog Title="این بارکد مال کدام قلم است؟" OnClose="CloseUnknown">
-        <p>بارکد <bdi class="mono">@code</bdi> هنوز به قلمی وصل نیست. قلم را پیدا کنید و ثبت کنید.</p>
+        <p>بارکد <bdi class="mono">@unknown</bdi> هنوز به قلمی وصل نیست. قلم را پیدا کنید و ثبت کنید.</p>
         <div class="form-field">
             <label for="unknown-q">جست‌وجوی قلم</label>
             <input id="unknown-q" class="form-control" @bind="_pickQuery" @bind:event="oninput" @onkeydown="OnPickKeyDown" placeholder="نام قلم" />

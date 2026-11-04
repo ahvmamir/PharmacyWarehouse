@@ -1,0 +1,184 @@
+@page "/products/new"
+@page "/products/{Id:guid}/edit"
+@attribute [Authorize]
+@using PharmacyWarehouse.Domain.Stock
+@inject ProductsClient ProductsApi
+@inject LocationsClient LocationsApi
+@inject ToastService Toasts
+@inject NavigationManager Navigation
+
+<PageTitle>@(IsNew ? "قلم جدید" : "ویرایش قلم") | انبار داروخانه</PageTitle>
+
+<RequirePermission Permission="@Permissions.ProductsManage">
+<div class="page-head">
+    <div>
+        <h1>@(IsNew ? "تعریف قلم" : "ویرایش قلم")</h1>
+        <p>قلم تعریف کالاست و با موجودی جداست؛ قلم بدون موجودی هم معتبر است. موجودی با «ورود جنس» اضافه می‌شود.</p>
+    </div>
+</div>
+
+@if (_loadError is not null)
+{
+    <div class="form-alert" role="alert"><AppIcon Name="warning" /> <span>@_loadError</span></div>
+}
+else if (!_ready)
+{
+    <div class="loading-line">در حال بارگذاری…</div>
+}
+else
+{
+    <EditForm Model="_request" OnSubmit="SaveAsync">
+        <section class="card-emu">
+            <div class="form-grid">
+                <div class="form-field">
+                    <label for="product-name">نام و دوز <span class="required">*</span></label>
+                    <input id="product-name" class="form-control" @bind="_request.Name" maxlength="@ProductRules.MaxName" />
+                    <FieldError Field="Name" Errors="_errors" />
+                </div>
+                <div class="form-field">
+                    <label for="product-brand">برند</label>
+                    <input id="product-brand" class="form-control" @bind="_request.Brand" maxlength="@ProductRules.MaxBrand" />
+                    <FieldError Field="Brand" Errors="_errors" />
+                </div>
+                <div class="form-field">
+                    <label for="product-pack">محتوای بسته</label>
+                    <input id="product-pack" class="form-control" @bind="_request.PackDescription" maxlength="@ProductRules.MaxPack" />
+                    <div class="form-hint">مثلاً «۳۰ عدد» یا «۱۰۰ سی‌سی».</div>
+                    <FieldError Field="PackDescription" Errors="_errors" />
+                </div>
+                <div class="form-field">
+                    <label for="product-location">محل</label>
+                    <select id="product-location" class="form-select" @bind="_locationText">
+                        <option value="">— بدون محل —</option>
+                        @foreach (var location in LocationOptions())
+                        {
+                            <option value="@location.Id">@location.Path</option>
+                        }
+                    </select>
+                    <FieldError Field="LocationId" Errors="_errors" />
+                </div>
+                <div class="form-field">
+                    <label for="product-min">حداقل موجودی (جعبه)</label>
+                    <input id="product-min" class="form-control" type="number" min="0" dir="ltr" @bind="_request.MinStock" />
+                    <div class="form-hint">خالی یعنی بدون هشدار.</div>
+                    <FieldError Field="MinStock" Errors="_errors" />
+                </div>
+            </div>
+
+            <div class="form-check mt-3">
+                <input id="product-requires-expiry" type="checkbox" class="form-check-input" @bind="_request.RequiresExpiry" />
+                <label for="product-requires-expiry" class="form-check-label">انقضا لازم است</label>
+            </div>
+
+            <div class="form-check mt-2">
+                <input id="product-allow-expired" type="checkbox" class="form-check-input" @bind="_request.AllowExpiredWithdrawal" />
+                <label for="product-allow-expired" class="form-check-label">برداشت از بچ منقضی مجاز است</label>
+            </div>
+            <div class="form-alert warning mt-2 mb-0">
+                <AppIcon Name="warning" /> <span>برای کالای غیردارویی؛ خروج داروی منقضی خطر دارد</span>
+            </div>
+
+            @if (_errors.TryGetValue("", out var general))
+            {
+                <div class="form-alert mt-3 mb-0" role="alert">@string.Join(" ", general)</div>
+            }
+            @if (_formError is not null)
+            {
+                <div class="form-alert mt-3 mb-0" role="alert">@_formError</div>
+            }
+
+            <div class="modal-actions">
+                <button type="submit" class="btn btn-primary" disabled="@_busy">@(_busy ? "در حال ذخیره…" : "ذخیره")</button>
+                <a class="btn btn-quiet" href="@(IsNew ? "" : $"products/{Id}")">انصراف</a>
+            </div>
+        </section>
+    </EditForm>
+}
+</RequirePermission>
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+
+    private readonly SaveProductRequest _request = new();
+    private Dictionary<string, string[]> _errors = [];
+    private List<StorageLocationItem> _locations = [];
+    private Guid? _originalLocation;
+    private string _locationText = "";
+    private string? _loadError;
+    private string? _formError;
+    private bool _ready;
+    private bool _busy;
+    private Guid? _loadedId;
+
+    private bool IsNew => Id is null;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_ready && _loadedId == Id) return;
+
+        _ready = false;
+        _loadError = null;
+        _loadedId = Id;
+
+        var locations = await LocationsApi.ListAsync();
+        if (!locations.IsSuccess)
+        {
+            _loadError = locations.ErrorMessage;
+            return;
+        }
+
+        _locations = locations.Value!;
+
+        if (Id is { } id)
+        {
+            var result = await ProductsApi.GetAsync(id);
+            if (!result.IsSuccess)
+            {
+                _loadError = result.Outcome == ApiOutcome.NotFound ? "این قلم پیدا نشد." : result.ErrorMessage;
+                return;
+            }
+
+            Fill(result.Value!);
+        }
+
+        _ready = true;
+    }
+
+    private void Fill(ProductDetail detail)
+    {
+        _request.Name = detail.Summary.Name;
+        _request.Brand = detail.Summary.Brand;
+        _request.PackDescription = detail.Summary.PackDescription;
+        _request.MinStock = detail.Summary.MinStock;
+        _request.RequiresExpiry = detail.RequiresExpiry;
+        _request.AllowExpiredWithdrawal = detail.AllowExpiredWithdrawal;
+        _request.Version = detail.Summary.Version;
+        _originalLocation = detail.LocationId;
+        _locationText = detail.LocationId?.ToString() ?? "";
+    }
+
+    // فقط محل‌های قابل‌استفاده، به‌اضافه‌ی محل فعلیِ قلم؛ فهرست از سرور به ترتیب درخت می‌آید.
+    private IEnumerable<StorageLocationItem> LocationOptions() =>
+        _locations.Where(l => l.IsUsable || l.Id == _originalLocation);
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        _errors = [];
+        _formError = null;
+
+        _request.LocationId = Guid.TryParse(_locationText, out var location) ? location : null;
+        var result = await ProductsApi.SaveAsync(Id, _request);
+        _busy = false;
+
+        if (!result.IsSuccess)
+        {
+            if (result.Problem is { Errors.Count: > 0 } problem) _errors = problem.Errors;
+            if (_errors.Count == 0) _formError = result.ErrorMessage;
+            return;
+        }
+
+        Toasts.Show($"ذخیره شد: {result.Value!.Summary.Name}");
+        Navigation.NavigateTo($"products/{result.Value.Summary.Id}");
+    }
+}

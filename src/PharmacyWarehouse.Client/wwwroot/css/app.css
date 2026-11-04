@@ -162,9 +162,6 @@ h1:focus { outline: none; }
 /* محل در یک خط، تا ردیف‌های فهرست هم‌قد بمانند. */
 .data-table td .cell-sub.nowrap { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 190px; }
 .data-table td.nowrap { white-space: nowrap; }
-/* «Tower-111» نباید سر خط تیره بشکند؛ نام بلند با سه‌نقطه کوتاه می‌شود و کاملش در title است. */
-.type-cell .cell-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
-
 .muted { color: var(--muted); }
 
 .icon { flex: none; vertical-align: -3px; }
@@ -704,26 +701,6 @@ h1:focus { outline: none; }
 .data-table a { text-decoration: none; font-weight: 600; color: var(--ink); }
 .data-table a:hover { text-decoration: underline; }
 
-.type-cell {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    white-space: nowrap;
-}
-
-.type-chip {
-    width: 30px;
-    height: 30px;
-    border-radius: var(--radius-small);
-    background: var(--surface-sunk);
-    border: 1px solid var(--line);
-    color: var(--ink-soft);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: none;
-}
-
 .cell-sub {
     display: block;
     color: var(--muted);
@@ -757,6 +734,7 @@ h1:focus { outline: none; }
 .status-instorage { background: var(--st-storage-bg); color: var(--st-storage-fg); }
 .status-pending { background: var(--warning-tint); color: var(--warning); }
 .status-retired { background: var(--st-retired-bg); color: var(--st-retired-fg); }
+.status-expired { background: var(--danger-tint); color: var(--danger); }
 
 .empty-state {
     text-align: center;
@@ -774,115 +752,9 @@ h1:focus { outline: none; }
     color: var(--muted);
 }
 
-/* انتخاب نوع دستگاه */
-
-.type-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 12px;
-}
-
-.type-tile {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 18px;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    color: var(--text);
-    text-decoration: none;
-    box-shadow: var(--shadow);
-}
-
-.type-tile:hover { border-color: var(--accent); }
-.type-tile strong { font-size: 1.02rem; color: var(--ink); }
-.type-tile small { color: var(--muted); line-height: 1.5; }
-
-/* قطعات */
-
-.component-row {
-    display: grid;
-    grid-template-columns: 96px 1fr 1fr 110px 32px;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 0;
-    border-bottom: 1px solid var(--line-soft);
-}
-
-.component-row:last-of-type { border-bottom: 0; }
-.component-kind { font-weight: 600; }
-
-.chip-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 10px;
-}
-
-.chip-add {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 3px 10px;
-    border-radius: var(--radius-small);
-    background: var(--surface);
-    border: 1px dashed var(--line-strong);
-    color: var(--text);
-    font-size: .84rem;
-}
-
-.chip-add:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-strong); }
-.chip-add:disabled { opacity: .45; }
-
 /* صفحه‌ی دستگاه */
 
-.device-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 14px;
-    margin-bottom: 16px;
-}
-
-.device-head .type-chip { width: 48px; height: 48px; border-radius: 12px; }
-.device-head-text { flex: 1; min-width: 220px; }
-.device-head-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; color: var(--muted); margin-top: 2px; }
-
 .device-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-
-.device-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 340px;
-    gap: 16px;
-    align-items: start;
-}
-
-.where-card {
-    background: var(--ink);
-    color: #dbe6ec;
-    border-radius: var(--radius);
-    padding: 16px 18px;
-    margin-bottom: 16px;
-}
-
-.where-card h2 {
-    color: #9fb4c1;
-    font-size: .8rem;
-    font-weight: 500;
-    margin-bottom: 2px;
-}
-
-.where-card .where-main {
-    color: #fff;
-    font-size: 1.08rem;
-    font-weight: 650;
-    margin-bottom: 12px;
-}
-
-.where-card .where-main:last-child { margin-bottom: 0; }
-.where-card .where-sub { color: #b9c9d3; font-size: .88rem; font-weight: 400; display: block; }
 
 .spec-list {
     display: grid;
@@ -1365,22 +1237,6 @@ h1:focus { outline: none; }
 
 .content-narrow { max-width: 820px; }
 
-/* صفحه‌ی دستگاه: پرسش اصلی، یعنی «کجاست و مال کیست»، اول. */
-.device-grid-main { grid-template-columns: 320px minmax(0, 1fr); }
-.device-grid-main > div:last-child { order: -1; }
-
-.where-card {
-    background: var(--surface);
-    color: var(--text);
-    border: 1px solid var(--line);
-    border-inline-start: 3px solid var(--accent);
-    box-shadow: var(--shadow);
-}
-
-.where-card h2 { color: var(--muted); }
-.where-card .where-main { color: var(--ink); }
-.where-card .where-sub { color: var(--muted); }
-
 /* حذف از بقیه‌ی کارها جداست تا اشتباهی کلیک نشود. */
 .device-actions .btn-danger-quiet { margin-inline-start: 14px; }
 
@@ -1400,10 +1256,6 @@ button:focus-visible, a:focus-visible, select:focus-visible, input[type=checkbox
 }
 
 /* صفحه‌های کوچک */
-
-@media (max-width: 1080px) {
-    .device-grid, .device-grid-main { grid-template-columns: minmax(0, 1fr); }
-}
 
 @media (max-width: 760px) {
     .app-shell { flex-direction: column; }
@@ -1437,13 +1289,6 @@ button:focus-visible, a:focus-visible, select:focus-visible, input[type=checkbox
 
     .form-grid { grid-template-columns: minmax(0, 1fr); }
 
-    .component-row {
-        grid-template-columns: 1fr 1fr;
-        padding: 10px 0;
-    }
-
-    .component-kind { grid-column: 1 / 2; }
-    .component-row .icon-button { grid-column: 2 / 3; grid-row: 1; justify-self: end; }
 }
 
 /* برچسب اموال (Code 128). اندازه‌ها میلی‌متری‌اند تا چاپ با اندازه‌ی واقعی بیرون بیاید. */
@@ -1487,22 +1332,6 @@ button:focus-visible, a:focus-visible, select:focus-visible, input[type=checkbox
     .labels-roll { display: block; }
     .labels-roll .asset-label { page-break-after: always; break-after: page; margin: 0; }
 }
-
-/* پیشنهاد کپی قطعات از دستگاه هم‌مدل */
-.copy-suggestion {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    margin-bottom: 10px;
-    border-radius: var(--radius-small);
-    background: var(--accent-tint);
-    color: var(--ink);
-    font-size: .9rem;
-}
-.copy-suggestion > span { flex: 1 1 260px; }
-.form-grid > .copy-suggestion { grid-column: 1 / -1; margin-bottom: 0; }
 
 /* آخرین تغییرات: هر کار یک ردیف، جزئیات با کلیک */
 .change-tools { display: flex; justify-content: flex-end; padding: 8px 12px 0; }
