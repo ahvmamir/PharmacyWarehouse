@@ -89,4 +89,26 @@ public class BarcodeTests : ApiTestBase
         Assert.Equal(HttpStatusCode.OK, removed.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await Admin.GetAsync(ApiRoutes.ProductByCode("TEST0000000001"))).StatusCode);
     }
+
+    [Fact]
+    public async Task ConcurrentBarcodeAdds_OnSameProduct_SecondGets409NotNotFound()
+    {
+        var id = await ProductAsync("TEST-DRUG-01");
+
+        for (var round = 0; round < 5; round++)
+        {
+            var responses = await Task.WhenAll(Enumerable.Range(0, 4)
+                .Select(i => Task.Run(() => AddAsync(Admin, id, $"TEST{round}00000000{i}"))));
+
+            foreach (var response in responses)
+            {
+                Assert.True(response.StatusCode is HttpStatusCode.OK or HttpStatusCode.Conflict, $"Unexpected {response.StatusCode}");
+            }
+        }
+
+        // یک بارکد یکسان از دو درخواست هم‌زمان: بازنده هرگز ۴۰۴ نمی‌گیرد.
+        var same = await Task.WhenAll(Enumerable.Range(0, 2).Select(_ => Task.Run(() => AddAsync(Admin, id, "TEST-SAME-0001"))));
+        Assert.DoesNotContain(same, r => r.StatusCode == HttpStatusCode.NotFound);
+        Assert.Contains(same, r => r.StatusCode == HttpStatusCode.OK);
+    }
 }

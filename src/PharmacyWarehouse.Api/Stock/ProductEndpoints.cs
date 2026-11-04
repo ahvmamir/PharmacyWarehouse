@@ -330,6 +330,11 @@ public static class ProductEndpoints
             await db.SaveChangesAsync();
             return Results.Ok(await ToDetailAsync(db, product));
         }
+        catch (DbUpdateConcurrencyException)
+        {
+            // درخواست هم‌زمان دیگری SearchText و Version قلم را عوض کرد.
+            return ApiProblems.VersionConflict();
+        }
         catch (DbUpdateException ex) when (ApiProblems.IsUniqueViolation(ex))
         {
             // دو درخواست هم‌زمان با یک بارکد
@@ -364,7 +369,11 @@ public static class ProductEndpoints
         }
         catch (DbUpdateConcurrencyException)
         {
-            return ApiProblems.NotFound(); // بارکد هم‌زمان حذف شد
+            // ۴۰۴ فقط وقتی خود بارکد رفته است؛ وگرنه تغییر هم‌زمان قلم (SearchText) است.
+            db.ChangeTracker.Clear();
+            return await db.ProductBarcodes.AnyAsync(b => b.Id == barcodeId && b.ProductId == id)
+                ? ApiProblems.VersionConflict()
+                : ApiProblems.NotFound();
         }
     }
 }
