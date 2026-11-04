@@ -1,0 +1,7 @@
+<Project>
+  <!-- نسخه‌ی برنامه، یک جا برای همه‌ی پروژه‌ها. با هر نسخه‌ی تحویلی بالا برود.
+       SDK شناسه‌ی کامیت git را هم به InformationalVersion اضافه می‌کند (مثل 1.3.0+abc1234…). -->
+  <PropertyGroup>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+</Project>

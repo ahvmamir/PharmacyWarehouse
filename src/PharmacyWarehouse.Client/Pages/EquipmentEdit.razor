@@ -1,0 +1,12 @@
+@page "/equipment/{Id:guid}/edit"
+@attribute [Authorize]
+
+<PageTitle>ویرایش دستگاه | سامانه تجهیزات IT</PageTitle>
+
+<RequirePermission Permission="@Permissions.EquipmentManage">
+    <EquipmentForm EditId="Id" />
+</RequirePermission>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+}

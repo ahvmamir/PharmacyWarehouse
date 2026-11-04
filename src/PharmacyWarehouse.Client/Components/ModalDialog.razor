@@ -1,0 +1,26 @@
+@* پنجره‌ی ساده بدون اسکریپت Bootstrap؛ حالت باز بودن را صفحه‌ی صاحب آن نگه می‌دارد. *@
+<div class="modal-backdrop-emu" @onclick="OnBackdropClick"></div>
+<div class="modal-emu @(Wide ? "modal-emu-wide" : "") @(ExtraWide ? "modal-emu-xl" : "")" role="dialog" aria-modal="true" aria-label="@Title">
+    <header class="modal-emu-head">
+        <h2>@Title</h2>
+        <button type="button" class="icon-button" title="بستن" aria-label="بستن" @onclick="() => OnClose.InvokeAsync()">
+            <AppIcon Name="close" />
+        </button>
+    </header>
+    <div class="modal-emu-body">
+        @ChildContent
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public bool Wide { get; set; }
+    [Parameter] public bool ExtraWide { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    // کلیک بیرون پنجره عمداً نمی‌بندد تا فرم نیمه‌پر با یک کلیک اشتباه گم نشود.
+    private static void OnBackdropClick()
+    {
+    }
+}

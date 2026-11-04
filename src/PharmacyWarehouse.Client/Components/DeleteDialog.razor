@@ -1,0 +1,123 @@
+@* اول می‌پرسد چه چیزی جلوی حذف را گرفته؛ اگر چیزی نبود تأیید می‌گیرد. سرور هنگام حذف دوباره بررسی می‌کند. *@
+<ModalDialog Title="@Title" OnClose="OnCancel">
+    @if (_dependencies is null && _error is null)
+    {
+        <div class="loading-line">در حال بررسی وابستگی‌ها…</div>
+    }
+    else if (_dependencies is { CanDelete: false } blocked)
+    {
+        <div class="form-alert warning mb-2">
+            <AppIcon Name="warning" />
+            <span>«<bdi>@ItemName</bdi>» به این موارد وابسته است و حذف نمی‌شود. اول این‌ها را جدا یا حذف کنید.</span>
+        </div>
+
+        <ul class="dependency-list">
+            @foreach (var item in blocked.Items)
+            {
+                <li>
+                    <span class="muted">@item.Kind:</span>
+                    @if (item.EquipmentId is { } id)
+                    {
+                        <a href="equipment/@id"><bdi>@item.Label</bdi></a>
+                    }
+                    else
+                    {
+                        <bdi>@item.Label</bdi>
+                    }
+                </li>
+            }
+        </ul>
+
+        @if (blocked.Total > blocked.Items.Count)
+        {
+            <div class="form-hint mt-2">و @JalaliDate.ToPersianDigits((blocked.Total - blocked.Items.Count).ToString()) مورد دیگر.</div>
+        }
+
+        <div class="modal-actions">
+            <button type="button" class="btn btn-quiet" @onclick="() => OnCancel.InvokeAsync()">بستن</button>
+        </div>
+    }
+    else
+    {
+        @if (_error is null)
+        {
+            <p>«<bdi>@ItemName</bdi>» برای همیشه حذف می‌شود. ادامه می‌دهید؟</p>
+            @if (Warning is not null)
+            {
+                <div class="form-hint">@Warning</div>
+            }
+        }
+        else
+        {
+            <div class="form-alert mb-0" role="alert"><AppIcon Name="warning" /> <span>@_error</span></div>
+        }
+
+        <div class="modal-actions">
+            @if (_dependencies is not null)
+            {
+                <button type="button" class="btn btn-danger" disabled="@_busy" @onclick="DeleteAsync">@(_busy ? "در حال حذف…" : "حذف کن")</button>
+            }
+            <button type="button" class="btn btn-quiet" @onclick="() => OnCancel.InvokeAsync()">انصراف</button>
+        </div>
+    }
+</ModalDialog>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter, EditorRequired] public string ItemName { get; set; } = "";
+    [Parameter] public string? Warning { get; set; }
+    [Parameter, EditorRequired] public Func<Task<ApiResult<DependencyList>>> Load { get; set; } = null!;
+    [Parameter, EditorRequired] public Func<Task<ApiResult<DependencyList>>> Delete { get; set; } = null!;
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public EventCallback OnDeleted { get; set; }
+
+    private DependencyList? _dependencies;
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await Load();
+        if (result.IsSuccess)
+        {
+            _dependencies = result.Value;
+        }
+        else
+        {
+            _error = result.ErrorMessage;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_busy) return;
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            var result = await Delete();
+            if (result.IsSuccess)
+            {
+                await OnDeleted.InvokeAsync();
+                return;
+            }
+
+            // در این فاصله وابستگی پیدا شده؛ فهرست تازه را نشان می‌دهیم.
+            if (result.Outcome == ApiOutcome.Conflict)
+            {
+                var fresh = await Load();
+                if (fresh.Value is { CanDelete: false }) _dependencies = fresh.Value;
+                else _error = result.ErrorMessage;
+            }
+            else
+            {
+                _error = result.ErrorMessage;
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

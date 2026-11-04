@@ -1,0 +1,149 @@
+@page "/login"
+@layout AuthLayout
+@inject ApiAuthenticationStateProvider Session
+@inject NavigationManager Navigation
+@inject AppInfoState AppInfo
+
+<PageTitle>ورود | سامانه تجهیزات IT</PageTitle>
+
+<div class="auth-card">
+    <div class="auth-brand">
+        <BrandMark />
+        <div>
+            <h1>@AppInfoResponse.ProductName</h1>
+            @if (_organization is not null)
+            {
+                <p>@_organization</p>
+            }
+        </div>
+    </div>
+
+    <EditForm Model="_form" OnSubmit="SubmitAsync">
+        <div class="form-field">
+            <label for="username">نام کاربری</label>
+            <input id="username" class="form-control" dir="ltr" type="text"
+                   value="@_form.Username" @oninput="OnUsernameInput" @ref="_usernameInput"
+                   autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" />
+        </div>
+
+        <div class="form-field">
+            <label for="password">رمز عبور</label>
+            <input id="password" class="form-control" dir="ltr"
+                   type="@(_showPassword ? "text" : "password")"
+                   value="@_form.Password" @oninput="OnPasswordInput"
+                   autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" />
+            <div class="form-hint">رمز را با کیبورد انگلیسی بنویسید.</div>
+        </div>
+
+        <div class="form-check mb-3">
+            <input id="show-password" class="form-check-input" type="checkbox"
+                   checked="@_showPassword" @onchange="OnShowPasswordChanged" />
+            <label class="form-check-label" for="show-password">نمایش رمز</label>
+        </div>
+
+        @if (_message is not null)
+        {
+            <div class="form-alert" role="alert">
+                <AppIcon Name="warning" />
+                <span>@_message</span>
+            </div>
+        }
+
+        <button type="submit" class="btn btn-primary w-100" disabled="@_busy">
+            @(_busy ? "در حال ورود…" : "ورود")
+        </button>
+    </EditForm>
+</div>
+
+@code {
+    private sealed class LoginForm
+    {
+        public string Username { get; set; } = "";
+        public string Password { get; set; } = "";
+    }
+
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private readonly LoginForm _form = new();
+    private ElementReference _usernameInput;
+    private bool _busy;
+    private bool _showPassword;
+    private string? _message;
+
+    // کسی که وارد شده کاری در این صفحه ندارد.
+    private string? _organization;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _organization = (await AppInfo.LoadAsync()).Organization;
+
+        if (AuthState is null) return;
+
+        var state = await AuthState;
+        if (state.User.Identity?.IsAuthenticated == true) Navigation.NavigateTo("", replace: true);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await _usernameInput.FocusAsync();
+    }
+
+    private void OnUsernameInput(ChangeEventArgs e)
+        => _form.Username = e.Value?.ToString() ?? "";
+
+    private void OnPasswordInput(ChangeEventArgs e)
+        => _form.Password = e.Value?.ToString() ?? "";
+
+    private void OnShowPasswordChanged(ChangeEventArgs e)
+        => _showPassword = e.Value is true;
+
+    private async Task SubmitAsync()
+    {
+        if (_busy) return;
+
+        _message = null;
+
+        if (string.IsNullOrWhiteSpace(_form.Username) || string.IsNullOrEmpty(_form.Password))
+        {
+            _message = "نام کاربری و رمز عبور را وارد کنید.";
+            return;
+        }
+
+        _busy = true;
+        LoginOutcome outcome;
+        try
+        {
+            outcome = await Session.LoginAsync(_form.Username.Trim(), _form.Password);
+        }
+        finally
+        {
+            _busy = false;
+        }
+
+        switch (outcome)
+        {
+            case LoginOutcome.Success:
+                _form.Password = "";
+                Navigation.NavigateTo("");
+                break;
+
+            case LoginOutcome.InvalidCredentials:
+                _form.Password = "";
+                _message = "نام کاربری یا رمز عبور درست نیست. مطمئن شوید کیبورد انگلیسی است و Caps Lock خاموش است.";
+                break;
+
+            case LoginOutcome.LockedOut:
+                _form.Password = "";
+                _message = "تلاش‌های ناموفق زیاد بود. چند دقیقه بعد دوباره امتحان کنید.";
+                break;
+
+            case LoginOutcome.NetworkError:
+                _message = "ارتباط با سرور برقرار نشد. اتصال شبکه را بررسی کنید و دوباره تلاش کنید.";
+                break;
+
+            default:
+                _message = "خطای غیرمنتظره. دوباره تلاش کنید؛ اگر ادامه داشت به مدیر سیستم اطلاع دهید.";
+                break;
+        }
+    }
+}

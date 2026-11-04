@@ -1,0 +1,186 @@
+@page "/admin/roles"
+@attribute [Authorize]
+@inject UsersClient UsersApi
+@inject ToastService Toasts
+
+<PageTitle>نقش‌ها و مجوزها | سامانه تجهیزات IT</PageTitle>
+
+<RequirePermission Permission="@Permissions.RolesManage">
+<div class="page-head">
+    <div>
+        <h1>نقش‌ها و مجوزها</h1>
+        <p>هر کاربر یک نقش دارد. نقش مدیر همه‌ی مجوزها را دارد و تغییر نمی‌کند.</p>
+    </div>
+    <button type="button" class="btn btn-primary" @onclick="NewRole"><AppIcon Name="plus" /> نقش جدید</button>
+</div>
+
+@if (_error is not null)
+{
+    <div class="form-alert" role="alert"><AppIcon Name="warning" /> <span>@_error</span></div>
+}
+
+@if (_roles is null)
+{
+    @if (_error is null)
+    {
+        <div class="loading-line">در حال بارگذاری…</div>
+    }
+}
+else
+{
+    <div class="table-card">
+        <table class="data-table">
+            <thead><tr><th>نقش</th><th>کاربران</th><th>مجوزها</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var role in _roles)
+                {
+                    <tr @key="role.Id">
+                        <td style="font-weight:600;">@RoleText.Label(role.Name)</td>
+                        <td>@JalaliDate.ToPersianDigits(role.UserCount.ToString())</td>
+                        <td>@(role.IsLocked ? "همه‌ی مجوزها" : $"{JalaliDate.ToPersianDigits(role.Permissions.Length.ToString())} از {JalaliDate.ToPersianDigits(Permissions.All.Count.ToString())}")</td>
+                        <td style="text-align:left;white-space:nowrap;">
+                            @if (!role.IsLocked)
+                            {
+                                <span class="row-actions">
+                                    <button type="button" class="btn btn-sm btn-ghost" @onclick="() => EditRole(role)"><AppIcon Name="edit" Size="15" /> ویرایش</button>
+                                    <button type="button" class="icon-button danger" title="حذف" aria-label="حذف @role.Name" @onclick="() => _deleting = role"><AppIcon Name="trash" Size="16" /></button>
+                                </span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (_editing)
+{
+    <ModalDialog Title="@(_editId is null ? "نقش جدید" : "ویرایش نقش")" Wide="true" OnClose="() => _editing = false">
+        <EditForm Model="this" OnSubmit="SaveAsync">
+            <div class="form-field mb-3">
+                <label for="role-name">نام نقش <span class="required">*</span></label>
+                <input id="role-name" class="form-control" style="max-width:320px;" @bind="_name" />
+            </div>
+
+            @foreach (var group in Permissions.All.GroupBy(p => p.Group))
+            {
+                <div class="permission-group" @key="group.Key">
+                    <h3>@group.Key</h3>
+                    @foreach (var permission in group)
+                    {
+                        <div class="form-check" @key="permission.Key">
+                            <input id="@permission.Key" class="form-check-input" type="checkbox" checked="@_selected.Contains(permission.Key)"
+                                   @onchange="e => Toggle(permission.Key, e.Value is true)" />
+                            <label class="form-check-label" for="@permission.Key">@permission.Label</label>
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (_dialogError is not null)
+            {
+                <div class="form-alert mt-3 mb-0" role="alert">@_dialogError</div>
+            }
+
+            <div class="modal-actions">
+                <button type="submit" class="btn btn-primary" disabled="@_busy">@(_busy ? "در حال ذخیره…" : "ذخیره")</button>
+                <button type="button" class="btn btn-quiet" @onclick="() => _editing = false">انصراف</button>
+            </div>
+        </EditForm>
+    </ModalDialog>
+}
+
+@if (_deleting is { } target)
+{
+    <DeleteDialog Title="حذف نقش" ItemName="@RoleText.Label(target.Name)"
+                  Load="() => UsersApi.RoleDependenciesAsync(target.Id)"
+                  Delete="() => UsersApi.DeleteRoleAsync(target.Id)"
+                  OnCancel="() => _deleting = null"
+                  OnDeleted="OnDeletedAsync" />
+}
+</RequirePermission>
+
+@code {
+    private List<RoleItem>? _roles;
+    private string? _error;
+    private string? _dialogError;
+    private bool _editing;
+    private bool _busy;
+    private Guid? _editId;
+    private string _name = "";
+    private HashSet<string> _selected = [];
+    private RoleItem? _deleting;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var result = await UsersApi.RolesAsync();
+        if (result.IsSuccess)
+        {
+            _roles = result.Value;
+            _error = null;
+        }
+        else
+        {
+            _error = result.ErrorMessage;
+        }
+    }
+
+    private void NewRole()
+    {
+        _editId = null;
+        _name = "";
+        _selected = [Permissions.EquipmentView];
+        _dialogError = null;
+        _editing = true;
+    }
+
+    private void EditRole(RoleItem role)
+    {
+        _editId = role.Id;
+        _name = role.Name;
+        _selected = role.Permissions.ToHashSet();
+        _dialogError = null;
+        _editing = true;
+    }
+
+    private void Toggle(string key, bool on)
+    {
+        if (on) _selected.Add(key);
+        else _selected.Remove(key);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_busy) return;
+
+        _busy = true;
+        _dialogError = null;
+        try
+        {
+            var result = await UsersApi.SaveRoleAsync(_editId, new SaveRoleRequest { Name = _name, Permissions = _selected.ToArray() });
+            if (!result.IsSuccess)
+            {
+                _dialogError = result.ErrorMessage;
+                return;
+            }
+
+            _editing = false;
+            Toasts.Show("ذخیره شد.");
+            await LoadAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task OnDeletedAsync()
+    {
+        Toasts.Show("نقش حذف شد.");
+        _deleting = null;
+        await LoadAsync();
+    }
+}

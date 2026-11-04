@@ -1,0 +1,110 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject ApiAuthenticationStateProvider Session
+@inject NavigationManager Navigation
+@inject ToastService Toasts
+
+<div class="app-shell">
+    <NavMenu />
+
+    <div class="main-area">
+        @if (Session.IdentityLoadFailed)
+        {
+            <div class="banner" role="alert">
+                <span>ارتباط با سرور برقرار نشد؛ وضعیت ورود شما مشخص نیست.</span>
+                <button type="button" class="btn btn-sm btn-quiet" disabled="@_retrying" @onclick="RetryAsync">
+                    @(_retrying ? "در حال تلاش…" : "تلاش دوباره")
+                </button>
+            </div>
+        }
+
+        @if (MustChangePassword)
+        {
+            <div class="banner" role="alert">
+                رمز شما رمز اولیه است. برای شروع کار، همین‌جا رمز جدید انتخاب کنید.
+            </div>
+        }
+
+        <main class="content">
+            @Body
+        </main>
+    </div>
+</div>
+
+<div class="toasts" aria-live="polite">
+    @foreach (var toast in Toasts.Toasts)
+    {
+        <div class="toast-emu @(toast.IsWarning ? "warning" : "")" role="status">
+            <AppIcon Name="@(toast.IsWarning ? "warning" : "check")" />
+            <span>@toast.Message</span>
+        </div>
+    }
+</div>
+
+@code {
+    private bool _retrying;
+
+    private bool MustChangePassword => Session.CurrentUser is { MustChangePassword: true };
+
+    protected override void OnInitialized()
+    {
+        Session.StatusChanged += OnStatusChanged;
+        Navigation.LocationChanged += OnLocationChanged;
+        Toasts.Changed += OnToastsChanged;
+        EnforcePasswordChange();
+    }
+
+    private void OnToastsChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void OnStatusChanged()
+    {
+        _ = InvokeAsync(() =>
+        {
+            EnforcePasswordChange();
+            StateHasChanged();
+        });
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        EnforcePasswordChange();
+    }
+
+    // کاربرِ دارای رمز اولیه فقط صفحه‌ی حساب را می‌بیند (خروج از منو آزاد است).
+    // این فقط UX است؛ اجبار واقعی سمت سرور با policyهای StaffOnly و AdminOnly است.
+    private void EnforcePasswordChange()
+    {
+        if (!MustChangePassword) return;
+
+        var path = Navigation.ToBaseRelativePath(Navigation.Uri)
+            .Split('?', '#')[0]
+            .TrimEnd('/');
+
+        if (!string.Equals(path, "account", StringComparison.OrdinalIgnoreCase))
+        {
+            Navigation.NavigateTo("account");
+        }
+    }
+
+    private async Task RetryAsync()
+    {
+        if (_retrying) return;
+
+        _retrying = true;
+        try
+        {
+            await Session.RefreshAsync();
+        }
+        finally
+        {
+            _retrying = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        Session.StatusChanged -= OnStatusChanged;
+        Navigation.LocationChanged -= OnLocationChanged;
+        Toasts.Changed -= OnToastsChanged;
+    }
+}

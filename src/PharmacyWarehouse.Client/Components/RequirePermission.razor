@@ -1,0 +1,19 @@
+@inject ApiAuthenticationStateProvider Session
+
+@if (Session.Can(Permission))
+{
+    @ChildContent
+}
+else
+{
+    <div class="empty-state">
+        <h2>اجازه‌ی دیدن این صفحه را ندارید</h2>
+        <p>برای دسترسی به این بخش با مدیر سیستم صحبت کنید.</p>
+        <a class="btn btn-quiet" href="">بازگشت به تجهیزات</a>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Permission { get; set; } = "";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

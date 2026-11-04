@@ -1,0 +1,141 @@
+@using System.Text.Json
+
+@if (Entries.Count == 0)
+{
+    <div class="empty-state"><p>هنوز تغییری ثبت نشده.</p></div>
+}
+else
+{
+    <div class="timeline">
+        @foreach (var group in Entries.GroupBy(e => e.ChangeSetId))
+        {
+            var first = group.First();
+            <div class="timeline-item" @key="group.Key">
+                <div class="timeline-head">
+                    <strong><bdi>@first.UserName</bdi></strong>
+                    <span>@JalaliDate.Format(first.AtUtc)</span>
+                </div>
+                <ul class="timeline-lines">
+                    @foreach (var entry in group)
+                    {
+                        <li @key="entry.Id">@Describe(entry)</li>
+                    }
+                </ul>
+                @if (first.Reason is not null)
+                {
+                    <div class="timeline-reason">دلیل: @first.Reason</div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<AuditEntryItem> Entries { get; set; } = [];
+
+    // دستگاهی که تاریخچه‌اش نمایش داده می‌شود؛ برای جهت «وصل شد» یا «جدا شد» در ردیف‌های دستگاه دیگر.
+    [Parameter] public Guid DeviceId { get; set; }
+
+    private RenderFragment Describe(AuditEntryItem entry) => builder =>
+    {
+        var isComponent = entry.EntityType == "Component";
+
+        // ردیف دستگاه دیگری که به این دستگاه وصل یا از آن جدا شده است.
+        if (entry.Subject is not null && entry.Field == "ParentId")
+        {
+            // مقدار «شناسه|شماره» است.
+            var attached = entry.NewValue?.StartsWith(DeviceId.ToString(), StringComparison.OrdinalIgnoreCase) == true;
+            builder.AddContent(20, $"{entry.Subject} {(attached ? "به این دستگاه وصل شد" : "از این دستگاه جدا شد")}.");
+            return;
+        }
+
+        if (entry.EntityType == "RepairRecord")
+        {
+            builder.AddContent(21, entry.Action == "Created"
+                ? $"ارسال به تعمیر: {DescribeRepair(entry.NewValue)}"
+                : $"تعمیر، {AuditLabels.Field(entry.Field)}: {AuditLabels.Value(entry.Field, entry.NewValue)}");
+            return;
+        }
+
+        if (entry.Field == "LastVerifiedAtUtc")
+        {
+            builder.AddContent(22, "حضور دستگاه در انبارگردانی تأیید شد.");
+            return;
+        }
+
+        switch (entry.Action)
+        {
+            case "Created" when !isComponent:
+                builder.AddContent(0, "دستگاه ثبت شد.");
+                break;
+
+            case "Created":
+                builder.AddContent(1, $"قطعه اضافه شد: {DescribeComponent(entry.NewValue)}");
+                break;
+
+            case "Deleted":
+                builder.AddContent(2, $"قطعه حذف شد: {DescribeComponent(entry.OldValue)}");
+                break;
+
+            default:
+                var label = AuditLabels.Field(entry.Field);
+                if (isComponent && Enum.TryParse<ComponentKind>(entry.EntityLabel, out var kind))
+                {
+                    label = $"{AuditLabels.Kind(kind)}، {label}";
+                }
+
+                builder.AddContent(3, $"{label}: ");
+                builder.OpenElement(4, "span");
+                builder.AddAttribute(5, "class", "timeline-from");
+                builder.AddContent(6, entry.OldText ?? AuditLabels.Value(entry.Field, entry.OldValue));
+                builder.CloseElement();
+                builder.AddContent(7, " ← ");
+                builder.OpenElement(8, "span");
+                builder.AddAttribute(9, "class", "timeline-to");
+                builder.AddContent(10, entry.NewText ?? AuditLabels.Value(entry.Field, entry.NewValue));
+                builder.CloseElement();
+                break;
+        }
+    };
+
+    private static string DescribeRepair(string? json)
+    {
+        try
+        {
+            var values = string.IsNullOrEmpty(json) ? null : JsonSerializer.Deserialize<Dictionary<string, string?>>(json);
+            if (values is null) return "";
+            var vendor = values.GetValueOrDefault("Vendor");
+            return values.GetValueOrDefault("Problem") + (string.IsNullOrEmpty(vendor) ? "" : $" ({vendor})");
+        }
+        catch (JsonException)
+        {
+            return "";
+        }
+    }
+
+    private static string DescribeComponent(string? json)
+    {
+        if (string.IsNullOrEmpty(json)) return "";
+
+        try
+        {
+            var values = JsonSerializer.Deserialize<Dictionary<string, string?>>(json);
+            if (values is null) return "";
+
+            var kind = values.GetValueOrDefault("Kind");
+            var parts = new[]
+            {
+                Enum.TryParse<ComponentKind>(kind, out var parsed) ? AuditLabels.Kind(parsed) : kind,
+                values.GetValueOrDefault("Brand"),
+                values.GetValueOrDefault("Model"),
+                values.GetValueOrDefault("Capacity")
+            };
+
+            return string.Join(' ', parts.Where(p => !string.IsNullOrEmpty(p)));
+        }
+        catch (JsonException)
+        {
+            return "";
+        }
+    }
+}

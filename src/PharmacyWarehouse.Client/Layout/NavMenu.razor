@@ -1,0 +1,211 @@
+@implements IDisposable
+@inject ApiAuthenticationStateProvider Session
+@inject NavigationManager Navigation
+@inject ToastService Toasts
+@inject AlertsClient AlertsApi
+@inject AppInfoState AppInfo
+
+<aside class="sidebar">
+    <a class="sidebar-brand" href="">
+        <BrandMark />
+        <div>
+            <strong>@AppInfoResponse.ProductName</strong>
+            @if (_organization is not null)
+            {
+                <small>@_organization</small>
+            }
+        </div>
+    </a>
+
+    @* در موبایل بخش کاربر زیر منوی بسته پنهان است؛ زنگوله کنار دکمه‌ی منو هم دیده شود. *@
+    <span class="topbar-bell">@AlertBell</span>
+
+    <button type="button" class="icon-button topbar-toggle" aria-label="منو" @onclick="() => _open = !_open">
+        <AppIcon Name="list" Size="22" />
+    </button>
+
+    <div class="sidebar-collapsible @(_open ? "open" : "")" @onclick="() => _open = false">
+        <nav class="sidebar-nav">
+            @if (Session.CurrentUser is { MustChangePassword: false })
+            {
+                <NavLink class="@(OnEquipment ? "sidebar-link active" : "sidebar-link")" href="" Match="NavLinkMatch.All">
+                    <AppIcon Name="list" /> تجهیزات
+                </NavLink>
+                @if (Session.Can(Permissions.EquipmentVerify))
+                {
+                    <NavLink class="sidebar-link" href="stocktake">
+                        <AppIcon Name="scan" /> انبارگردانی
+                    </NavLink>
+                }
+                @if (Session.Can(Permissions.ReportsView))
+                {
+                    <NavLink class="sidebar-link" href="reports">
+                        <AppIcon Name="report" /> گزارش‌ها
+                    </NavLink>
+                }
+
+                @if (Session.Can(Permissions.LocationsManage) || Session.Can(Permissions.UsersManage) || Session.Can(Permissions.RolesManage)
+                     || Session.Can(Permissions.DataImport) || Session.Can(Permissions.DataExport) || Session.Can(Permissions.BackupDownload))
+                {
+                    <div class="nav-section">تنظیمات</div>
+                }
+                @if (Session.Can(Permissions.LocationsManage))
+                {
+                    <NavLink class="sidebar-link" href="admin/locations">
+                        <AppIcon Name="building" /> ساختمان و واحد
+                    </NavLink>
+                }
+                @if (Session.Can(Permissions.UsersManage))
+                {
+                    <NavLink class="sidebar-link" href="admin/users">
+                        <AppIcon Name="users" /> کاربران
+                    </NavLink>
+                }
+                @if (Session.Can(Permissions.RolesManage))
+                {
+                    <NavLink class="sidebar-link" href="admin/roles">
+                        <AppIcon Name="key" /> نقش‌ها و مجوزها
+                    </NavLink>
+                }
+                @if (Session.Can(Permissions.DataImport) || Session.Can(Permissions.DataExport) || Session.Can(Permissions.BackupDownload))
+                {
+                    <NavLink class="sidebar-link" href="admin/data">
+                        <AppIcon Name="box" /> بکاپ و Excel
+                    </NavLink>
+                }
+            }
+        </nav>
+
+        @if (Session.CurrentUser is { } user)
+        {
+            <div class="sidebar-user">
+                <div class="sidebar-user-row">
+                    <div class="sidebar-user-name">
+                        <bdi>@user.DisplayName</bdi>
+                        <small>@RoleText.Label(user.Roles.FirstOrDefault())</small>
+                    </div>
+                    <ThemeToggle />
+                    @AlertBell
+                </div>
+                <NavLink class="sidebar-link" href="account">
+                    <AppIcon Name="user" /> حساب من
+                </NavLink>
+                <button type="button" class="sidebar-link" disabled="@_loggingOut" @onclick="LogoutAsync">
+                    <AppIcon Name="logout" /> @(_loggingOut ? "در حال خروج…" : "خروج")
+                </button>
+            </div>
+        }
+
+        @if (_serverVersion is not null && !AppVersion.Same(_serverVersion, ClientVersion))
+        {
+            @* کلاینت قدیمی در کش مرورگر بعد از به‌روزرسانی سرور؛ ممکن است با Api جدید درست کار نکند. *@
+            <button type="button" class="version-stale" @onclick="Reload">نسخه‌ی جدید نصب شده؛ برای بارگذاری کلیک کنید (Ctrl+F5)</button>
+        }
+        <div class="sidebar-version" title="@($"سرور {AppVersion.Display(_serverVersion)}، صفحه {AppVersion.Display(ClientVersion)}")">
+            نسخه‌ی @AppVersion.Display(_serverVersion ?? ClientVersion)
+        </div>
+    </div>
+</aside>
+
+@code {
+    private bool _open;
+
+    private static readonly string? ClientVersion = AppVersion.Of(typeof(App).Assembly);
+    private string? _serverVersion;
+    private string? _organization;
+    private int _alertCount;
+    private bool _alertUrgent;
+    private DateTime _lastCheck = DateTime.MinValue;
+
+    // تعداد اعلان‌ها با هر جابه‌جایی صفحه، حداکثر یک بار در دقیقه؛ نه پیوسته در پس‌زمینه.
+    private async Task RefreshAsync(bool force = false)
+    {
+        if (!force && DateTime.UtcNow - _lastCheck < TimeSpan.FromMinutes(1)) return;
+        _lastCheck = DateTime.UtcNow;
+
+        if (_serverVersion is null)
+        {
+            var info = await AppInfo.LoadAsync();
+            _serverVersion = info.Version;
+            _organization = info.Organization;
+        }
+
+        if (Session.CurrentUser is { MustChangePassword: false } && Session.Can(Permissions.EquipmentView))
+        {
+            var alerts = (await AlertsApi.ListAsync()).Value ?? [];
+            _alertCount = alerts.Count;
+            _alertUrgent = alerts.Any(a => a.Severity != AlertSeverity.Info);
+        }
+        else
+        {
+            _alertCount = 0;
+        }
+
+        StateHasChanged();
+    }
+
+    // زنگوله‌ی گرد اعلان‌ها کنار نام کاربر؛ عدد روی گوشه‌اش، نارنجی اگر هشدار هست.
+    private RenderFragment AlertBell => __builder =>
+    {
+        if (Session.CurrentUser is not { MustChangePassword: false } || !Session.Can(Permissions.EquipmentView)) return;
+
+        var label = _alertCount > 0 ? $"اعلان‌ها، {_alertCount} مورد" : "اعلان‌ها";
+        <a class="@(OnAlerts ? "alert-bell active" : "alert-bell")" href="alerts" title="اعلان‌ها" aria-label="@label">
+            <AppIcon Name="bell" Size="17" />
+            @if (_alertCount > 0)
+            {
+                <span class="alert-bell-count @(_alertUrgent ? "urgent" : "")" aria-hidden="true">@JalaliDate.ToPersianDigits(_alertCount > 9 ? "9+" : _alertCount.ToString())</span>
+            }
+        </a>
+    };
+
+    private bool OnAlerts => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("alerts", StringComparison.OrdinalIgnoreCase);
+
+    private void Reload() => Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+
+    // هر صفحه‌ی زیر تجهیزات، همین منو را روشن نگه می‌دارد تا کاربر بداند کجاست.
+    private bool OnEquipment => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("equipment", StringComparison.OrdinalIgnoreCase);
+    private bool _loggingOut;
+
+    // بعد از بارگذاری مجدد، کاربر کمی دیرتر از ساخت این منو معلوم می‌شود.
+    protected override void OnInitialized()
+    {
+        Session.StatusChanged += OnStatusChanged;
+        Navigation.LocationChanged += OnLocationChanged;
+        _ = InvokeAsync(() => RefreshAsync(force: true));
+    }
+
+    private void OnStatusChanged() => _ = InvokeAsync(() => RefreshAsync(force: true));
+
+    // صفحه‌ی اعلان‌ها خودش تازه است؛ شمارنده‌ی منو هم با رفتن به آن به‌روز می‌شود.
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) =>
+        _ = InvokeAsync(() => RefreshAsync(force: e.Location.Contains("/alerts")));
+
+    public void Dispose()
+    {
+        Session.StatusChanged -= OnStatusChanged;
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
+
+    private async Task LogoutAsync()
+    {
+        if (_loggingOut) return;
+
+        _loggingOut = true;
+        try
+        {
+            if (await Session.LogoutAsync())
+            {
+                Navigation.NavigateTo("login");
+            }
+            else
+            {
+                Toasts.Show("خروج انجام نشد. اتصال شبکه را بررسی کنید و دوباره تلاش کنید.", isWarning: true);
+            }
+        }
+        finally
+        {
+            _loggingOut = false;
+        }
+    }
+}

@@ -1,0 +1,95 @@
+@using PharmacyWarehouse.Domain.Contracts
+
+@* ساختمان ← طبقه ← واحد محل، اتاق، استیشن. هم در فرم ثبت و هم در پنجره‌ی جابه‌جایی. *@
+<div class="form-grid">
+    <div class="form-field">
+        <label for="building">ساختمان <span class="required">*</span></label>
+        <select id="building" class="form-select" value="@BuildingId" @onchange="OnBuildingChanged">
+            <option value="@Guid.Empty">انتخاب کنید…</option>
+            @foreach (var building in Buildings.Where(b => b.IsActive || b.Id == BuildingId))
+            {
+                <option value="@building.Id">@building.Name</option>
+            }
+        </select>
+        <FieldError Field="BuildingId" Errors="Errors" />
+    </div>
+
+    <div class="form-field">
+        <label for="floor">طبقه <span class="required">*</span></label>
+        <select id="floor" class="form-select" value="@FloorId" disabled="@(BuildingId == Guid.Empty)" @onchange="OnFloorChanged">
+            <option value="@Guid.Empty">@(BuildingId == Guid.Empty ? "اول ساختمان را انتخاب کنید" : "انتخاب کنید…")</option>
+            @foreach (var floor in Floors.Where(f => f.BuildingId == BuildingId && (f.IsActive || f.Id == FloorId)))
+            {
+                <option value="@floor.Id">@floor.Name</option>
+            }
+        </select>
+        <FieldError Field="FloorId" Errors="Errors" />
+    </div>
+
+    <div class="form-field">
+        <label for="location-unit">واحد محل <span class="required">*</span></label>
+        <select id="location-unit" class="form-select" value="@LocationUnitId" @onchange="OnUnitChanged">
+            <option value="@Guid.Empty">انتخاب کنید…</option>
+            @foreach (var unit in Units.Where(u => u.IsActive || u.Id == LocationUnitId))
+            {
+                <option value="@unit.Id">@unit.Name</option>
+            }
+        </select>
+        <FieldError Field="LocationUnitId" Errors="Errors" />
+    </div>
+
+    <div class="form-field">
+        <label for="room">اتاق</label>
+        <input id="room" class="form-control" value="@Room" @oninput="e => RoomChanged.InvokeAsync(e.Value?.ToString())" />
+        <FieldError Field="Room" Errors="Errors" />
+    </div>
+
+    <div class="form-field">
+        <label for="station">استیشن</label>
+        <input id="station" class="form-control" value="@Station" @oninput="e => StationChanged.InvokeAsync(e.Value?.ToString())" />
+        <FieldError Field="Station" Errors="Errors" />
+    </div>
+
+    <div class="form-field">
+        <label for="station-position">جای دقیق</label>
+        <input id="station-position" class="form-control" value="@StationPosition"
+               @oninput="e => StationPositionChanged.InvokeAsync(e.Value?.ToString())" />
+        <FieldError Field="StationPosition" Errors="Errors" />
+    </div>
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<BuildingItem> Buildings { get; set; } = [];
+    [Parameter] public IReadOnlyList<FloorItem> Floors { get; set; } = [];
+    [Parameter] public IReadOnlyList<UnitItem> Units { get; set; } = [];
+    [Parameter] public IReadOnlyDictionary<string, string[]>? Errors { get; set; }
+
+    [Parameter] public Guid BuildingId { get; set; }
+    [Parameter] public EventCallback<Guid> BuildingIdChanged { get; set; }
+    [Parameter] public Guid FloorId { get; set; }
+    [Parameter] public EventCallback<Guid> FloorIdChanged { get; set; }
+    [Parameter] public Guid LocationUnitId { get; set; }
+    [Parameter] public EventCallback<Guid> LocationUnitIdChanged { get; set; }
+    [Parameter] public string? Room { get; set; }
+    [Parameter] public EventCallback<string?> RoomChanged { get; set; }
+    [Parameter] public string? Station { get; set; }
+    [Parameter] public EventCallback<string?> StationChanged { get; set; }
+    [Parameter] public string? StationPosition { get; set; }
+    [Parameter] public EventCallback<string?> StationPositionChanged { get; set; }
+
+    private async Task OnBuildingChanged(ChangeEventArgs e)
+    {
+        var id = Guid.TryParse(e.Value?.ToString(), out var parsed) ? parsed : Guid.Empty;
+        await BuildingIdChanged.InvokeAsync(id);
+
+        // طبقه‌ی ساختمان قبلی دیگر معتبر نیست. اگر فقط یک طبقه هست، همان را انتخاب می‌کنیم.
+        var floors = Floors.Where(f => f.BuildingId == id && f.IsActive).ToList();
+        await FloorIdChanged.InvokeAsync(floors.Count == 1 ? floors[0].Id : Guid.Empty);
+    }
+
+    private Task OnFloorChanged(ChangeEventArgs e) =>
+        FloorIdChanged.InvokeAsync(Guid.TryParse(e.Value?.ToString(), out var id) ? id : Guid.Empty);
+
+    private Task OnUnitChanged(ChangeEventArgs e) =>
+        LocationUnitIdChanged.InvokeAsync(Guid.TryParse(e.Value?.ToString(), out var id) ? id : Guid.Empty);
+}

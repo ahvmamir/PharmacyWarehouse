@@ -1,0 +1,38 @@
+@* بارکد Code 128 به‌صورت SVG؛ با هر چاپگری تیز چاپ می‌شود. اگر متن قابل کدگذاری نباشد، چیزی رسم نمی‌شود. *@
+@if (_bars.Count > 0)
+{
+    <svg class="barcode" viewBox="0 0 @_width 40" preserveAspectRatio="none" role="img" aria-label="بارکد @Value"
+         xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+        <rect width="@_width" height="40" fill="#fff" />
+        @foreach (var (x, w) in _bars)
+        {
+            <rect x="@x" width="@w" height="40" fill="#000" />
+        }
+    </svg>
+}
+
+@code {
+    // حاشیه‌ی سفید دو طرف (quiet zone)؛ استاندارد حداقل ۱۰ واحد می‌خواهد.
+    private const int QuietZone = 10;
+
+    [Parameter, EditorRequired] public string? Value { get; set; }
+
+    private readonly List<(int X, int Width)> _bars = [];
+    private int _width;
+
+    protected override void OnParametersSet()
+    {
+        _bars.Clear();
+        var widths = Code128.Widths(Value);
+        if (widths is null) return;
+
+        var x = QuietZone;
+        for (var i = 0; i < widths.Count; i++)
+        {
+            if (i % 2 == 0) _bars.Add((x, widths[i]));
+            x += widths[i];
+        }
+
+        _width = x + QuietZone;
+    }
+}

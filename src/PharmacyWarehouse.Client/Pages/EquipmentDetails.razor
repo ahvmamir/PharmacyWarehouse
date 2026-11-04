@@ -1,0 +1,930 @@
+@page "/equipment/{Id:guid}"
+@attribute [Authorize]
+@inject EquipmentClient EquipmentApi
+@inject CatalogClient Catalog
+@inject ToastService Toasts
+@inject ApiAuthenticationStateProvider Session
+@inject NavigationManager Navigation
+
+<PageTitle>@(_device?.AssetNumber ?? "دستگاه") | سامانه تجهیزات IT</PageTitle>
+
+<a class="breadcrumb-link" href=""><AppIcon Name="chevron" Size="14" /> تجهیزات</a>
+
+@if (_loadError is not null)
+{
+    <div class="form-alert" role="alert"><AppIcon Name="warning" /> <span>@_loadError</span></div>
+}
+else if (_device is null)
+{
+    <div class="loading-line">در حال بارگذاری…</div>
+}
+else
+{
+    var d = _device;
+    var retired = d.Status == EquipmentStatus.Retired;
+    var hub = EquipmentRules.IsHub(d.Type);
+
+    <div class="device-head">
+        <span class="type-chip"><AppIcon Name="@d.Type.ToString()" Size="26" /></span>
+        <div class="device-head-text">
+            <h1>@EquipmentText.Title(d)</h1>
+            <div class="device-head-meta">
+                <span>@AuditLabels.Type(d.Type)</span>
+                <bdi class="asset-tag @(d.HasTemporaryAssetNumber ? "temporary" : "")">@d.AssetNumber</bdi>
+                @if (d.HasTemporaryAssetNumber)
+                {
+                    <span class="status-badge status-inrepair">شماره موقت</span>
+                }
+                <StatusBadge Status="d.Status" />
+                <span>آخرین تغییر: @JalaliDate.Format(d.UpdatedAtUtc)</span>
+                <span>تأیید حضور: @(d.LastVerifiedAtUtc is { } verifiedAt ? JalaliDate.FormatDate(verifiedAt) : "هرگز")</span>
+            </div>
+        </div>
+        <div class="device-actions">
+            @if (Session.Can(Permissions.EquipmentManage))
+            {
+                <a class="btn btn-primary" href="equipment/@d.Id/edit"><AppIcon Name="edit" /> ویرایش</a>
+            }
+            @if (!retired)
+            {
+                @if (Session.Can(Permissions.EquipmentMove))
+                {
+                    <button type="button" class="btn btn-quiet" @onclick="OpenMove"><AppIcon Name="move" /> جابه‌جایی</button>
+                }
+                @if (hub && Session.Can(Permissions.EquipmentLink))
+                {
+                    <button type="button" class="btn btn-quiet" @onclick="OpenLink"><AppIcon Name="link" /> اتصال</button>
+                }
+            }
+            @if (Session.Can(Permissions.EquipmentChangeStatus))
+            {
+                <button type="button" class="btn btn-quiet" @onclick="OpenStatus"><AppIcon Name="status" /> وضعیت</button>
+            }
+            @if (!retired && Session.Can(Permissions.EquipmentVerify))
+            {
+                <button type="button" class="btn btn-quiet" disabled="@_busy" title="دستگاه همین‌جاست؛ زمان تأیید حضور ثبت می‌شود" @onclick="VerifyAsync"><AppIcon Name="verified" /> تأیید حضور</button>
+            }
+            <a class="btn btn-quiet" href="equipment/labels?id=@d.Id" title="چاپ برچسب بارکددار شماره اموال"><AppIcon Name="barcode" /> برچسب</a>
+            @if (Session.Can(Permissions.EquipmentManage))
+            {
+                <a class="btn btn-quiet" href="equipment/new?copy=@d.Id" title="فرم ثبت با همین مشخصات، بدون شماره اموال و سریال"><AppIcon Name="copy" /> ثبت مشابه</a>
+            }
+            @if (Session.Can(Permissions.EquipmentDelete))
+            {
+                <button type="button" class="btn btn-danger-quiet" @onclick="@(() => _dialog = "delete")"><AppIcon Name="trash" /> حذف</button>
+            }
+        </div>
+    </div>
+
+    <div class="tabs" role="tablist">
+        <button type="button" role="tab" class="tab @(_tab == "info" ? "active" : "")" @onclick='() => _tab = "info"'>مشخصات</button>
+        <button type="button" role="tab" class="tab @(_tab == "repairs" ? "active" : "")" @onclick="ShowRepairsAsync">
+            <AppIcon Name="wrench" Size="16" /> تعمیرات
+        </button>
+        <button type="button" role="tab" class="tab @(_tab == "history" ? "active" : "")" @onclick="ShowHistoryAsync">
+            <AppIcon Name="history" Size="16" /> تاریخچه
+        </button>
+    </div>
+
+    @if (_tab == "repairs")
+    {
+        <section class="card-emu">
+            <div class="card-emu-head">
+                <h2>سابقه‌ی تعمیر</h2>
+                @if (!retired && Session.Can(Permissions.EquipmentChangeStatus) && _repairs is not null && _repairs.All(r => r.ReturnedAtUtc is not null))
+                {
+                    <button type="button" class="btn btn-sm btn-quiet" @onclick="OpenRepairSend"><AppIcon Name="wrench" Size="15" /> ارسال به تعمیر</button>
+                }
+            </div>
+            @if (_repairsError is not null)
+            {
+                <div class="card-emu-body"><div class="form-alert" role="alert"><AppIcon Name="warning" /> <span>@_repairsError</span></div></div>
+            }
+            else if (_repairs is null)
+            {
+                <div class="card-emu-body"><div class="loading-line">در حال بارگذاری…</div></div>
+            }
+            else if (_repairs.Count == 0)
+            {
+                <div class="card-emu-body"><p class="muted mb-0">این دستگاه به تعمیر نرفته است.</p></div>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead><tr><th>ارسال</th><th>تعمیرگاه</th><th>مشکل</th><th>برگشت</th><th>نتیجه</th><th>هزینه (ریال)</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var repair in _repairs)
+                        {
+                            <tr @key="repair.Id">
+                                <td class="nowrap">@JalaliDate.FormatDate(repair.SentAtUtc)</td>
+                                <td>@Dash(repair.Vendor)</td>
+                                <td>@repair.Problem</td>
+                                <td class="nowrap">@(repair.ReturnedAtUtc is { } back ? JalaliDate.FormatDate(back) : "هنوز برنگشته")</td>
+                                <td>@Dash(repair.Result)</td>
+                                <td class="nowrap">@(repair.CostRials is { } cost ? JalaliDate.ToPersianDigits(cost.ToString("N0")) : "—")</td>
+                                <td>
+                                    @if (repair.ReturnedAtUtc is null && Session.Can(Permissions.EquipmentChangeStatus))
+                                    {
+                                        <button type="button" class="btn btn-sm btn-primary" @onclick="() => OpenRepairReturn(repair)">ثبت برگشت</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+    }
+    else if (_tab == "history")
+    {
+        <section class="card-emu">
+            <div class="card-emu-body">
+                @if (_historyError is not null)
+                {
+                    <div class="form-alert" role="alert"><AppIcon Name="warning" /> <span>@_historyError</span></div>
+                }
+                else if (_history is null)
+                {
+                    <div class="loading-line">در حال بارگذاری…</div>
+                }
+                else
+                {
+                    <HistoryTimeline Entries="_history" DeviceId="Id" />
+                }
+            </div>
+        </section>
+    }
+    else
+    {
+        <div class="device-grid device-grid-main">
+            <div>
+                <section class="card-emu">
+                    <div class="card-emu-head"><h2>مشخصات</h2></div>
+                    <div class="card-emu-body">
+                        <dl class="spec-list">
+                            <div><dt>شماره اموال</dt><dd><bdi class="mono">@d.AssetNumber</bdi></dd></div>
+                            <div><dt>سریال</dt><dd><bdi class="mono">@Dash(d.SerialNumber)</bdi></dd></div>
+                            @if (hub)
+                            {
+                                <div><dt>نام کامپیوتر</dt><dd><bdi class="mono">@Dash(d.ComputerName)</bdi></dd></div>
+                            }
+                            @if (d.PeripheralKind is not null)
+                            {
+                                <div><dt>نوع جانبی</dt><dd>@d.PeripheralKind</dd></div>
+                            }
+                            <div><dt>برند</dt><dd>@Dash(d.Brand)</dd></div>
+                            <div><dt>مدل</dt><dd>@Dash(d.Model)</dd></div>
+                            @if (EquipmentRules.ShowsSize(d.Type))
+                            {
+                                <div><dt>سایز</dt><dd>@Dash(d.SizeText)</dd></div>
+                            }
+                            @if (hub)
+                            {
+                                <div><dt>جانبی‌ها</dt><dd>@Accessories(d)</dd></div>
+                            }
+                            <div><dt>تاریخ ثبت</dt><dd>@JalaliDate.Format(d.CreatedAtUtc)</dd></div>
+                            <div><dt>آخرین تغییر</dt><dd>@JalaliDate.Format(d.UpdatedAtUtc)</dd></div>
+                            @if (d.Notes is not null)
+                            {
+                                <div class="span-all"><dt>یادداشت</dt><dd style="font-weight:400;white-space:pre-wrap;">@d.Notes</dd></div>
+                            }
+                        </dl>
+                    </div>
+                </section>
+
+                @if (hub)
+                {
+                    <section class="card-emu">
+                        <div class="card-emu-head"><h2>قطعات</h2></div>
+                        @if (d.Components.Count == 0)
+                        {
+                            <div class="card-emu-body muted">
+                                قطعه‌ای ثبت نشده. <a href="equipment/@d.Id/edit">افزودن قطعه</a>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="table-card" style="border:0;box-shadow:none;">
+                                <table class="data-table">
+                                    <thead><tr><th>قطعه</th><th>برند</th><th>مدل</th><th>ظرفیت</th></tr></thead>
+                                    <tbody>
+                                        @foreach (var part in d.Components)
+                                        {
+                                            <tr @key="part.Id">
+                                                <td style="font-weight:600;">@AuditLabels.Kind(part.Kind)</td>
+                                                <td>@Dash(part.Brand)</td>
+                                                <td>@Dash(part.Model)</td>
+                                                <td>@if (EquipmentRules.AllowsCapacity(part.Kind)) { <bdi class="mono">@Dash(part.Capacity)</bdi> } else { <span class="muted">—</span> }</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </section>
+                }
+            </div>
+
+            <div>
+                <div class="where-card">
+                    <h2>الان کجاست</h2>
+                    <div class="where-main">
+                        @d.LocationUnitName
+                        <span class="where-sub">@EquipmentText.Place(d.BuildingName, d.FloorName, d.Room)</span>
+                        @if (d.Station is not null || d.StationPosition is not null)
+                        {
+                            <span class="where-sub">@EquipmentText.Place(d.Station, d.StationPosition)</span>
+                        }
+                    </div>
+                    <h2>صاحب اموال</h2>
+                    <div class="where-main">@d.OwnerUnitName</div>
+                </div>
+
+                <section class="card-emu">
+                    <div class="card-emu-head"><h2>دستگاه‌های متصل</h2></div>
+                    <div class="card-emu-body">
+                        @if (d.Parent is { } parent)
+                        {
+                            <p class="muted mb-1" style="font-size:.84rem;">این دستگاه وصل است به:</p>
+                            <div class="linked-item">
+                                <span class="type-chip"><AppIcon Name="@parent.Type.ToString()" /></span>
+                                <a href="equipment/@parent.Id">
+                                    @EquipmentText.Title(parent)
+                                    <span class="cell-sub"><bdi class="mono">@parent.AssetNumber</bdi></span>
+                                </a>
+                                <button type="button" class="icon-button danger" title="جدا کردن" aria-label="جدا کردن از مرکز"
+                                        disabled="@(_busy || !Session.Can(Permissions.EquipmentLink))" @onclick="() => UnlinkFromParentAsync(parent)">
+                                    <AppIcon Name="unlink" Size="16" />
+                                </button>
+                            </div>
+                        }
+                        else if (d.Children.Count > 0)
+                        {
+                            @foreach (var child in d.Children)
+                            {
+                                <div class="linked-item" @key="child.Id">
+                                    <span class="type-chip"><AppIcon Name="@child.Type.ToString()" /></span>
+                                    <a href="equipment/@child.Id">
+                                        @EquipmentText.Title(child)
+                                        <span class="cell-sub">@AuditLabels.Type(child.Type) <bdi class="mono">@child.AssetNumber</bdi></span>
+                                    </a>
+                                    <button type="button" class="icon-button danger" title="جدا کردن" aria-label="جدا کردن دستگاه"
+                                            disabled="@(_busy || !Session.Can(Permissions.EquipmentLink))" @onclick="() => UnlinkChildAsync(child)">
+                                        <AppIcon Name="unlink" Size="16" />
+                                    </button>
+                                </div>
+                            }
+                        }
+                        else if (hub && !retired && Session.Can(Permissions.EquipmentLink))
+                        {
+                            <p class="muted mb-2">دستگاهی وصل نیست.</p>
+                            <button type="button" class="btn btn-sm btn-quiet" @onclick="OpenLink"><AppIcon Name="link" Size="15" /> اتصال مانیتور، پرینتر یا جانبی</button>
+                        }
+                        else if (hub)
+                        {
+                            <p class="muted mb-0">دستگاهی وصل نیست.</p>
+                        }
+                        else
+                        {
+                            <p class="muted mb-0">به کیس یا لپ‌تاپی وصل نیست. برای اتصال، از صفحه‌ی همان کیس یا لپ‌تاپ اقدام کنید.</p>
+                        }
+                    </div>
+                </section>
+            </div>
+        </div>
+    }
+}
+
+@if (_dialog == "delete" && _device is not null)
+{
+    <DeleteDialog Title="حذف دستگاه" ItemName="@($"{AuditLabels.Type(_device.Type)} {_device.AssetNumber}")"
+                  Warning="با حذف، این شماره اموال آزاد می‌شود. برای کنار گذاشتن دستگاه واقعی، به‌جای حذف آن را اسقاط کنید. تاریخچه می‌ماند."
+                  Load="() => EquipmentApi.DependenciesAsync(Id)"
+                  Delete="() => EquipmentApi.DeleteAsync(Id)"
+                  OnCancel="CloseDialog"
+                  OnDeleted="OnDeleted" />
+}
+
+@if (_dialog == "move" && _device is not null)
+{
+    <ModalDialog Title="جابه‌جایی دستگاه" Wide="true" OnClose="CloseDialog">
+        <EditForm Model="_move" OnSubmit="SubmitMoveAsync">
+            <LocationFields Buildings="_buildings" Floors="_floors" Units="_units" Errors="_dialogErrors"
+                            @bind-BuildingId="_move.BuildingId"
+                            @bind-FloorId="_move.FloorId"
+                            @bind-LocationUnitId="_move.LocationUnitId"
+                            @bind-Room="_move.Room"
+                            @bind-Station="_move.Station"
+                            @bind-StationPosition="_move.StationPosition" />
+
+            <div class="form-field mt-3">
+                <label for="move-reason">دلیل (اختیاری)</label>
+                <input id="move-reason" class="form-control" @bind="_move.Reason" />
+            </div>
+
+            @if (_device.Children.Count > 0)
+            {
+                <div class="form-check mt-3">
+                    <input id="move-linked" class="form-check-input" type="checkbox" @bind="_move.MoveLinked" />
+                    <label class="form-check-label" for="move-linked">@JalaliDate.ToPersianDigits(_device.Children.Count.ToString()) دستگاه متصل هم جابه‌جا شوند</label>
+                </div>
+            }
+
+            @DialogAlert
+
+            <div class="modal-actions">
+                <button type="submit" class="btn btn-primary" disabled="@_busy">@(_busy ? "در حال ذخیره…" : "جابه‌جا کن")</button>
+                <button type="button" class="btn btn-quiet" @onclick="CloseDialog">انصراف</button>
+            </div>
+        </EditForm>
+    </ModalDialog>
+}
+
+@if (_dialog == "status" && _device is not null)
+{
+    <ModalDialog Title="تغییر وضعیت" OnClose="CloseDialog">
+        <EditForm Model="_status" OnSubmit="SubmitStatusAsync">
+            <div class="choice-list" role="radiogroup" aria-label="وضعیت">
+                @foreach (var status in Enum.GetValues<EquipmentStatus>())
+                {
+                    var locked = _device.Status == EquipmentStatus.Retired && status != EquipmentStatus.Retired && !Session.Can(Permissions.EquipmentRestore);
+                    <label class="choice @(_status.Status == status ? "selected" : "") @(locked ? "disabled" : "")">
+                        <input class="form-check-input mt-0" type="radio" name="status" disabled="@locked"
+                               checked="@(_status.Status == status)" @onchange="() => _status.Status = status" />
+                        <StatusBadge Status="status" />
+                    </label>
+                }
+            </div>
+
+            @if (_device.Status == EquipmentStatus.Retired && !Session.Can(Permissions.EquipmentRestore))
+            {
+                <div class="form-hint mt-2">اجازه‌ی بازگرداندن از اسقاط را ندارید.</div>
+            }
+
+            @if (_status.Status == EquipmentStatus.Retired && _device.Status != EquipmentStatus.Retired && (_device.Children.Count > 0 || _device.Parent is not null))
+            {
+                <div class="form-alert warning mt-3 mb-0">
+                    <AppIcon Name="warning" />
+                    <span>با اسقاط، اتصال این دستگاه به دستگاه‌های دیگر خودکار قطع می‌شود.</span>
+                </div>
+            }
+
+            <div class="form-field mt-3">
+                <label for="status-reason">
+                    دلیل
+                    @if (_status.Status == EquipmentStatus.Retired)
+                    {
+                        <span class="required">*</span>
+                    }
+                </label>
+                <input id="status-reason" class="form-control" @bind="_status.Reason" />
+                <FieldError Field="Reason" Errors="_dialogErrors" />
+            </div>
+
+            @DialogAlert
+
+            <div class="modal-actions">
+                <button type="submit" class="btn @(_status.Status == EquipmentStatus.Retired ? "btn-danger" : "btn-primary")"
+                        disabled="@(_busy || _status.Status == _device.Status)">
+                    @(_busy ? "در حال ذخیره…" : _status.Status == EquipmentStatus.Retired ? "اسقاط کن" : "ذخیره")
+                </button>
+                <button type="button" class="btn btn-quiet" @onclick="CloseDialog">انصراف</button>
+            </div>
+        </EditForm>
+    </ModalDialog>
+}
+
+@if (_dialog == "link" && _device is not null)
+{
+    <ModalDialog Title="اتصال دستگاه" OnClose="CloseDialog">
+        <div class="form-field">
+            <label for="link-search">شماره اموال، سریال یا مدل</label>
+            <input id="link-search" class="form-control" autocomplete="off" @oninput="OnLinkSearchAsync" />
+            <div class="form-hint">فقط دستگاه‌های آزاد و غیر از کیس و لپ‌تاپ نشان داده می‌شوند.</div>
+        </div>
+
+        <div class="result-list">
+            @foreach (var candidate in _linkResults)
+            {
+                <button type="button" class="result-item @(_linkChild?.Id == candidate.Id ? "selected" : "")" @key="candidate.Id"
+                        @onclick="() => _linkChild = candidate">
+                    <span class="type-chip"><AppIcon Name="@candidate.Type.ToString()" /></span>
+                    <span>
+                        @EquipmentText.Title(candidate)
+                        <span class="cell-sub">
+                            @AuditLabels.Type(candidate.Type) <bdi class="mono">@candidate.AssetNumber</bdi>
+                            ، @EquipmentText.Place(candidate.LocationUnitName, candidate.Room)
+                        </span>
+                    </span>
+                </button>
+            }
+            @if (_linkSearched && _linkResults.Count == 0)
+            {
+                <div class="muted p-2">دستگاه قابل اتصالی پیدا نشد.</div>
+            }
+        </div>
+
+        @if (_linkChild is not null && LocationDiffers(_linkChild))
+        {
+            <div class="form-check mt-3">
+                <input id="link-move" class="form-check-input" type="checkbox" @bind="_linkMove" />
+                <label class="form-check-label" for="link-move">محل این دستگاه هم مثل @AuditLabels.Type(_device.Type) شود</label>
+            </div>
+        }
+
+        @DialogAlert
+
+        <div class="modal-actions">
+            <button type="button" class="btn btn-primary" disabled="@(_busy || _linkChild is null)" @onclick="SubmitLinkAsync">
+                @(_busy ? "در حال اتصال…" : "وصل کن")
+            </button>
+            <button type="button" class="btn btn-quiet" @onclick="CloseDialog">انصراف</button>
+        </div>
+    </ModalDialog>
+}
+
+@if (_dialog == "repair-send" && _device is not null)
+{
+    <ModalDialog Title="ارسال به تعمیر" OnClose="CloseDialog">
+        <div class="form-field">
+            <label for="repair-problem">مشکل <span class="required">*</span></label>
+            <textarea id="repair-problem" class="form-control" rows="3" @bind="_repairSend.Problem"></textarea>
+            <FieldError Field="Problem" Errors="_dialogErrors" />
+        </div>
+        <div class="form-field mt-3">
+            <label for="repair-vendor">تعمیرگاه (اختیاری)</label>
+            <input id="repair-vendor" class="form-control" @bind="_repairSend.Vendor" />
+            <FieldError Field="Vendor" Errors="_dialogErrors" />
+        </div>
+        <p class="muted-line mt-2 mb-0">تاریخ امروز ثبت می‌شود و وضعیت دستگاه «در تعمیر» می‌شود.</p>
+        @DialogAlert
+        <div class="modal-actions">
+            <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="SubmitRepairSendAsync">@(_busy ? "در حال ذخیره…" : "ثبت ارسال")</button>
+            <button type="button" class="btn btn-quiet" @onclick="CloseDialog">انصراف</button>
+        </div>
+    </ModalDialog>
+}
+
+@if (_dialog == "repair-return" && _device is not null && _returning is not null)
+{
+    <ModalDialog Title="برگشت از تعمیر" OnClose="CloseDialog">
+        <p class="muted-line">ارسال @JalaliDate.FormatDate(_returning.SentAtUtc): @_returning.Problem</p>
+        <div class="form-field">
+            <label for="repair-result">نتیجه (اختیاری)</label>
+            <input id="repair-result" class="form-control" placeholder="مثلاً پاور تعویض شد" @bind="_repairReturn.Result" />
+            <FieldError Field="Result" Errors="_dialogErrors" />
+        </div>
+        <div class="form-field mt-3">
+            <label for="repair-cost">هزینه به ریال (اختیاری)</label>
+            <input id="repair-cost" class="form-control" type="number" min="0" step="1000" dir="ltr" @bind="_repairReturn.CostRials" />
+            <FieldError Field="CostRials" Errors="_dialogErrors" />
+        </div>
+        <div class="choice-list mt-3" role="radiogroup" aria-label="وضعیت بعد از تعمیر">
+            @foreach (var status in new[] { EquipmentStatus.Active, EquipmentStatus.InStorage })
+            {
+                <label class="choice @(_repairReturn.NewStatus == status ? "selected" : "")">
+                    <input class="form-check-input mt-0" type="radio" name="repair-status" checked="@(_repairReturn.NewStatus == status)" @onchange="() => _repairReturn.NewStatus = status" />
+                    <StatusBadge Status="status" />
+                </label>
+            }
+        </div>
+        @DialogAlert
+        <div class="modal-actions">
+            <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="SubmitRepairReturnAsync">@(_busy ? "در حال ذخیره…" : "ثبت برگشت")</button>
+            <button type="button" class="btn btn-quiet" @onclick="CloseDialog">انصراف</button>
+        </div>
+    </ModalDialog>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private List<RepairItem>? _repairs;
+    private string? _repairsError;
+    private RepairSendRequest _repairSend = new();
+    private RepairReturnRequest _repairReturn = new();
+    private RepairItem? _returning;
+
+    private async Task ShowRepairsAsync()
+    {
+        _tab = "repairs";
+        await LoadRepairsAsync();
+    }
+
+    private async Task LoadRepairsAsync()
+    {
+        _repairsError = null;
+        var result = await EquipmentApi.RepairsAsync(Id);
+        if (result.IsSuccess) _repairs = result.Value;
+        else _repairsError = result.ErrorMessage;
+    }
+
+    private void OpenRepairSend()
+    {
+        _repairSend = new RepairSendRequest();
+        _dialog = "repair-send";
+    }
+
+    private void OpenRepairReturn(RepairItem repair)
+    {
+        _returning = repair;
+        _repairReturn = new RepairReturnRequest { NewStatus = EquipmentStatus.Active, Version = repair.Version };
+        _dialog = "repair-return";
+    }
+
+    private async Task SubmitRepairSendAsync()
+    {
+        if (_device is null || _busy) return;
+        _busy = true;
+        try
+        {
+            _repairSend.EquipmentVersion = _device.Version;
+            var result = await EquipmentApi.SendToRepairAsync(_device.Id, _repairSend);
+            if (result.IsSuccess)
+            {
+                await AfterChangeAsync(result.Value!, "ارسال به تعمیر ثبت شد.");
+                await LoadRepairsAsync();
+            }
+            else ShowDialogFailure(result);
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task SubmitRepairReturnAsync()
+    {
+        if (_device is null || _returning is null || _busy) return;
+        _busy = true;
+        try
+        {
+            _repairReturn.EquipmentVersion = _device.Version;
+            var result = await EquipmentApi.ReturnFromRepairAsync(_returning.Id, _repairReturn);
+            if (result.IsSuccess)
+            {
+                await AfterChangeAsync(result.Value!, "برگشت از تعمیر ثبت شد.");
+                await LoadRepairsAsync();
+            }
+            else ShowDialogFailure(result);
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task VerifyAsync()
+    {
+        if (_device is null || _busy) return;
+        _busy = true;
+        try
+        {
+            var result = await EquipmentApi.VerifyAsync(_device.Id, _device.Version);
+            if (result.IsSuccess) await AfterChangeAsync(result.Value!, "حضور دستگاه تأیید شد.");
+            else Toasts.Show(result.ErrorMessage, isWarning: true);
+        }
+        finally { _busy = false; }
+    }
+    private EquipmentDetail? _device;
+    private List<AuditEntryItem>? _history;
+    private List<BuildingItem> _buildings = [];
+    private List<FloorItem> _floors = [];
+    private List<UnitItem> _units = [];
+    private string _tab = "info";
+    private string? _dialog;
+    private string? _loadError;
+    private string? _historyError;
+    private string? _dialogError;
+    private Dictionary<string, string[]> _dialogErrors = [];
+    private bool _busy;
+
+    private MoveEquipmentRequest _move = new();
+    private ChangeStatusRequest _status = new();
+    private List<EquipmentListItem> _linkResults = [];
+    private EquipmentListItem? _linkChild;
+    private bool _linkMove = true;
+    private bool _linkSearched;
+    private int _linkRequest;
+
+    private static string Dash(string? value) => string.IsNullOrEmpty(value) ? "—" : value;
+
+    private static string Accessories(EquipmentDetail d)
+    {
+        var parts = new List<string>();
+        if (d.HasMouse) parts.Add(d.MouseModel is null ? "موس" : $"موس {d.MouseModel}");
+        if (d.HasKeyboard) parts.Add(d.KeyboardModel is null ? "کیبورد" : $"کیبورد {d.KeyboardModel}");
+        if (d.OtherAccessories is not null) parts.Add(d.OtherAccessories);
+        return parts.Count == 0 ? "—" : string.Join("، ", parts);
+    }
+
+    private RenderFragment DialogAlert => builder =>
+    {
+        if (_dialogError is null) return;
+
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "form-alert mt-3 mb-0");
+        builder.AddAttribute(2, "role", "alert");
+        builder.AddContent(3, _dialogError);
+        builder.CloseElement();
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // رفتن از یک دستگاه به دستگاه متصل، همین نمونه‌ی صفحه را با Id تازه بازاستفاده می‌کند.
+        _device = null;
+        _history = null;
+        _repairs = null;
+        _tab = "info";
+        _dialog = null;
+        _loadError = null;
+
+        var result = await EquipmentApi.GetAsync(Id);
+        if (result.IsSuccess)
+        {
+            _device = result.Value;
+        }
+        else
+        {
+            _loadError = result.Outcome == ApiOutcome.NotFound ? "این دستگاه پیدا نشد." : result.ErrorMessage;
+        }
+    }
+
+    private async Task ShowHistoryAsync()
+    {
+        _tab = "history";
+        await LoadHistoryAsync();
+    }
+
+    private async Task LoadHistoryAsync()
+    {
+        _historyError = null;
+        var result = await EquipmentApi.HistoryAsync(Id);
+        if (result.IsSuccess)
+        {
+            _history = result.Value;
+        }
+        else
+        {
+            _historyError = result.ErrorMessage;
+        }
+    }
+
+    private void OnDeleted()
+    {
+        Toasts.Show("دستگاه حذف شد.");
+        Navigation.NavigateTo("");
+    }
+
+    private void CloseDialog()
+    {
+        _dialog = null;
+        _dialogError = null;
+        _dialogErrors = [];
+    }
+
+    private async Task AfterChangeAsync(EquipmentDetail updated, string message)
+    {
+        _device = updated;
+        _history = null;
+        if (_tab == "history") await LoadHistoryAsync();
+        CloseDialog();
+        Toasts.Show(message);
+    }
+
+    private void ShowDialogFailure<T>(ApiResult<T> result) where T : class
+    {
+        _dialogErrors = result.Problem?.Errors ?? [];
+        _dialogError = result.ErrorMessage;
+    }
+
+    // جابه‌جایی
+
+    private async Task OpenMove()
+    {
+        if (_device is null) return;
+
+        if (_buildings.Count == 0)
+        {
+            var buildings = await Catalog.BuildingsAsync();
+            var floors = await Catalog.FloorsAsync();
+            var units = await Catalog.UnitsAsync();
+            _buildings = buildings.Value ?? [];
+            _floors = floors.Value ?? [];
+            _units = units.Value ?? [];
+        }
+
+        _move = new MoveEquipmentRequest
+        {
+            BuildingId = _device.BuildingId,
+            FloorId = _device.FloorId,
+            LocationUnitId = _device.LocationUnitId,
+            Room = _device.Room,
+            Station = _device.Station,
+            StationPosition = _device.StationPosition,
+            MoveLinked = true,
+            Version = _device.Version
+        };
+        _dialog = "move";
+    }
+
+    private async Task SubmitMoveAsync()
+    {
+        if (_busy || _device is null) return;
+
+        _dialogError = null;
+        _dialogErrors = [];
+
+        _busy = true;
+        try
+        {
+            var result = await EquipmentApi.MoveAsync(_device.Id, _move);
+            if (result.IsSuccess)
+            {
+                await AfterChangeAsync(result.Value!, "دستگاه جابه‌جا شد.");
+            }
+            else
+            {
+                ShowDialogFailure(result);
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // وضعیت
+
+    private void OpenStatus()
+    {
+        if (_device is null) return;
+
+        _status = new ChangeStatusRequest { Status = _device.Status, Version = _device.Version };
+        _dialog = "status";
+    }
+
+    private async Task SubmitStatusAsync()
+    {
+        if (_busy || _device is null) return;
+
+        _dialogError = null;
+        _dialogErrors = [];
+
+        if (_status.Status == EquipmentStatus.Retired && string.IsNullOrWhiteSpace(_status.Reason))
+        {
+            _dialogErrors = new() { ["Reason"] = ["دلیل اسقاط را بنویسید."] };
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await EquipmentApi.ChangeStatusAsync(_device.Id, _status);
+            if (result.IsSuccess)
+            {
+                await AfterChangeAsync(result.Value!, $"وضعیت شد: {AuditLabels.Status(result.Value!.Status)}");
+            }
+            else
+            {
+                ShowDialogFailure(result);
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // اتصال
+
+    private async Task OpenLink()
+    {
+        _linkResults = [];
+        _linkChild = null;
+        _linkMove = true;
+        _linkSearched = false;
+        _dialog = "link";
+        await SearchLinkAsync("");
+    }
+
+    private Task OnLinkSearchAsync(ChangeEventArgs e) => SearchLinkAsync(e.Value?.ToString() ?? "");
+
+    private async Task SearchLinkAsync(string text)
+    {
+        var number = ++_linkRequest;
+
+        var result = await EquipmentApi.ListAsync(new EquipmentQuery { Q = text, PageSize = 40 });
+        if (number != _linkRequest) return;
+
+        _linkResults = (result.Value?.Items ?? [])
+            .Where(e => !EquipmentRules.IsHub(e.Type) && e.ParentId is null)
+            .ToList();
+        _linkSearched = true;
+    }
+
+    private bool LocationDiffers(EquipmentListItem child) =>
+        _device is not null
+        && (child.BuildingId != _device.BuildingId
+            || child.FloorId != _device.FloorId
+            || child.LocationUnitId != _device.LocationUnitId
+            || child.Room != _device.Room);
+
+    private async Task SubmitLinkAsync()
+    {
+        if (_busy || _device is null || _linkChild is null) return;
+
+        _dialogError = null;
+        _busy = true;
+        try
+        {
+            var child = _linkChild;
+            var moveChild = _linkMove && LocationDiffers(child);
+            var hub = _device;
+
+            var result = await EquipmentApi.LinkAsync(hub.Id, new LinkRequest { ChildId = child.Id, Version = hub.Version });
+            if (!result.IsSuccess)
+            {
+                ShowDialogFailure(result);
+                return;
+            }
+
+            var message = "دستگاه وصل شد.";
+
+            // جابه‌جایی جدا با تاریخچه‌ی خودش. نسخه‌ی فرزند با خود اتصال جلو رفته، پس تازه خوانده می‌شود.
+            if (moveChild)
+            {
+                var fresh = await EquipmentApi.GetAsync(child.Id);
+                var moved = fresh.IsSuccess
+                    ? await EquipmentApi.MoveAsync(child.Id, new MoveEquipmentRequest
+                    {
+                        BuildingId = hub.BuildingId,
+                        FloorId = hub.FloorId,
+                        LocationUnitId = hub.LocationUnitId,
+                        Room = hub.Room,
+                        Station = hub.Station,
+                        StationPosition = hub.StationPosition,
+                        MoveLinked = false,
+                        Reason = "اتصال به مجموعه",
+                        Version = fresh.Value!.Version
+                    })
+                    : fresh;
+
+                if (moved.IsSuccess)
+                {
+                    message = "دستگاه وصل شد و محلش هم به‌روز شد.";
+                }
+                else
+                {
+                    Toasts.Show("دستگاه وصل شد ولی محلش عوض نشد. از صفحه‌ی خودش جابه‌جایش کنید.", isWarning: true);
+                }
+            }
+
+            await AfterChangeAsync(result.Value!, message);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task UnlinkChildAsync(EquipmentListItem child)
+    {
+        if (_busy || _device is null) return;
+
+        _busy = true;
+        try
+        {
+            var result = await EquipmentApi.UnlinkAsync(_device.Id, new LinkRequest { ChildId = child.Id, Version = _device.Version });
+            if (result.IsSuccess)
+            {
+                await AfterChangeAsync(result.Value!, "دستگاه جدا شد.");
+            }
+            else
+            {
+                Toasts.Show(result.ErrorMessage, isWarning: true);
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task UnlinkFromParentAsync(EquipmentListItem parent)
+    {
+        if (_busy || _device is null) return;
+
+        _busy = true;
+        try
+        {
+            var result = await EquipmentApi.UnlinkAsync(parent.Id, new LinkRequest { ChildId = _device.Id, Version = parent.Version });
+            if (!result.IsSuccess)
+            {
+                Toasts.Show(result.ErrorMessage, isWarning: true);
+                return;
+            }
+
+            var fresh = await EquipmentApi.GetAsync(_device.Id);
+            if (fresh.IsSuccess) await AfterChangeAsync(fresh.Value!, "اتصال قطع شد.");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

@@ -1,0 +1,482 @@
+@page "/admin/users"
+@attribute [Authorize]
+@inject UsersClient UsersApi
+@inject ApiAuthenticationStateProvider Session
+@inject ToastService Toasts
+@inject IJSRuntime JS
+
+<PageTitle>کاربران | سامانه تجهیزات IT</PageTitle>
+
+<RequirePermission Permission="@Permissions.UsersManage">
+<div class="page-head">
+    <div>
+        <h1>کاربران</h1>
+        <p>کاربری که کاری ثبت کرده حذف نمی‌شود؛ غیرفعالش کنید.</p>
+    </div>
+    <button type="button" class="btn btn-primary" @onclick="OpenCreate"><AppIcon Name="plus" /> کاربر جدید</button>
+</div>
+
+@if (_error is not null)
+{
+    <div class="form-alert" role="alert"><AppIcon Name="warning" /> <span>@_error</span></div>
+}
+
+@if (_users is null)
+{
+    @if (_error is null)
+    {
+        <div class="loading-line">در حال بارگذاری…</div>
+    }
+}
+else
+{
+    <div class="table-card">
+        <table class="data-table">
+            <thead>
+                <tr><th>نام</th><th>نام کاربری</th><th>نقش</th><th>وضعیت</th><th></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var user in _users)
+                {
+                    var isMe = user.Id == Session.CurrentUser?.Id;
+                    <tr @key="user.Id">
+                        <td style="font-weight:600;">
+                            <bdi>@user.DisplayName</bdi>
+                            @if (isMe)
+                            {
+                                <span class="muted" style="font-weight:400;">(شما)</span>
+                            }
+                        </td>
+                        <td><bdi class="mono">@user.UserName</bdi></td>
+                        <td>
+                            @RoleText.Label(user.Role)
+                            @if (user.Grants.Length + user.Denies.Length > 0)
+                            {
+                                <span class="cell-sub">با مجوز جداگانه</span>
+                            }
+                        </td>
+                        <td>
+                            @if (!user.IsActive)
+                            {
+                                <span class="status-badge status-retired">غیرفعال</span>
+                            }
+                            else if (user.MustChangePassword)
+                            {
+                                <span class="status-badge status-inrepair">منتظر تعیین رمز</span>
+                            }
+                            else
+                            {
+                                <span class="status-badge status-active">فعال</span>
+                            }
+                        </td>
+                        <td style="text-align:left;white-space:nowrap;">
+                            <span class="row-actions">
+                                <button type="button" class="btn btn-sm btn-ghost" @onclick="() => OpenEdit(user)"><AppIcon Name="edit" Size="15" /> ویرایش</button>
+                                @if (!isMe)
+                                {
+                                    <button type="button" class="btn btn-sm btn-ghost" @onclick="() => _confirmReset = user"><AppIcon Name="key" Size="15" /> ریست رمز</button>
+                                    @if (user.IsActive)
+                                    {
+                                        <button type="button" class="btn btn-sm btn-ghost" @onclick="() => _confirmDeactivate = user">غیرفعال کن</button>
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="btn btn-sm btn-ghost" disabled="@_busy" @onclick="() => SetActiveAsync(user, true)">فعال کن</button>
+                                    }
+                                    <button type="button" class="icon-button danger" title="حذف" aria-label="حذف @user.UserName" @onclick="() => _deleting = user"><AppIcon Name="trash" Size="16" /></button>
+                                }
+                            </span>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (_creating)
+{
+    <ModalDialog Title="کاربر جدید" OnClose="() => _creating = false">
+        <EditForm Model="_new" OnSubmit="CreateAsync">
+            <div class="form-field">
+                <label for="new-display">نام <span class="required">*</span></label>
+                <input id="new-display" class="form-control" @bind="_new.DisplayName" />
+                <FieldError Field="DisplayName" Errors="_errors" />
+            </div>
+            <div class="form-field mt-3">
+                <label for="new-username">نام کاربری <span class="required">*</span></label>
+                <input id="new-username" class="form-control" dir="ltr" autocomplete="off" autocapitalize="none" spellcheck="false" @bind="_new.UserName" />
+                <div class="form-hint">حروف انگلیسی، رقم و . - _</div>
+                <FieldError Field="UserName" Errors="_errors" />
+            </div>
+            <div class="form-field mt-3">
+                <label for="new-role">نقش <span class="required">*</span></label>
+                <select id="new-role" class="form-select" @bind="_new.Role">
+                    @foreach (var role in _roles)
+                    {
+                        <option value="@role.Name">@RoleText.Label(role.Name)</option>
+                    }
+                </select>
+                <FieldError Field="Role" Errors="_errors" />
+            </div>
+
+            @if (_dialogError is not null)
+            {
+                <div class="form-alert mt-3 mb-0" role="alert">@_dialogError</div>
+            }
+
+            <div class="modal-actions">
+                <button type="submit" class="btn btn-primary" disabled="@_busy">@(_busy ? "در حال ساخت…" : "ساخت کاربر")</button>
+                <button type="button" class="btn btn-quiet" @onclick="() => _creating = false">انصراف</button>
+            </div>
+        </EditForm>
+    </ModalDialog>
+}
+
+@if (_editing is { } editing)
+{
+    <ModalDialog Title="ویرایش کاربر" Wide="true" OnClose="() => _editing = null">
+        <EditForm Model="_edit" OnSubmit="UpdateAsync">
+            <div class="form-grid">
+                <div class="form-field">
+                    <label for="edit-display">نام <span class="required">*</span></label>
+                    <input id="edit-display" class="form-control" @bind="_edit.DisplayName" />
+                    <FieldError Field="DisplayName" Errors="_errors" />
+                </div>
+                <div class="form-field">
+                    <label for="edit-username">نام کاربری <span class="required">*</span></label>
+                    <input id="edit-username" class="form-control" dir="ltr" autocomplete="off" autocapitalize="none" spellcheck="false" @bind="_edit.UserName" />
+                    <FieldError Field="UserName" Errors="_errors" />
+                </div>
+                <div class="form-field">
+                    <label for="edit-role">نقش <span class="required">*</span></label>
+                    <select id="edit-role" class="form-select" disabled="@(editing.Id == Session.CurrentUser?.Id)" @bind="_edit.Role">
+                        @foreach (var role in _roles)
+                        {
+                            <option value="@role.Name">@RoleText.Label(role.Name)</option>
+                        }
+                    </select>
+                    @if (editing.Id == Session.CurrentUser?.Id)
+                    {
+                        <div class="form-hint">نقش خودتان را نمی‌توانید عوض کنید.</div>
+                    }
+                    <FieldError Field="Role" Errors="_errors" />
+                </div>
+            </div>
+
+            <h3 class="mt-4" style="font-size:.98rem;">مجوزهای جداگانه‌ی این کاربر</h3>
+
+            @if (_edit.Role == Roles.Admin)
+            {
+                <p class="muted">نقش مدیر همیشه همه‌ی مجوزها را دارد.</p>
+            }
+            else
+            {
+                <p class="muted" style="font-size:.86rem;">«اجازه» و «منع» بر نقش مقدم‌اند.</p>
+
+                @foreach (var group in Permissions.All.GroupBy(p => p.Group))
+                {
+                    <div class="permission-group" @key="group.Key">
+                        <h3>@group.Key</h3>
+                        @foreach (var permission in group)
+                        {
+                            <div class="permission-row" @key="permission.Key">
+                                <span>
+                                    @permission.Label
+                                    <span class="cell-sub">@(RoleHas(permission.Key) ? "نقش دارد" : "نقش ندارد")</span>
+                                </span>
+                                <span class="segmented" role="group" aria-label="@permission.Label">
+                                    <button type="button" class="@(!_grants.Contains(permission.Key) && !_denies.Contains(permission.Key) ? "on" : "")" @onclick="() => SetOverride(permission.Key, null)">طبق نقش</button>
+                                    <button type="button" class="@(_grants.Contains(permission.Key) ? "on" : "")" @onclick="() => SetOverride(permission.Key, true)">اجازه</button>
+                                    <button type="button" class="@(_denies.Contains(permission.Key) ? "on deny" : "")" @onclick="() => SetOverride(permission.Key, false)">منع</button>
+                                </span>
+                            </div>
+                        }
+                    </div>
+                }
+            }
+
+            <FieldError Field="Permissions" Errors="_errors" />
+
+            @if (_dialogError is not null)
+            {
+                <div class="form-alert mt-3 mb-0" role="alert">@_dialogError</div>
+            }
+
+            <div class="modal-actions">
+                <button type="submit" class="btn btn-primary" disabled="@_busy">@(_busy ? "در حال ذخیره…" : "ذخیره")</button>
+                <button type="button" class="btn btn-quiet" @onclick="() => _editing = null">انصراف</button>
+            </div>
+        </EditForm>
+    </ModalDialog>
+}
+
+@if (_deleting is { } deleting)
+{
+    <DeleteDialog Title="حذف کاربر" ItemName="@deleting.UserName"
+                  Load="() => UsersApi.DependenciesAsync(deleting.Id)"
+                  Delete="() => UsersApi.DeleteAsync(deleting.Id)"
+                  OnCancel="() => _deleting = null"
+                  OnDeleted="OnDeletedAsync" />
+}
+
+@if (_confirmReset is { } resetTarget)
+{
+    <ModalDialog Title="ریست رمز" OnClose="() => _confirmReset = null">
+        <p>رمز «<bdi>@resetTarget.DisplayName</bdi>» عوض می‌شود و نشست‌های بازش فوراً بسته می‌شوند. ادامه می‌دهید؟</p>
+        <div class="modal-actions">
+            <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="() => ResetAsync(resetTarget)">ریست کن</button>
+            <button type="button" class="btn btn-quiet" @onclick="() => _confirmReset = null">انصراف</button>
+        </div>
+    </ModalDialog>
+}
+
+@if (_confirmDeactivate is { } target)
+{
+    <ModalDialog Title="غیرفعال کردن کاربر" OnClose="() => _confirmDeactivate = null">
+        <p>«<bdi>@target.DisplayName</bdi>» فوراً از برنامه بیرون می‌افتد و دیگر نمی‌تواند وارد شود. تاریخچه‌ی کارهایش می‌ماند.</p>
+        <div class="modal-actions">
+            <button type="button" class="btn btn-danger" disabled="@_busy" @onclick="() => SetActiveAsync(target, false)">غیرفعال کن</button>
+            <button type="button" class="btn btn-quiet" @onclick="() => _confirmDeactivate = null">انصراف</button>
+        </div>
+    </ModalDialog>
+}
+
+@if (_revealPassword is not null)
+{
+    <ModalDialog Title="رمز اولیه" OnClose="CloseReveal">
+        <p>رمز «<bdi>@_revealName</bdi>». این رمز <strong>فقط همین یک بار</strong> نشان داده می‌شود؛ کاربر با اولین ورود باید آن را عوض کند.</p>
+        <div class="password-box">
+            <span>@_revealPassword</span>
+            <button type="button" class="btn btn-sm btn-quiet" @onclick="CopyAsync">کپی</button>
+        </div>
+        <div class="modal-actions">
+            <button type="button" class="btn btn-primary" @onclick="CloseReveal">یادداشت کردم</button>
+        </div>
+    </ModalDialog>
+}
+</RequirePermission>
+
+@code {
+    private List<UserItem>? _users;
+    private List<RoleItem> _roles = [];
+    private string? _error;
+    private string? _dialogError;
+    private Dictionary<string, string[]> _errors = [];
+    private bool _busy;
+    private bool _creating;
+    private CreateUserRequest _new = new();
+    private UserItem? _editing;
+    private UpdateUserRequest _edit = new();
+    private HashSet<string> _grants = [];
+    private HashSet<string> _denies = [];
+    private UserItem? _deleting;
+    private UserItem? _confirmReset;
+    private UserItem? _confirmDeactivate;
+    private string? _revealPassword;
+    private string? _revealName;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var result = await UsersApi.ListAsync();
+        var roles = await UsersApi.RolesAsync();
+
+        _roles = roles.Value ?? [];
+
+        if (result.IsSuccess)
+        {
+            _users = result.Value;
+            _error = null;
+        }
+        else
+        {
+            _error = result.ErrorMessage;
+        }
+    }
+
+    private bool RoleHas(string permission) =>
+        _roles.FirstOrDefault(r => r.Name == _edit.Role)?.Permissions.Contains(permission) == true;
+
+    private void OpenCreate()
+    {
+        _new = new CreateUserRequest { Role = _roles.FirstOrDefault(r => r.Name == Roles.Technician)?.Name ?? _roles.FirstOrDefault()?.Name ?? "" };
+        _errors = [];
+        _dialogError = null;
+        _creating = true;
+    }
+
+    private void OpenEdit(UserItem user)
+    {
+        _editing = user;
+        _edit = new UpdateUserRequest { UserName = user.UserName, DisplayName = user.DisplayName, Role = user.Role };
+        _grants = user.Grants.ToHashSet();
+        _denies = user.Denies.ToHashSet();
+        _errors = [];
+        _dialogError = null;
+    }
+
+    private void SetOverride(string key, bool? allow)
+    {
+        _grants.Remove(key);
+        _denies.Remove(key);
+
+        if (allow == true) _grants.Add(key);
+        else if (allow == false) _denies.Add(key);
+    }
+
+    private void ShowFailure<T>(ApiResult<T> result) where T : class
+    {
+        if (result.Problem?.Errors is { Count: > 0 } errors)
+        {
+            _errors = errors;
+        }
+        else
+        {
+            _dialogError = result.ErrorMessage;
+        }
+    }
+
+    private async Task CreateAsync()
+    {
+        if (_busy) return;
+
+        _errors = [];
+        _dialogError = null;
+
+        _busy = true;
+        try
+        {
+            var result = await UsersApi.CreateAsync(_new);
+            if (!result.IsSuccess)
+            {
+                ShowFailure(result);
+                return;
+            }
+
+            _creating = false;
+            _revealName = result.Value!.User.DisplayName;
+            _revealPassword = result.Value.InitialPassword;
+            await LoadAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task UpdateAsync()
+    {
+        if (_busy || _editing is null) return;
+
+        _errors = [];
+        _dialogError = null;
+
+        // برای مدیر مجوز جداگانه معنی ندارد.
+        var isAdmin = _edit.Role == Roles.Admin;
+        _edit.Grants = isAdmin ? [] : _grants.ToArray();
+        _edit.Denies = isAdmin ? [] : _denies.ToArray();
+
+        _busy = true;
+        try
+        {
+            var result = await UsersApi.UpdateAsync(_editing.Id, _edit);
+            if (!result.IsSuccess)
+            {
+                ShowFailure(result);
+                return;
+            }
+
+            var wasMe = _editing.Id == Session.CurrentUser?.Id;
+            _editing = null;
+            Toasts.Show("ذخیره شد.");
+            if (wasMe) await Session.RefreshAsync();
+            await LoadAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task OnDeletedAsync()
+    {
+        Toasts.Show("کاربر حذف شد.");
+        _deleting = null;
+        await LoadAsync();
+    }
+
+    private async Task ResetAsync(UserItem user)
+    {
+        if (_busy) return;
+
+        _busy = true;
+        try
+        {
+            var result = await UsersApi.ResetPasswordAsync(user.Id);
+            _confirmReset = null;
+
+            if (!result.IsSuccess)
+            {
+                Toasts.Show(result.ErrorMessage, isWarning: true);
+                return;
+            }
+
+            _revealName = user.DisplayName;
+            _revealPassword = result.Value!.NewPassword;
+            await LoadAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task SetActiveAsync(UserItem user, bool active)
+    {
+        if (_busy) return;
+
+        _busy = true;
+        try
+        {
+            var result = await UsersApi.SetActiveAsync(user.Id, active);
+            _confirmDeactivate = null;
+
+            if (result.IsSuccess)
+            {
+                Toasts.Show(active ? "کاربر فعال شد." : "کاربر غیرفعال شد.");
+            }
+            else
+            {
+                Toasts.Show(result.ErrorMessage, isWarning: true);
+            }
+
+            await LoadAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task CopyAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", _revealPassword);
+            Toasts.Show("کپی شد.");
+        }
+        catch (JSException)
+        {
+            Toasts.Show("کپی نشد؛ رمز را از روی صفحه بنویسید.", isWarning: true);
+        }
+    }
+
+    // رمز را از حافظه‌ی صفحه هم پاک می‌کنیم.
+    private void CloseReveal()
+    {
+        _revealPassword = null;
+        _revealName = null;
+    }
+}

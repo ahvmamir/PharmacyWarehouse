@@ -1,0 +1,554 @@
+@page "/"
+@page "/equipment"
+@attribute [Authorize]
+@implements IDisposable
+@inject EquipmentClient EquipmentApi
+@inject CatalogClient Catalog
+@inject EquipmentListState State
+@inject NavigationManager Navigation
+@inject ApiAuthenticationStateProvider Session
+@inject ToastService Toasts
+
+<PageTitle>تجهیزات | سامانه تجهیزات IT</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1>تجهیزات</h1>
+        
+    </div>
+    @if (Session.Can(Permissions.EquipmentManage))
+    {
+        <a class="btn btn-primary" href="equipment/new"><AppIcon Name="plus" /> ثبت دستگاه</a>
+    }
+</div>
+
+@if (_stats is not null)
+{
+    <div class="status-tabs" role="group" aria-label="فیلتر وضعیت">
+        <button type="button" class="status-tab @(IsAllSelected ? "selected" : "")" @onclick="SelectAll">
+            <span>همه</span><strong>@Number(_stats.Total)</strong>
+        </button>
+        <button type="button" class="status-tab @(Query.Status == EquipmentStatus.Active ? "selected" : "")" @onclick="() => SelectStatus(EquipmentStatus.Active)">
+            <span>در حال استفاده</span><strong>@Number(_stats.Active)</strong>
+        </button>
+        <button type="button" class="status-tab @(Query.Status == EquipmentStatus.InRepair ? "selected" : "")" @onclick="() => SelectStatus(EquipmentStatus.InRepair)">
+            <span>در تعمیر</span><strong>@Number(_stats.InRepair)</strong>
+        </button>
+        <button type="button" class="status-tab @(Query.Status == EquipmentStatus.InStorage ? "selected" : "")" @onclick="() => SelectStatus(EquipmentStatus.InStorage)">
+            <span>در انبار</span><strong>@Number(_stats.InStorage)</strong>
+        </button>
+        <button type="button" class="status-tab @(Query.Status == EquipmentStatus.Retired ? "selected" : "")" @onclick="() => SelectStatus(EquipmentStatus.Retired)">
+            <span>اسقاط</span><strong>@Number(_stats.Retired)</strong>
+        </button>
+        <button type="button" class="status-tab @(Query.NoAssetNumber ? "selected" : "")" @onclick="SelectNoAsset">
+            <span>شماره موقت</span><strong>@Number(_stats.NoAssetNumber)</strong>
+        </button>
+    </div>
+}
+
+<div class="search-row">
+    <div class="search-box">
+        <AppIcon Name="search" Size="20" />
+        <input type="search" placeholder="شماره اموال، سریال، نام کامپیوتر، برند، مدل یا اتاق…" aria-label="جست‌وجو" autocomplete="off"
+               value="@Query.Q" @oninput="OnSearchInput" @onkeydown="OnSearchKeyDown" @ref="_searchInput"
+               title="Enter روی شماره اموال کامل، مستقیم صفحه‌ی همان دستگاه را باز می‌کند" />
+    </div>
+    <button type="button" class="btn btn-quiet" @onclick="() => State.ShowFilters = !State.ShowFilters">
+        <AppIcon Name="filter" /> فیلترها
+        @if (ActiveFilterCount > 0)
+        {
+            <span class="filter-count">@Number(ActiveFilterCount)</span>
+        }
+    </button>
+    <a class="btn btn-quiet" href="equipment/labels" title="برچسب بارکددار برای دستگاه‌های همین فهرست"><AppIcon Name="barcode" /> برچسب</a>
+</div>
+
+@if (State.ShowFilters)
+{
+    <div class="filters">
+        <div>
+            <label for="f-type">نوع</label>
+            <select id="f-type" class="form-select form-select-sm" value="@Query.Type?.ToString()" @onchange="OnTypeFilter">
+                <option value="">همه</option>
+                @foreach (var type in Enum.GetValues<EquipmentType>())
+                {
+                    <option value="@type">@AuditLabels.Type(type)</option>
+                }
+            </select>
+        </div>
+        <div>
+            <label for="f-owner">واحد صاحب اموال</label>
+            <select id="f-owner" class="form-select form-select-sm" value="@Query.OwnerUnitId" @onchange="e => OnGuidFilter(e, v => Query.OwnerUnitId = v)">
+                <option value="">همه</option>
+                @foreach (var unit in _units)
+                {
+                    <option value="@unit.Id">@unit.Name</option>
+                }
+            </select>
+        </div>
+        <div>
+            <label for="f-location">واحد محل</label>
+            <select id="f-location" class="form-select form-select-sm" value="@Query.LocationUnitId" @onchange="e => OnGuidFilter(e, v => Query.LocationUnitId = v)">
+                <option value="">همه</option>
+                @foreach (var unit in _units)
+                {
+                    <option value="@unit.Id">@unit.Name</option>
+                }
+            </select>
+        </div>
+        <div>
+            <label for="f-building">ساختمان</label>
+            <select id="f-building" class="form-select form-select-sm" value="@Query.BuildingId" @onchange="OnBuildingFilter">
+                <option value="">همه</option>
+                @foreach (var building in _buildings)
+                {
+                    <option value="@building.Id">@building.Name</option>
+                }
+            </select>
+        </div>
+        <div>
+            <label for="f-floor">طبقه</label>
+            <select id="f-floor" class="form-select form-select-sm" value="@Query.FloorId" disabled="@(Query.BuildingId is null)"
+                    @onchange="e => OnGuidFilter(e, v => Query.FloorId = v)">
+                <option value="">همه</option>
+                @foreach (var floor in _floors.Where(f => f.BuildingId == Query.BuildingId))
+                {
+                    <option value="@floor.Id">@floor.Name</option>
+                }
+            </select>
+        </div>
+        <div class="filters-actions">
+            <div class="form-check">
+                <input id="f-retired" class="form-check-input" type="checkbox" checked="@Query.IncludeRetired" @onchange="OnRetiredFilter" />
+                <label class="form-check-label" for="f-retired" style="font-size:.86rem;color:inherit;">با اسقاطی‌ها</label>
+            </div>
+            <button type="button" class="btn btn-sm btn-quiet" @onclick="ClearFiltersAsync">پاک کردن</button>
+        </div>
+    </div>
+}
+
+@if (_error is not null)
+{
+    <div class="form-alert" role="alert">
+        <AppIcon Name="warning" />
+        <span>@_error</span>
+        <button type="button" class="btn btn-sm btn-quiet" @onclick="LoadAsync">تلاش دوباره</button>
+    </div>
+}
+
+@if (_result is null)
+{
+    @if (_error is null)
+    {
+        <div class="loading-line">در حال بارگذاری…</div>
+    }
+}
+else if (_result.Items.Count == 0)
+{
+    <div class="table-card">
+        @if (NeedsSetup)
+        {
+            <div class="empty-state">
+                <AppIcon Name="building" Size="40" />
+                <h2>اول محل‌ها را تعریف کنید</h2>
+                @if (Session.Can(Permissions.LocationsManage))
+                {
+                    <p>برای ثبت دستگاه دست‌کم یک ساختمان با یک طبقه و یک واحد لازم است.</p>
+                    <a class="btn btn-primary" href="admin/locations">تعریف ساختمان و واحد</a>
+                }
+                else
+                {
+                    <p>برای ثبت دستگاه، مدیر باید ساختمان، طبقه و واحد را تعریف کند.</p>
+                }
+            </div>
+        }
+        else if (HasAnyCriteria)
+        {
+            <div class="empty-state">
+                <AppIcon Name="search" Size="40" />
+                <h2>چیزی پیدا نشد</h2>
+                <p>عبارت را کوتاه‌تر کنید یا فیلترها را بردارید.@(CanCreate ? " اگر دستگاه ثبت نشده، همین حالا ثبتش کنید." : "")</p>
+                <button type="button" class="btn btn-quiet" @onclick="ClearAllAsync">پاک کردن جست‌وجو و فیلترها</button>
+                @if (CanCreate)
+                {
+                    <a class="btn btn-primary" href="equipment/new">ثبت دستگاه</a>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="empty-state">
+                <AppIcon Name="box" Size="40" />
+                <h2>هنوز دستگاهی ثبت نشده</h2>
+                @if (CanCreate)
+                {
+                    <p>اولین دستگاه را ثبت کنید.</p>
+                    <a class="btn btn-primary" href="equipment/new">ثبت اولین دستگاه</a>
+                }
+                else
+                {
+                    <p>کاربرانی که مجوز ثبت دارند، دستگاه‌ها را وارد می‌کنند.</p>
+                }
+            </div>
+        }
+    </div>
+}
+else
+{
+    @if (_selected.Count > 0)
+    {
+        <div class="bulk-bar" role="region" aria-label="کار گروهی">
+            <strong>@Number(_selected.Count) دستگاه انتخاب شده</strong>
+            @if (Session.Can(Permissions.EquipmentMove))
+            {
+                <button type="button" class="btn btn-sm btn-quiet" @onclick='() => _bulkMode = "move"'><AppIcon Name="move" Size="15" /> جابه‌جایی</button>
+            }
+            @if (Session.Can(Permissions.EquipmentChangeStatus))
+            {
+                <button type="button" class="btn btn-sm btn-quiet" @onclick='() => _bulkMode = "status"'><AppIcon Name="status" Size="15" /> تغییر وضعیت</button>
+            }
+            <button type="button" class="btn btn-sm btn-quiet" disabled="@(_selected.Count > MaxLabelSelection)" title="@(_selected.Count > MaxLabelSelection ? $"حداکثر {MaxLabelSelection} برچسب" : null)" @onclick="PrintSelectedLabels"><AppIcon Name="barcode" Size="15" /> برچسب</button>
+            <span class="spacer"></span>
+            <button type="button" class="btn btn-sm btn-ghost" @onclick="ClearSelection">لغو انتخاب</button>
+        </div>
+    }
+
+    <div class="table-card">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th class="select-cell">
+                        <input type="checkbox" class="form-check-input" aria-label="انتخاب همه‌ی این صفحه"
+                               checked="@AllOnPageSelected" @onchange="TogglePage" />
+                    </th>
+                    @SortHeader("دستگاه", EquipmentSort.Device)
+                    @SortHeader("شماره اموال", EquipmentSort.AssetNumber)
+                    @SortHeader("نام کامپیوتر", EquipmentSort.ComputerName)
+                    @SortHeader("محل", EquipmentSort.Location)
+                    @SortHeader("صاحب اموال", EquipmentSort.Owner)
+                    @SortHeader("وضعیت", EquipmentSort.Status)
+                    @SortHeader("آخرین تغییر", EquipmentSort.Updated)
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in _result.Items)
+                {
+                    <tr class="row-link @(_selected.ContainsKey(item.Id) ? "selected" : "")" @key="item.Id" @onclick="() => Open(item.Id)">
+                        <td class="select-cell" @onclick:stopPropagation="true">
+                            <input type="checkbox" class="form-check-input" aria-label="انتخاب @item.AssetNumber"
+                                   checked="@_selected.ContainsKey(item.Id)" @onchange="() => Toggle(item)" />
+                        </td>
+                        <td>
+                            <span class="type-cell">
+                                <span class="type-chip"><AppIcon Name="@item.Type.ToString()" /></span>
+                                <span>
+                                    <span class="cell-title" title="@EquipmentText.Title(item)">@EquipmentText.Title(item)</span>
+                                    <span class="cell-sub">@AuditLabels.Type(item.Type)</span>
+                                </span>
+                            </span>
+                        </td>
+                        <td>
+                            <a href="equipment/@item.Id" @onclick:stopPropagation="true"><bdi class="asset-tag @(item.HasTemporaryAssetNumber ? "temporary" : "")">@item.AssetNumber</bdi></a>
+                            @if (item.HasTemporaryAssetNumber)
+                            {
+                                <span class="cell-sub">شماره موقت</span>
+                            }
+                        </td>
+                        <td><bdi class="mono">@item.ComputerName</bdi></td>
+                        <td>
+                            @item.LocationUnitName
+                            <span class="cell-sub nowrap" title="@EquipmentText.Place(item.BuildingName, item.FloorName, item.Room)">@EquipmentText.Place(item.BuildingName, item.FloorName, item.Room)</span>
+                        </td>
+                        <td class="nowrap">@item.OwnerUnitName</td>
+                        <td><StatusBadge Status="item.Status" /></td>
+                        <td class="time-cell">@JalaliDate.FormatDate(item.UpdatedAtUtc)<span class="cell-sub">@JalaliDate.FormatTime(item.UpdatedAtUtc)</span></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <div class="pager">
+            <span>@Number(_result.Total) دستگاه</span>
+            @if (PageCount > 1)
+            {
+                <div class="btn-group-emu">
+                    <button type="button" class="btn btn-sm btn-quiet" disabled="@(Query.Page <= 1)" @onclick="() => GoToPageAsync(Query.Page - 1)">قبلی</button>
+                    <span>صفحه @Number(Query.Page) از @Number(PageCount)</span>
+                    <button type="button" class="btn btn-sm btn-quiet" disabled="@(Query.Page >= PageCount)" @onclick="() => GoToPageAsync(Query.Page + 1)">بعدی</button>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@if (_bulkMode is { } mode)
+{
+    <BulkActionDialog Mode="@mode" Items="_selected.Values.ToList()" Buildings="_buildings" Floors="_floors" Units="_units"
+                      OnClose="() => _bulkMode = null" OnDone="OnBulkDone" />
+}
+
+@code {
+    private PagedResult<EquipmentListItem>? _result;
+    private EquipmentStats? _stats;
+    private List<BuildingItem> _buildings = [];
+    private List<FloorItem> _floors = [];
+    private List<UnitItem> _units = [];
+    private string? _error;
+    private ElementReference _searchInput;
+    private CancellationTokenSource? _debounce;
+
+    // پاسخ کهنه‌ی جست‌وجوی قبلی نباید نتیجه‌ی تازه را بپوشاند.
+    private int _requestNumber;
+
+    private EquipmentQuery Query => State.Query;
+
+    // انتخاب برای کار گروهی؛ با رفتن به صفحه‌ی بعد فهرست می‌ماند. Version همان لحظه‌ی دیدن برای ۴۰۹.
+    private const int MaxLabelSelection = 200;
+    private readonly Dictionary<Guid, EquipmentListItem> _selected = [];
+    private string? _bulkMode;
+
+    private bool AllOnPageSelected => _result is { Items.Count: > 0 } r && r.Items.All(i => _selected.ContainsKey(i.Id));
+
+    private void Toggle(EquipmentListItem item)
+    {
+        if (!_selected.Remove(item.Id)) _selected[item.Id] = item;
+    }
+
+    private void TogglePage()
+    {
+        if (_result is null) return;
+        if (AllOnPageSelected)
+        {
+            foreach (var item in _result.Items) _selected.Remove(item.Id);
+        }
+        else
+        {
+            foreach (var item in _result.Items) _selected[item.Id] = item;
+        }
+    }
+
+    private void ClearSelection() => _selected.Clear();
+
+    private void PrintSelectedLabels() =>
+        Navigation.NavigateTo("equipment/labels?ids=" + string.Join(',', _selected.Keys));
+
+    private async Task OnBulkDone(int changed)
+    {
+        _bulkMode = null;
+        _selected.Clear();
+        Toasts.Show($"{Number(changed)} دستگاه تغییر کرد.");
+        await LoadAsync();
+        await LoadStatsAsync();
+    }
+
+    private bool CanCreate => Session.Can(Permissions.EquipmentManage);
+
+    private bool IsAllSelected => Query.Status is null && !Query.NoAssetNumber;
+
+    private bool HasAnyCriteria => !string.IsNullOrWhiteSpace(Query.Q) || ActiveFilterCount > 0 || !IsAllSelected;
+
+    private bool NeedsSetup => _stats is { Total: 0, Retired: 0 } && (_buildings.Count == 0 || _floors.Count == 0 || _units.Count == 0);
+
+    private int PageCount => _result is null ? 1 : Math.Max(1, (int)Math.Ceiling(_result.Total / (double)_result.PageSize));
+
+    private int ActiveFilterCount =>
+        (Query.Type is null ? 0 : 1)
+        + (Query.OwnerUnitId is null ? 0 : 1)
+        + (Query.LocationUnitId is null ? 0 : 1)
+        + (Query.BuildingId is null ? 0 : 1)
+        + (Query.FloorId is null ? 0 : 1)
+        + (Query.IncludeRetired ? 1 : 0);
+
+    private static string Number(int value) => JalaliDate.ToPersianDigits(value.ToString());
+
+    protected override async Task OnInitializedAsync()
+    {
+        var catalog = Task.WhenAll(LoadCatalogAsync(), LoadStatsAsync());
+        await LoadAsync();
+        await catalog;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // هدف اصلی این صفحه جست‌وجوست؛ کاربر می‌تواند بی‌درنگ تایپ کند یا بارکد بخواند.
+        if (firstRender) await _searchInput.FocusAsync();
+    }
+
+    private async Task LoadCatalogAsync()
+    {
+        var buildings = await Catalog.BuildingsAsync();
+        var floors = await Catalog.FloorsAsync();
+        var units = await Catalog.UnitsAsync();
+
+        _buildings = buildings.Value ?? [];
+        _floors = floors.Value ?? [];
+        _units = units.Value ?? [];
+    }
+
+    private async Task LoadStatsAsync()
+    {
+        _stats = (await EquipmentApi.SummaryAsync()).Value;
+    }
+
+    private async Task LoadAsync()
+    {
+        var number = ++_requestNumber;
+        _error = null;
+
+        var result = await EquipmentApi.ListAsync(Query);
+        if (number != _requestNumber) return;
+
+        if (result.IsSuccess)
+        {
+            _result = result.Value;
+        }
+        else
+        {
+            _error = result.ErrorMessage;
+        }
+    }
+
+    private async Task OnSearchInput(ChangeEventArgs e)
+    {
+        Query.Q = e.Value?.ToString();
+        Query.Page = 1;
+
+        _debounce?.Cancel();
+        _debounce = new CancellationTokenSource();
+
+        try
+        {
+            await Task.Delay(250, _debounce.Token);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    // بارکدخوان شماره را تایپ می‌کند و Enter می‌زند. شماره‌ی دقیق یعنی همان دستگاه؛ وگرنه نتیجه‌ی جست‌وجو می‌ماند.
+    private async Task OnSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter") return;
+
+        var text = Query.Q?.Trim();
+        if (string.IsNullOrEmpty(text)) return;
+
+        _debounce?.Cancel();
+        var lookup = await EquipmentApi.LookupByAssetNumberAsync(text);
+        if (lookup.IsSuccess && lookup.Value is [var only])
+        {
+            Open(only.Id);
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private Task ReloadFromFirstPageAsync()
+    {
+        Query.Page = 1;
+        return LoadAsync();
+    }
+
+    private Task SelectAll()
+    {
+        Query.Status = null;
+        Query.NoAssetNumber = false;
+        return ReloadFromFirstPageAsync();
+    }
+
+    private Task SelectStatus(EquipmentStatus status)
+    {
+        Query.Status = status;
+        Query.NoAssetNumber = false;
+        return ReloadFromFirstPageAsync();
+    }
+
+    private Task SelectNoAsset()
+    {
+        Query.Status = null;
+        Query.NoAssetNumber = true;
+        return ReloadFromFirstPageAsync();
+    }
+
+    private Task OnTypeFilter(ChangeEventArgs e)
+    {
+        Query.Type = Enum.TryParse<EquipmentType>(e.Value?.ToString(), out var type) ? type : null;
+        return ReloadFromFirstPageAsync();
+    }
+
+    private Task OnGuidFilter(ChangeEventArgs e, Action<Guid?> set)
+    {
+        set(Guid.TryParse(e.Value?.ToString(), out var id) ? id : null);
+        return ReloadFromFirstPageAsync();
+    }
+
+    private Task OnBuildingFilter(ChangeEventArgs e)
+    {
+        Query.BuildingId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        Query.FloorId = null;
+        return ReloadFromFirstPageAsync();
+    }
+
+    private Task OnRetiredFilter(ChangeEventArgs e)
+    {
+        Query.IncludeRetired = e.Value is true;
+        return ReloadFromFirstPageAsync();
+    }
+
+    private Task ClearFiltersAsync()
+    {
+        Query.Type = null;
+        Query.OwnerUnitId = null;
+        Query.LocationUnitId = null;
+        Query.BuildingId = null;
+        Query.FloorId = null;
+        Query.IncludeRetired = false;
+        return ReloadFromFirstPageAsync();
+    }
+
+    private Task ClearAllAsync()
+    {
+        Query.Q = null;
+        Query.Status = null;
+        Query.NoAssetNumber = false;
+        return ClearFiltersAsync();
+    }
+
+    private Task GoToPageAsync(int page)
+    {
+        Query.Page = page;
+        return LoadAsync();
+    }
+
+    private void Open(Guid id) => Navigation.NavigateTo($"equipment/{id}");
+
+    private RenderFragment SortHeader(string title, string column) => @<th aria-sort="@AriaSort(column)">
+        <button type="button" class="sort-button @(Query.Sort == column ? "sorted" : "")" title="مرتب‌سازی بر اساس @title" @onclick="() => SortByAsync(column)">
+            @title
+            <span class="sort-mark" aria-hidden="true"><AppIcon Name="@SortIcon(column)" Size="14" /></span>
+        </button>
+    </th>;
+
+    private string AriaSort(string column) =>
+        Query.Sort != column ? "none" : Query.Descending ? "descending" : "ascending";
+
+    private string SortIcon(string column) =>
+        Query.Sort != column ? "sort" : Query.Descending ? "sort-desc" : "sort-asc";
+
+    // کلیک دوباره جهت را برمی‌گرداند. برای زمان، معمولاً جدیدترین مهم است.
+    private Task SortByAsync(string column)
+    {
+        Query.Descending = Query.Sort == column ? !Query.Descending : column == EquipmentSort.Updated;
+        Query.Sort = column;
+        return ReloadFromFirstPageAsync();
+    }
+
+    public void Dispose()
+    {
+        _debounce?.Cancel();
+    }
+}

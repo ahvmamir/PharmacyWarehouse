@@ -1,0 +1,32 @@
+@* پوسته: خودکار (مثل ویندوز) ← روشن ← تیره. انتخاب در همین مرورگر می‌ماند. *@
+@inject IJSRuntime JS
+
+<button type="button" class="alert-bell theme-toggle" title="@Label" aria-label="@Label" @onclick="NextAsync">
+    <AppIcon Name="@Icon" Size="17" />
+</button>
+
+@code {
+    private string _mode = "auto";
+
+    private string Icon => _mode switch { "light" => "sun", "dark" => "moon", _ => "sun-moon" };
+
+    private string Label => _mode switch
+    {
+        "light" => "پوسته: روشن (کلیک: تیره)",
+        "dark" => "پوسته: تیره (کلیک: خودکار)",
+        _ => "پوسته: خودکار مثل ویندوز (کلیک: روشن)"
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _mode = await JS.InvokeAsync<string>("emuTheme.get");
+        StateHasChanged();
+    }
+
+    private async Task NextAsync()
+    {
+        _mode = _mode switch { "auto" => "light", "light" => "dark", _ => "auto" };
+        await JS.InvokeVoidAsync("emuTheme.set", _mode);
+    }
+}

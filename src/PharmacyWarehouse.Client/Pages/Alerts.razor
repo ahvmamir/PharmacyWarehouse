@@ -1,0 +1,109 @@
+@page "/alerts"
+@attribute [Authorize]
+@inject AlertsClient AlertsApi
+
+<PageTitle>اعلان‌ها | سامانه تجهیزات IT</PageTitle>
+
+<RequirePermission Permission="@Permissions.EquipmentView">
+<div class="page-head">
+    <div>
+        <h1>اعلان‌ها</h1>
+    </div>
+    <button type="button" class="btn btn-quiet" disabled="@_loading" @onclick="LoadAsync"><AppIcon Name="history" /> بررسی دوباره</button>
+</div>
+
+@if (_error is not null)
+{
+    <div class="form-alert" role="alert"><AppIcon Name="warning" /> <span>@_error</span></div>
+}
+else if (_alerts is null)
+{
+    <div class="loading-line">در حال بررسی…</div>
+}
+else if (_alerts.Count == 0)
+{
+    <div class="table-card">
+        <div class="empty-state">
+            <AppIcon Name="check" Size="40" />
+            <h2>اعلانی نیست</h2>
+            <p>نام کامپیوتر تکراری، شماره‌ی موقت، تعمیر طولانی و مشکل پشتیبان یا دیسک پیدا نشد.</p>
+        </div>
+    </div>
+}
+else
+{
+    @foreach (var alert in _alerts)
+    {
+        var expanded = _expanded.Contains(alert.Key);
+        <section class="alert-card alert-@alert.Severity" @key="alert.Key">
+            <div class="alert-card-head">
+                <AppIcon Name="@(alert.Severity == AlertSeverity.Info ? "info" : "warning")" Size="20" />
+                <div>
+                    <h2>@alert.Title</h2>
+                    <p>@alert.Detail</p>
+                </div>
+            </div>
+            @if (alert.Entries.Count > 0)
+            {
+                <ul class="alert-entries">
+                    @foreach (var entry in expanded ? alert.Entries : alert.Entries.Take(CollapsedEntries))
+                    {
+                        <li>
+                            @if (entry.EquipmentId is { } id)
+                            {
+                                <a href="equipment/@id"><bdi>@entry.Text</bdi></a>
+                            }
+                            else
+                            {
+                                <bdi>@entry.Text</bdi>
+                            }
+                            @if (entry.Sub is not null)
+                            {
+                                <span class="cell-sub">@entry.Sub</span>
+                            }
+                        </li>
+                    }
+                </ul>
+                @if (alert.Entries.Count > CollapsedEntries)
+                {
+                    <button type="button" class="btn btn-sm btn-quiet" @onclick="() => Toggle(alert.Key)">
+                        @(expanded ? "کمتر" : $"نمایش همه ({JalaliDate.ToPersianDigits(alert.Entries.Count.ToString())})")
+                    </button>
+                }
+            }
+        </section>
+    }
+}
+</RequirePermission>
+
+@code {
+    private const int CollapsedEntries = 8;
+
+    private List<AlertItem>? _alerts;
+    private string? _error;
+    private bool _loading;
+    private readonly HashSet<string> _expanded = [];
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            var result = await AlertsApi.ListAsync();
+            if (result.IsSuccess) _alerts = result.Value;
+            else _error = result.ErrorMessage;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void Toggle(string key)
+    {
+        if (!_expanded.Remove(key)) _expanded.Add(key);
+    }
+}

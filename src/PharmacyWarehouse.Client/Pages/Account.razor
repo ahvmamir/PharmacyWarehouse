@@ -1,0 +1,204 @@
+@page "/account"
+@attribute [Authorize]
+@using PharmacyWarehouse.Domain.Auth
+@using PharmacyWarehouse.Client.Services
+@inject ApiAuthenticationStateProvider Session
+@inject AccountClient AccountApi
+@inject ToastService Toasts
+@inject NavigationManager Navigation
+
+<PageTitle>حساب من | سامانه تجهیزات IT</PageTitle>
+
+<div class="page-head"><h1>حساب من</h1></div>
+
+@if (Session.CurrentUser is { } user)
+{
+    <section class="card-emu" style="max-width:32rem;">
+        <div class="card-emu-body">
+            <dl class="spec-list">
+                <div><dt>نام</dt><dd><bdi>@user.DisplayName</bdi></dd></div>
+                <div><dt>نام کاربری</dt><dd><bdi class="mono">@user.UserName</bdi></dd></div>
+                <div><dt>نقش</dt><dd>@string.Join("، ", user.Roles.Select(RoleLabel))</dd></div>
+            </dl>
+        </div>
+    </section>
+}
+
+<section class="card-emu" style="max-width:32rem;">
+<div class="card-emu-head"><h2>@(ForcedMode ? "انتخاب رمز جدید" : "تغییر رمز")</h2></div>
+<div class="card-emu-body">
+<EditForm Model="_formModel" OnSubmit="SubmitAsync">
+    @if (!ForcedMode)
+    {
+        <div class="mb-3">
+            <label for="current-password" class="form-label">رمز فعلی</label>
+            <input id="current-password" class="form-control" dir="ltr"
+                   type="@(_showPassword ? "text" : "password")"
+                   value="@_currentPassword" @oninput="OnCurrentInput"
+                   autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" />
+        </div>
+    }
+
+    <div class="mb-3">
+        <label for="new-password" class="form-label">رمز جدید</label>
+        <input id="new-password" class="form-control" dir="ltr"
+               type="@(_showPassword ? "text" : "password")"
+               value="@_newPassword" @oninput="OnNewInput"
+               autocomplete="new-password" autocapitalize="none" autocorrect="off" spellcheck="false" />
+        <div class="form-hint">حداقل @JalaliDate.ToPersianDigits(MinPasswordLength.ToString()) نویسه، با کیبورد انگلیسی.</div>
+    </div>
+
+    <div class="mb-3">
+        <label for="repeat-password" class="form-label">تکرار رمز جدید</label>
+        <input id="repeat-password" class="form-control" dir="ltr"
+               type="@(_showPassword ? "text" : "password")"
+               value="@_repeatPassword" @oninput="OnRepeatInput"
+               autocomplete="new-password" autocapitalize="none" autocorrect="off" spellcheck="false" />
+    </div>
+
+    <div class="form-check mb-3">
+        <input id="show-passwords" class="form-check-input" type="checkbox"
+               checked="@_showPassword" @onchange="OnShowChanged" />
+        <label class="form-check-label" for="show-passwords">نمایش رمزها</label>
+    </div>
+
+    @if (_error is not null)
+    {
+        <div class="form-alert" role="alert"><AppIcon Name="warning" /> <span>@_error</span></div>
+    }
+
+    <button type="submit" class="btn btn-primary" disabled="@_busy">
+        @(_busy ? "در حال ذخیره…" : ForcedMode ? "ذخیره و شروع کار" : "تغییر رمز")
+    </button>
+</EditForm>
+</div>
+</section>
+
+@code {
+    // سرور مرجع است؛ این پیش‌بررسی فقط برای پیام سریع‌تر است.
+    private const int MinPasswordLength = PasswordRules.MinLength;
+    private const int MaxPasswordLength = PasswordRules.MaxLength;
+
+    private readonly object _formModel = new();
+
+    private string _currentPassword = "";
+    private string _newPassword = "";
+    private string _repeatPassword = "";
+    private bool _showPassword;
+    private bool _busy;
+    private string? _error;
+
+    // رمز اولیه: رمز فعلی را کاربر همین الان تایپ کرده، پس دوباره نمی‌پرسیم.
+    private bool ForcedMode => Session.CurrentUser is { MustChangePassword: true };
+
+    private static string RoleLabel(string role) => RoleText.Label(role);
+
+    private void OnCurrentInput(ChangeEventArgs e) => _currentPassword = e.Value?.ToString() ?? "";
+    private void OnNewInput(ChangeEventArgs e) => _newPassword = e.Value?.ToString() ?? "";
+    private void OnRepeatInput(ChangeEventArgs e) => _repeatPassword = e.Value?.ToString() ?? "";
+    private void OnShowChanged(ChangeEventArgs e) => _showPassword = e.Value is true;
+
+    private async Task SubmitAsync()
+    {
+        if (_busy) return;
+
+        var forced = ForcedMode;
+
+        _error = null;
+
+        if (_newPassword.Length == 0 || (!forced && _currentPassword.Length == 0))
+        {
+            _error = forced ? "رمز جدید را وارد کنید." : "رمز فعلی و رمز جدید را وارد کنید.";
+            return;
+        }
+
+        if (_newPassword != _repeatPassword)
+        {
+            _error = "تکرار رمز جدید با رمز جدید یکی نیست.";
+            return;
+        }
+
+        if (_newPassword.Length < MinPasswordLength)
+        {
+            _error = $"رمز جدید باید حداقل {MinPasswordLength} نویسه باشد.";
+            return;
+        }
+
+        if (_newPassword.Length > MaxPasswordLength)
+        {
+            _error = $"رمز جدید باید حداکثر {MaxPasswordLength} نویسه باشد.";
+            return;
+        }
+
+        if (_newPassword.Any(c => c < ' ' || c > '~'))
+        {
+            _error = "رمز باید فقط با نویسه‌های انگلیسی نوشته شود. کیبورد را انگلیسی کنید.";
+            return;
+        }
+
+        _busy = true;
+        ApiOutcome outcome;
+        try
+        {
+            outcome = forced
+                ? await AccountApi.SetInitialPasswordAsync(_newPassword)
+                : await AccountApi.ChangePasswordAsync(_currentPassword, _newPassword);
+        }
+        finally
+        {
+            _busy = false;
+        }
+
+        switch (outcome)
+        {
+            case ApiOutcome.Success:
+                ClearFields();
+                await Session.RefreshAsync();
+                Toasts.Show("رمز تغییر کرد.");
+
+                // کاربر تازه فقط برای همین به این صفحه آمده بود؛ حالا می‌رود سر کارش.
+                if (forced) Navigation.NavigateTo("");
+                break;
+
+            case ApiOutcome.Forbidden:
+                // سرور می‌گوید رمز اولیه دیگر فعال نیست؛ وضعیت کلاینت کهنه است.
+                ClearFields();
+                _error = "این صفحه برای رمز اولیه دیگر لازم نیست. وضعیت دوباره بارگذاری شد؛ اگر لازم بود رمز را با «رمز فعلی» تغییر دهید.";
+                await Session.RefreshAsync();
+                break;
+
+            case ApiOutcome.BadRequest:
+                if (!forced) _currentPassword = "";
+                _error = forced ? "ورودی نامعتبر است." : "رمز فعلی درست نیست.";
+                break;
+
+            case ApiOutcome.Rejected:
+                _error = $"رمز جدید پذیرفته نشد. شرط‌ها: با رمز فعلی فرق داشته باشد، حداقل {MinPasswordLength} نویسه، دست‌کم ۵ نویسه‌ی متفاوت، خیلی رایج نباشد (مثل ارقام پشت‌سرهم) و فقط با کیبورد انگلیسی نوشته شود.";
+                break;
+
+            case ApiOutcome.TooManyRequests:
+                ClearFields();
+                _error = "تلاش‌های ناموفق زیاد بود. چند دقیقه بعد دوباره امتحان کنید.";
+                break;
+
+            case ApiOutcome.Unauthorized:
+                _error = "نشست شما تمام شده است. دوباره وارد شوید.";
+                break;
+
+            case ApiOutcome.NetworkError:
+                _error = "پاسخ سرور نرسید. ممکن است رمز عوض شده باشد؛ اگر رمز قبلی کار نکرد، با رمز جدید وارد شوید.";
+                break;
+
+            default:
+                _error = "خطای غیرمنتظره. دوباره تلاش کنید.";
+                break;
+        }
+    }
+
+    private void ClearFields()
+    {
+        _currentPassword = "";
+        _newPassword = "";
+        _repeatPassword = "";
+    }
+}

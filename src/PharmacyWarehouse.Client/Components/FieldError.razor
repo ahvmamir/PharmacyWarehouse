@@ -1,0 +1,12 @@
+@if (Errors is not null && Errors.TryGetValue(Field, out var messages))
+{
+    @foreach (var message in messages)
+    {
+        <div class="field-error" role="alert">@message</div>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public string Field { get; set; } = "";
+    [Parameter] public IReadOnlyDictionary<string, string[]>? Errors { get; set; }
+}

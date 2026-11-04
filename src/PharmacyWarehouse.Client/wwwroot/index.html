@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>سامانه تجهیزات IT</title>
+    <base href="/" />
+    <script>
+        // پوسته پیش از بارگذاری CSS تعیین می‌شود تا صفحه‌ی تیره یک لحظه سفید نشود.
+        // حالت‌ها: auto (مثل ویندوز)، light، dark؛ انتخاب در همین مرورگر می‌ماند.
+        window.emuTheme = (function () {
+            var media = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+            function read() { try { return localStorage.getItem("emu-theme") || "auto"; } catch (e) { return "auto"; } }
+            function apply(mode) {
+                var dark = mode === "dark" || (mode !== "light" && media && media.matches);
+                var root = document.documentElement;
+                root.setAttribute("data-theme", dark ? "dark" : "light");
+                root.setAttribute("data-bs-theme", dark ? "dark" : "light");
+            }
+            apply(read());
+            if (media && media.addEventListener) media.addEventListener("change", function () { if (read() === "auto") apply("auto"); });
+            return {
+                get: read,
+                set: function (mode) { try { localStorage.setItem("emu-theme", mode); } catch (e) { } apply(mode); }
+            };
+        })();
+    </script>
+    <link rel="stylesheet" href="lib/bootstrap/dist/css/bootstrap.rtl.min.css" />
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+</head>
+
+<body>
+    <div id="app">
+        <div class="boot-screen">
+            <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg"><path d="M5 11.2 11.6 4.5h17.9A2.5 2.5 0 0 1 32 7v22a2.5 2.5 0 0 1-2.5 2.5H11.6L5 24.8z" fill="currentColor"/><circle cx="11.4" cy="18" r="2.3" fill="#fff"/><path d="M17 12.5h10M17 18h10M17 23.5h6" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg></span>
+            <div class="boot-bar"><span></span></div>
+            <p>در حال بارگذاری…</p>
+        </div>
+    </div>
+
+    <div id="blazor-error-ui">
+        یک خطای غیرمنتظره رخ داد.
+        <a href="." class="reload">بارگذاری مجدد</a>
+        <span class="dismiss">🗙</span>
+    </div>
+    <script>
+        window.emuSaveFile = (name, type, base64) => {
+            const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+            const url = URL.createObjectURL(new Blob([bytes], { type }));
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = name;
+            link.click();
+            URL.revokeObjectURL(url);
+        };
+    </script>
+    <script src="_framework/blazor.webassembly.js"></script>
+</body>
+
+</html>

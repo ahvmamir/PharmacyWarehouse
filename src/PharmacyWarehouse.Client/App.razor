@@ -1,0 +1,33 @@
+@inject ApiAuthenticationStateProvider Session
+
+<Router AppAssembly="@typeof(App).Assembly" NotFoundPage="typeof(Pages.NotFound)">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
+            <Authorizing>
+                <div class="loading-line">در حال بررسی ورود…</div>
+            </Authorizing>
+            <NotAuthorized>
+                @if (Session.IdentityLoadFailed)
+                {
+                    <div class="empty-state">
+                        <h2>ارتباط با سرور برقرار نشد</h2>
+                        <p>وضعیت ورود شما مشخص نیست. «تلاش دوباره» را در بالای صفحه بزنید.</p>
+                    </div>
+                }
+                else if (context.User.Identity?.IsAuthenticated != true)
+                {
+                    <RedirectToLogin />
+                }
+                else
+                {
+                    <div class="empty-state">
+                        <h2>اجازه‌ی دیدن این صفحه را ندارید</h2>
+                        <p>برای دسترسی به این بخش با مدیر سیستم صحبت کنید.</p>
+                        <a class="btn btn-quiet" href="">بازگشت به تجهیزات</a>
+                    </div>
+                }
+            </NotAuthorized>
+        </AuthorizeRouteView>
+        <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+    </Found>
+</Router>

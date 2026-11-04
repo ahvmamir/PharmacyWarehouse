@@ -1,0 +1,30 @@
+@* بخش اختیاری فرم: بسته می‌ماند تا فرم کوتاه بماند؛ اگر پر است یا خطا دارد باز می‌شود. *@
+<section class="card-emu fold @(IsOpen ? "open" : "")">
+    <button type="button" class="fold-head" aria-expanded="@(IsOpen ? "true" : "false")" @onclick="() => _open = !IsOpen">
+        <AppIcon Name="chevron" Size="16" Class="fold-chevron" />
+        <span class="fold-title">@Title</span>
+        <span class="fold-hint">@Hint</span>
+    </button>
+    @if (IsOpen)
+    {
+        <div class="card-emu-body">
+            @ChildContent
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Hint { get; set; }
+
+    // وقتی هنوز کاربر دست نزده، پر بودن بخش تعیین می‌کند باز باشد یا نه.
+    [Parameter] public bool StartOpen { get; set; }
+
+    // خطادار هرگز پنهان نمی‌ماند.
+    [Parameter] public bool ForceOpen { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private bool? _open;
+
+    private bool IsOpen => ForceOpen || (_open ?? StartOpen);
+}

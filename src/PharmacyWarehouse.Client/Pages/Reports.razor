@@ -1,0 +1,426 @@
+@page "/reports"
+@attribute [Authorize]
+@inject ReportsClient ReportsApi
+@inject CatalogClient Catalog
+@inject ApiAuthenticationStateProvider Session
+@inject ToastService Toasts
+@inject IJSRuntime JS
+@inject AppInfoState AppInfo
+
+<PageTitle>گزارش‌ها | سامانه تجهیزات IT</PageTitle>
+
+<RequirePermission Permission="@Permissions.ReportsView">
+<div class="no-print">
+    <div class="page-head">
+        <div>
+            <h1>گزارش‌ها</h1>
+            <p>@_info.Description</p>
+        </div>
+    </div>
+
+    <div class="report-grid">
+        @foreach (var report in ReportCatalog.All)
+        {
+            <button type="button" class="report-tile @(_info.Key == report.Key ? "selected" : "")" @key="report.Key" @onclick="() => SelectAsync(report)">
+                @report.Title
+            </button>
+        }
+    </div>
+
+    <div class="toolbar">
+        @if (_info.UsesDays)
+        {
+            <div>
+                <label for="r-days">بازه</label>
+                <select id="r-days" class="form-select form-select-sm" value="@_days" @onchange="OnDaysAsync">
+                    <option value="1">۲۴ ساعت گذشته</option>
+                    <option value="7">۷ روز گذشته</option>
+                    <option value="30">۳۰ روز گذشته</option>
+                    <option value="90">۹۰ روز گذشته</option>
+                    <option value="0">همه</option>
+                </select>
+            </div>
+        }
+
+        @if (_info.UsesFilters)
+        {
+            <div>
+                <label for="r-type">نوع</label>
+                <select id="r-type" class="form-select form-select-sm" @onchange="e => OnFilterAsync(e, v => _type = v)">
+                    <option value="">همه</option>
+                    @foreach (var type in Enum.GetValues<EquipmentType>())
+                    {
+                        <option value="@type">@AuditLabels.Type(type)</option>
+                    }
+                </select>
+            </div>
+            <div>
+                <label for="r-status">وضعیت</label>
+                <select id="r-status" class="form-select form-select-sm" @onchange="e => OnFilterAsync(e, v => _status = v)">
+                    <option value="">غیر از اسقاط</option>
+                    @foreach (var status in Enum.GetValues<EquipmentStatus>())
+                    {
+                        <option value="@status">@AuditLabels.Status(status)</option>
+                    }
+                </select>
+            </div>
+            <div>
+                <label for="r-owner">صاحب اموال</label>
+                <select id="r-owner" class="form-select form-select-sm" @onchange="e => OnFilterAsync(e, v => _owner = v)">
+                    <option value="">همه</option>
+                    @foreach (var unit in _units)
+                    {
+                        <option value="@unit.Id">@unit.Name</option>
+                    }
+                </select>
+            </div>
+            <div>
+                <label for="r-building">ساختمان</label>
+                <select id="r-building" class="form-select form-select-sm" @onchange="e => OnFilterAsync(e, v => _building = v)">
+                    <option value="">همه</option>
+                    @foreach (var building in _buildings)
+                    {
+                        <option value="@building.Id">@building.Name</option>
+                    }
+                </select>
+            </div>
+        }
+
+        <span class="spacer"></span>
+
+        @if (Session.Can(Permissions.DataExport))
+        {
+            <button type="button" class="btn btn-quiet" disabled="@(_busy || !HasData)" @onclick="DownloadAsync" title="@(IsChanges ? "Excel همه‌ی جزئیات را ردیف‌به‌ردیف دارد" : null)"><AppIcon Name="download" /> Excel</button>
+        }
+        <button type="button" class="btn btn-quiet" disabled="@(!HasData)" title="در پنجره‌ی چاپ، مقصد را Save as PDF بگذارید" @onclick="PrintAsync">
+            <AppIcon Name="print" /> چاپ یا PDF
+        </button>
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <div class="form-alert" role="alert"><AppIcon Name="warning" /> <span>@_error</span></div>
+}
+
+@if (!HasData)
+{
+    @if (_error is null)
+    {
+        <div class="loading-line">در حال ساختن گزارش…</div>
+    }
+}
+else if (_sets is { } sets)
+{
+    <div class="print-only">
+        <div>@PrintHeader</div>
+        <h1>@_info.Title</h1>
+        <div>تاریخ گزارش: @JalaliDate.Format(DateTime.UtcNow)، @JalaliDate.ToPersianDigits(sets.Count.ToString()) کار</div>
+    </div>
+
+    <div class="table-card">
+        @if (sets.Count == 0)
+        {
+            <div class="empty-state"><p>در این بازه تغییری ثبت نشده.</p></div>
+        }
+        else
+        {
+            <div class="no-print change-tools">
+                <button type="button" class="btn btn-sm btn-quiet" @onclick="ToggleAll">@(_open.Count > 0 ? "بستن همه" : "باز کردن همه")</button>
+            </div>
+            <ul class="change-list">
+                @foreach (var set in sets.Take(VisibleRows))
+                {
+                    var open = _open.Contains(set.Id);
+                    <li class="change-item @(open ? "open" : "")" @key="set.Id">
+                        <button type="button" class="change-head" aria-expanded="@(open ? "true" : "false")" @onclick="() => Toggle(set.Id)">
+                            <span class="change-time">@JalaliDate.FormatDate(set.AtUtc)<span class="cell-sub">@JalaliDate.FormatTime(set.AtUtc)</span></span>
+                            <span class="change-text">
+                                <strong><bdi>@set.UserName</bdi></strong> @set.Summary
+                                @if (set.Reason is not null)
+                                {
+                                    <span class="cell-sub">دلیل: @set.Reason</span>
+                                }
+                            </span>
+                            <span class="change-count">@JalaliDate.ToPersianDigits(set.Lines.Count.ToString()) جزء</span>
+                            <AppIcon Name="chevron" Size="16" />
+                        </button>
+                        @if (open)
+                        {
+                            <div class="change-body">
+                                <table class="data-table">
+                                    <thead><tr><th>موضوع</th><th>کار</th><th>فیلد</th><th>از</th><th>به</th></tr></thead>
+                                    <tbody>
+                                        @foreach (var line in set.Lines)
+                                        {
+                                            <tr>
+                                                <td><bdi>@line.Subject</bdi></td>
+                                                <td>@line.Action</td>
+                                                <td>@line.Field</td>
+                                                <td><bdi>@line.From</bdi></td>
+                                                <td><bdi>@line.To</bdi></td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                                @if (set.EquipmentId is { } deviceId)
+                                {
+                                    <a class="btn btn-sm btn-quiet no-print" href="equipment/@deviceId">صفحه‌ی دستگاه</a>
+                                }
+                            </div>
+                        }
+                    </li>
+                }
+            </ul>
+        }
+
+        <div class="pager no-print">
+            <span>@JalaliDate.ToPersianDigits(sets.Count.ToString()) کار</span>
+            @if (sets.Count > VisibleRows)
+            {
+                <span>فقط @JalaliDate.ToPersianDigits(VisibleRows.ToString()) کار اول نمایش داده می‌شود؛ همه در Excel هستند.</span>
+            }
+        </div>
+    </div>
+}
+else if (_table is not null)
+{
+    <div class="print-only">
+        <div>@PrintHeader</div>
+        <h1>@_table.Title</h1>
+        <div>
+            تاریخ گزارش: @JalaliDate.Format(_table.GeneratedAtUtc)، @JalaliDate.ToPersianDigits(_table.Rows.Count.ToString()) ردیف
+            @if (IsWide)
+            {
+                <span>(ستون‌های اصلی؛ همه‌ی ستون‌ها در خروجی Excel است)</span>
+            }
+        </div>
+    </div>
+
+    <div class="table-card">
+        @if (_table.Rows.Count == 0)
+        {
+            <div class="empty-state"><p>برای این گزارش داده‌ای نیست.</p></div>
+        }
+        else
+        {
+            <table class="data-table report-table @(Grouped ? "grouped" : "")">
+                <thead>
+                    <tr>
+                        @foreach (var column in _table.Columns)
+                        {
+                            <th class="@PrintClass(column)">@column</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @{ var band = false; string? previous = null; }
+                    @foreach (var row in _table.Rows.Take(VisibleRows))
+                    {
+                        // ردیف‌های یک دستگاه (مثلاً قطعاتش) یک نوار رنگ؛ دستگاه بعد نوار دیگر.
+                        var continues = Grouped && previous is not null && row[0] == previous;
+                        if (Grouped && !continues && previous is not null) band = !band;
+                        previous = row[0];
+                        <tr class="@(band ? "band" : "") @(continues ? "continues" : "group-start")">
+                            @for (var i = 0; i < row.Length; i++)
+                            {
+                                var repeated = continues && i < GroupColumns(row) ;
+                                <td class="@PrintClass(_table.Columns[i]) @(repeated ? "repeat" : "")"><bdi>@row[i]</bdi></td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+
+        <div class="pager no-print">
+            <span>@JalaliDate.ToPersianDigits(_table.Rows.Count.ToString()) ردیف</span>
+            @if (_table.Rows.Count > VisibleRows)
+            {
+                <span>فقط @JalaliDate.ToPersianDigits(VisibleRows.ToString()) ردیف اول نمایش داده می‌شود؛ همه‌ی ردیف‌ها در Excel هستند.</span>
+            }
+        </div>
+    </div>
+}
+</RequirePermission>
+
+@code {
+    // مرورگر با چند هزار ردیف کند می‌شود؛ خروجی Excel کامل است.
+    private const int VisibleRows = 1000;
+
+    // کاغذ A4 جای ۲۴ ستون ندارد و ستون‌های اضافه از PDF می‌افتند؛ در چاپ فقط این‌ها می‌مانند.
+    private const int MaxPrintColumns = 12;
+
+    private static readonly HashSet<string> PrintColumns =
+    [
+        "نوع", "شماره اموال", "برند", "مدل", "نام کامپیوتر", "واحد صاحب اموال",
+        "ساختمان", "طبقه", "واحد محل", "اتاق", "وضعیت", "آخرین تغییر"
+    ];
+
+    // جدولی که ستون اولش تکرار می‌شود (مثل فهرست قطعات: چند ردیف برای یک دستگاه) گروهی رنگ می‌خورد.
+    private bool Grouped => _table is { Rows.Count: > 1 } t
+        && t.Rows.Zip(t.Rows.Skip(1)).Any(p => p.First.Length > 0 && p.First[0] is not null && p.First[0] == p.Second[0]);
+
+    // ستون‌های اول که در ردیف‌های ادامه‌ی گروه همان مقدار را دارند، کم‌رنگ می‌شوند.
+    private int _groupColumns = -1;
+    private int GroupColumns(string?[] row) => _groupColumns >= 0 ? _groupColumns : (_groupColumns = CountGroupColumns());
+
+    private int CountGroupColumns()
+    {
+        if (_table is null) return 0;
+        var count = int.MaxValue;
+        foreach (var (first, second) in _table.Rows.Zip(_table.Rows.Skip(1)))
+        {
+            if (first[0] != second[0]) continue;
+            var same = 0;
+            while (same < first.Length && same < second.Length && first[same] == second[same]) same++;
+            count = Math.Min(count, same);
+        }
+        return count == int.MaxValue ? 1 : count;
+    }
+
+    private bool IsWide => _table?.Columns.Length > MaxPrintColumns;
+
+    private string? PrintClass(string column) => IsWide && !PrintColumns.Contains(column) ? "no-print" : null;
+
+    private ReportInfo _info = ReportCatalog.All[0];
+    private ReportTable? _table;
+
+    // آخرین تغییرات به‌صورت گروه‌بندی‌شده: هر کار کاربر یک ردیف، جزئیات با کلیک.
+    private List<ChangeSetItem>? _sets;
+    private readonly HashSet<Guid> _open = [];
+
+    // بالای گزارش چاپی: نام بیمارستان (اگر تعریف شده) و نام سامانه.
+    private string PrintHeader => string.Join("، ", new[] { AppInfo.Current?.Organization, AppInfoResponse.ProductName }.Where(v => !string.IsNullOrEmpty(v)));
+
+    private bool IsChanges => _info.Key == ReportCatalog.RecentChanges;
+
+    private bool HasData => _table is not null || _sets is not null;
+
+    private void Toggle(Guid id)
+    {
+        if (!_open.Remove(id)) _open.Add(id);
+    }
+
+    private void ToggleAll()
+    {
+        if (_open.Count > 0)
+        {
+            _open.Clear();
+        }
+        else if (_sets is not null)
+        {
+            foreach (var set in _sets.Take(VisibleRows)) _open.Add(set.Id);
+        }
+    }
+    private string? _error;
+    private bool _busy;
+    private int _days = 30;
+    private string? _type;
+    private string? _status;
+    private string? _owner;
+    private string? _building;
+    private List<UnitItem> _units = [];
+    private List<BuildingItem> _buildings = [];
+    private int _request;
+
+    private string Query()
+    {
+        var parts = new List<string>();
+        if (_info.UsesDays) parts.Add($"days={_days}");
+        if (_info.UsesFilters)
+        {
+            if (!string.IsNullOrEmpty(_type)) parts.Add($"type={_type}");
+            if (!string.IsNullOrEmpty(_status)) parts.Add($"status={_status}");
+            if (!string.IsNullOrEmpty(_owner)) parts.Add($"ownerUnitId={_owner}");
+            if (!string.IsNullOrEmpty(_building)) parts.Add($"buildingId={_building}");
+        }
+
+        return string.Join('&', parts);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Session.Can(Permissions.ReportsView)) return;
+
+        _ = AppInfo.LoadAsync();
+        var load = LoadAsync();
+        _units = (await Catalog.UnitsAsync()).Value ?? [];
+        _buildings = (await Catalog.BuildingsAsync()).Value ?? [];
+        await load;
+    }
+
+    private async Task LoadAsync()
+    {
+        var number = ++_request;
+        _table = null;
+        _sets = null;
+        _groupColumns = -1;
+        _open.Clear();
+        _error = null;
+
+        if (IsChanges)
+        {
+            var changes = await ReportsApi.ChangeSetsAsync(_days);
+            if (number != _request) return;
+
+            if (changes.IsSuccess) _sets = changes.Value;
+            else _error = changes.ErrorMessage;
+            return;
+        }
+
+        var result = await ReportsApi.GetAsync(_info.Key, Query());
+        if (number != _request) return;
+
+        if (result.IsSuccess)
+        {
+            _table = result.Value;
+        }
+        else
+        {
+            _error = result.ErrorMessage;
+        }
+    }
+
+    private Task SelectAsync(ReportInfo report)
+    {
+        _info = report;
+        _type = _status = _owner = _building = null;
+        return LoadAsync();
+    }
+
+    private Task OnDaysAsync(ChangeEventArgs e)
+    {
+        _days = int.TryParse(e.Value?.ToString(), out var days) ? days : 30;
+        return LoadAsync();
+    }
+
+    private Task OnFilterAsync(ChangeEventArgs e, Action<string?> set)
+    {
+        set(e.Value?.ToString());
+        return LoadAsync();
+    }
+
+    private async Task DownloadAsync()
+    {
+        _busy = true;
+        try
+        {
+            var file = await ReportsApi.ExcelAsync(_info.Key, Query());
+            if (file.IsSuccess)
+            {
+                await FileSaver.SaveAsync(JS, file.Value!);
+            }
+            else
+            {
+                Toasts.Show(file.ErrorMessage, isWarning: true);
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task PrintAsync() => await JS.InvokeVoidAsync("print");
+}
