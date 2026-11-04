@@ -31,6 +31,12 @@
                 <NavLink class="@(OnEquipment ? "sidebar-link active" : "sidebar-link")" href="" Match="NavLinkMatch.All">
                     <AppIcon Name="list" /> تجهیزات
                 </NavLink>
+                @if (Session.Can(Permissions.StockView))
+                {
+                    <NavLink class="sidebar-link" href="locations">
+                        <AppIcon Name="building" /> محل‌ها
+                    </NavLink>
+                }
                 @if (Session.Can(Permissions.EquipmentVerify))
                 {
                     <NavLink class="sidebar-link" href="stocktake">

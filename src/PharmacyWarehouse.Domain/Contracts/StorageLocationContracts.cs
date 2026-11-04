@@ -1,0 +1,12 @@
+namespace PharmacyWarehouse.Domain.Contracts;
+
+// Path مسیر کامل از ریشه است («ضلع جنوبی › قفسه ۲»)؛ سرور حسابش می‌کند.
+public sealed record StorageLocationItem(Guid Id, Guid? ParentId, string Name, string Path, int SortOrder, bool IsActive, int Version);
+
+public sealed class SaveStorageLocationRequest
+{
+    public string Name { get; set; } = "";
+    public Guid? ParentId { get; set; }
+    public int SortOrder { get; set; }
+    public int Version { get; set; }
+}

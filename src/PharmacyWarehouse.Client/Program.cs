@@ -35,6 +35,7 @@ builder.Services.AddScoped<AuthenticationStateProvider>(
 // فراخوانی‌های Api
 builder.Services.AddScoped<AccountClient>();
 builder.Services.AddScoped<CatalogClient>();
+builder.Services.AddScoped<LocationsClient>();
 builder.Services.AddScoped<EquipmentClient>();
 builder.Services.AddScoped<UsersClient>();
 builder.Services.AddScoped<ReportsClient>();

@@ -19,6 +19,7 @@ public static class ApiRoutes
     public const string EquipmentBulkStatus = "/api/equipment/bulk-status";
     public const string EquipmentSummary = "/api/equipment/summary";
     public const string EquipmentLookup = "/api/equipment/lookup";
+    public const string Locations = "/api/locations";
     public const string Users = "/api/users";
     public const string Roles = "/api/roles";
     public const string Reports = "/api/reports";

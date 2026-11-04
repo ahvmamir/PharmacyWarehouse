@@ -10,6 +10,7 @@ using PharmacyWarehouse.Api.Auth;
 using PharmacyWarehouse.Api.Data;
 using PharmacyWarehouse.Api.DataTools;
 using PharmacyWarehouse.Api.Locations;
+using PharmacyWarehouse.Api.Storage;
 using PharmacyWarehouse.Api.Operations;
 using PharmacyWarehouse.Api.Reports;
 using PharmacyWarehouse.Api.Users;
@@ -234,6 +235,7 @@ app.MapGet(ApiRoutes.AppInfo, () => Results.Ok(new AppInfoResponse
 app.MapAuthEndpoints();
 app.MapAccountEndpoints();
 app.MapLocationEndpoints();
+app.MapStorageLocationEndpoints();
 app.MapEquipmentEndpoints();
 app.MapUserEndpoints();
 app.MapRoleEndpoints();

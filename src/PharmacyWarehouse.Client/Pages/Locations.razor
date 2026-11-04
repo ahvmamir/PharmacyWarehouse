@@ -1,0 +1,267 @@
+@page "/locations"
+@attribute [Authorize]
+@inject LocationsClient LocationsApi
+@inject ToastService Toasts
+@inject ApiAuthenticationStateProvider Session
+
+<PageTitle>محل‌ها | انبار داروخانه</PageTitle>
+
+<RequirePermission Permission="@Permissions.StockView">
+<div class="page-head">
+    <div>
+        <h1>محل‌های انبار</h1>
+        <p>مثل «ضلع جنوبی › قفسه ۲ › طبقه ۳ › قسمت B». محلی که زیرشاخه دارد حذف نمی‌شود؛ غیرفعالش کنید.</p>
+    </div>
+    @if (CanManage)
+    {
+        <button type="button" class="btn btn-primary" @onclick="() => OpenNew(null)"><AppIcon Name="plus" Size="15" /> محل سطح اول</button>
+    }
+</div>
+
+@if (_error is not null)
+{
+    <div class="form-alert" role="alert">
+        <AppIcon Name="warning" /> <span>@_error</span>
+        <button type="button" class="btn btn-sm btn-quiet" @onclick="LoadAsync">تازه‌سازی</button>
+    </div>
+}
+
+@if (!_loaded)
+{
+    <div class="loading-line">در حال بارگذاری…</div>
+}
+else if (_items.Count == 0)
+{
+    <div class="empty-state">
+        <AppIcon Name="building" Size="36" />
+        <p>هنوز محلی تعریف نشده. از ضلع یا اتاق انبار شروع کنید، بعد قفسه‌ها و طبقه‌هایش را زیر آن بسازید.</p>
+    </div>
+}
+else
+{
+    <section class="card-emu">
+        @foreach (var (item, depth) in Ordered())
+        {
+            <div class="linked-item" style="padding-right:@(depth * 22)px;" @key="item.Id">
+                <span style="flex:1;">
+                    <strong>@item.Name</strong>
+                    @if (depth > 0)
+                    {
+                        <small class="cell-sub d-block"><bdi>@item.Path</bdi></small>
+                    }
+                </span>
+                @if (!item.IsActive)
+                {
+                    <span class="status-badge status-retired">غیرفعال</span>
+                }
+                @if (CanManage)
+                {
+                    @if (item.IsActive)
+                    {
+                        <button type="button" class="btn btn-sm btn-ghost" @onclick="() => OpenNew(item)"><AppIcon Name="plus" Size="13" /> زیرشاخه</button>
+                    }
+                    <button type="button" class="icon-button" title="ویرایش" aria-label="ویرایش @item.Name" @onclick="() => OpenEdit(item)"><AppIcon Name="edit" Size="16" /></button>
+                    <button type="button" class="btn btn-sm btn-ghost" @onclick="() => ToggleAsync(item)">@(item.IsActive ? "غیرفعال کن" : "فعال کن")</button>
+                    <button type="button" class="icon-button danger" title="حذف" aria-label="حذف @item.Name" @onclick="() => _delete = item"><AppIcon Name="trash" Size="16" /></button>
+                }
+            </div>
+        }
+    </section>
+}
+
+@if (_delete is { } toDelete)
+{
+    <DeleteDialog Title="حذف محل" ItemName="@toDelete.Path"
+                  Load="() => LocationsApi.DependenciesAsync(toDelete.Id)"
+                  Delete="() => LocationsApi.DeleteAsync(toDelete.Id)"
+                  OnCancel="() => _delete = null"
+                  OnDeleted="OnDeletedAsync" />
+}
+
+@if (_dialogTitle is not null)
+{
+    <ModalDialog Title="@_dialogTitle" OnClose="CloseDialog">
+        <EditForm Model="this" OnSubmit="SaveAsync">
+            <div class="form-field">
+                <label for="location-name">نام <span class="required">*</span></label>
+                <input id="location-name" class="form-control" @bind="_name" @ref="_nameInput" maxlength="@LocationTree.MaxName" />
+            </div>
+
+            <div class="form-field mt-3">
+                <label for="location-parent">زیرِ</label>
+                <select id="location-parent" class="form-select" @bind="_parentText">
+                    <option value="">— سطح اول —</option>
+                    @foreach (var option in ParentOptions())
+                    {
+                        <option value="@option.Id">@option.Path</option>
+                    }
+                </select>
+            </div>
+
+            <div class="form-field mt-3">
+                <label for="location-order">ترتیب نمایش</label>
+                <input id="location-order" class="form-control" type="number" dir="ltr" @bind="_sortOrder" />
+                <div class="form-hint">بین هم‌سطح‌ها؛ عدد کوچک‌تر بالاتر.</div>
+            </div>
+
+            @if (_dialogError is not null)
+            {
+                <div class="form-alert mt-3 mb-0" role="alert">@_dialogError</div>
+            }
+
+            <div class="modal-actions">
+                <button type="submit" class="btn btn-primary" disabled="@_busy">@(_busy ? "در حال ذخیره…" : "ذخیره")</button>
+                <button type="button" class="btn btn-quiet" @onclick="CloseDialog">انصراف</button>
+            </div>
+        </EditForm>
+    </ModalDialog>
+}
+</RequirePermission>
+
+@code {
+    private List<StorageLocationItem> _items = [];
+    private bool _loaded;
+    private string? _error;
+
+    private StorageLocationItem? _delete;
+
+    private string? _dialogTitle;
+    private string? _dialogError;
+    private bool _busy;
+    private StorageLocationItem? _editing;
+    private string _name = "";
+    private string _parentText = "";
+    private int _sortOrder;
+    private bool _focusName;
+    private ElementReference _nameInput;
+
+    private bool CanManage => Session.Can(Permissions.ProductsManage);
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusName)
+        {
+            _focusName = false;
+            await _nameInput.FocusAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        var result = await LocationsApi.ListAsync();
+        if (!result.IsSuccess)
+        {
+            _error = result.ErrorMessage;
+            return;
+        }
+
+        _items = result.Value!;
+        _loaded = true;
+    }
+
+    // درخت به ترتیب: هر گره، بعد فرزندانش با SortOrder و نام. گره‌ی بی‌پدر (داده‌ی خراب) در سطح اول.
+    private IEnumerable<(StorageLocationItem Item, int Depth)> Ordered()
+    {
+        var ids = _items.Select(i => i.Id).ToHashSet();
+        var children = _items.ToLookup(i => i.ParentId is { } p && ids.Contains(p) ? p : (Guid?)null);
+        var seen = new HashSet<Guid>();
+
+        IEnumerable<(StorageLocationItem, int)> Walk(Guid? parent, int depth)
+        {
+            foreach (var item in children[parent].OrderBy(i => i.SortOrder).ThenBy(i => i.Name, StringComparer.Ordinal))
+            {
+                if (!seen.Add(item.Id)) continue;
+                yield return (item, depth);
+                foreach (var child in Walk(item.Id, depth + 1)) yield return child;
+            }
+        }
+
+        return Walk(null, 0).ToList();
+    }
+
+    // پدر ممکن: فعال‌ها، به‌جز خودِ گره و نواده‌هایش (سرور هم حلقه را رد می‌کند).
+    private IEnumerable<StorageLocationItem> ParentOptions()
+    {
+        var nodes = _items.Select(i => new LocationNode(i.Id, i.ParentId, i.Name, i.SortOrder)).ToList();
+        return _items
+            .Where(i => i.IsActive || i.Id == _editing?.ParentId)
+            .Where(i => _editing is null || !LocationTree.WouldCreateCycle(nodes, _editing.Id, i.Id))
+            .OrderBy(i => i.Path, StringComparer.Ordinal);
+    }
+
+    private void OpenNew(StorageLocationItem? parent)
+    {
+        _editing = null;
+        _name = "";
+        _parentText = parent?.Id.ToString() ?? "";
+        _sortOrder = 0;
+        _dialogError = null;
+        _dialogTitle = parent is null ? "محل سطح اول" : $"زیرشاخه‌ی {parent.Name}";
+        _focusName = true;
+    }
+
+    private void OpenEdit(StorageLocationItem item)
+    {
+        _editing = item;
+        _name = item.Name;
+        _parentText = item.ParentId?.ToString() ?? "";
+        _sortOrder = item.SortOrder;
+        _dialogError = null;
+        _dialogTitle = $"ویرایش {item.Name}";
+        _focusName = true;
+    }
+
+    private void CloseDialog()
+    {
+        _dialogTitle = null;
+        _editing = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        _dialogError = null;
+
+        var request = new SaveStorageLocationRequest
+        {
+            Name = _name,
+            ParentId = Guid.TryParse(_parentText, out var parent) ? parent : null,
+            SortOrder = _sortOrder,
+            Version = _editing?.Version ?? 0
+        };
+        var result = await LocationsApi.SaveAsync(_editing?.Id, request);
+        _busy = false;
+
+        if (!result.IsSuccess)
+        {
+            _dialogError = result.ErrorMessage;
+            return;
+        }
+
+        Toasts.Show($"ذخیره شد: {result.Value!.Path}");
+        CloseDialog();
+        await LoadAsync();
+    }
+
+    private async Task ToggleAsync(StorageLocationItem item)
+    {
+        var result = await LocationsApi.SetActiveAsync(item, !item.IsActive);
+        if (!result.IsSuccess)
+        {
+            _error = result.ErrorMessage;
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task OnDeletedAsync()
+    {
+        Toasts.Show($"حذف شد: {_delete?.Path}");
+        _delete = null;
+        await LoadAsync();
+    }
+}

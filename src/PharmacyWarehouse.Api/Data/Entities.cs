@@ -9,6 +9,20 @@ public interface IAudited
     int Version { get; set; }
 }
 
+// گره درخت محل. ParentKey همان ParentId به‌صورت متن است ("" برای ریشه)، چون SQLite در unique index
+// مقدارهای NULL را برابر نمی‌داند و دو ریشه‌ی هم‌نام را می‌پذیرفت.
+public class StorageLocation : IAudited
+{
+    public Guid Id { get; set; }
+    public Guid? ParentId { get; set; }
+    public string ParentKey { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string NameKey { get; set; } = "";
+    public int SortOrder { get; set; }
+    public bool IsActive { get; set; } = true;
+    public int Version { get; set; } = 1;
+}
+
 public class Building : IAudited
 {
     public Guid Id { get; set; }

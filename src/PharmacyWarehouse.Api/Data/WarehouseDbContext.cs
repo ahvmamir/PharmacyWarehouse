@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using PharmacyWarehouse.Domain.Assets;
 using PharmacyWarehouse.Domain.Contracts;
+using PharmacyWarehouse.Domain.Storage;
 
 namespace PharmacyWarehouse.Api.Data;
 
@@ -12,6 +13,7 @@ public class WarehouseDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>,
     {
     }
 
+    public DbSet<StorageLocation> StorageLocations => Set<StorageLocation>();
     public DbSet<Building> Buildings => Set<Building>();
     public DbSet<Floor> Floors => Set<Floor>();
     public DbSet<Unit> Units => Set<Unit>();
@@ -23,6 +25,16 @@ public class WarehouseDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>,
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        builder.Entity<StorageLocation>(location =>
+        {
+            location.Property(l => l.Name).IsRequired().HasMaxLength(LocationTree.MaxName);
+            location.Property(l => l.NameKey).IsRequired().HasMaxLength(LocationTree.MaxName);
+            location.Property(l => l.ParentKey).IsRequired().HasMaxLength(36);
+            location.Property(l => l.Version).IsConcurrencyToken();
+            location.HasOne<StorageLocation>().WithMany().HasForeignKey(l => l.ParentId).OnDelete(DeleteBehavior.Restrict);
+            location.HasIndex(l => new { l.ParentKey, l.NameKey }).IsUnique();
+        });
 
         builder.Entity<Building>(building =>
         {

@@ -10,6 +10,8 @@ public static class Permissions
     public const string UserGrantClaimType = "perm.grant";
     public const string UserDenyClaimType = "perm.deny";
 
+    public const string StockView = "stock.view";
+    public const string ProductsManage = "products.manage";
     public const string EquipmentView = "equipment.view";
     public const string EquipmentManage = "equipment.manage";
     public const string EquipmentMove = "equipment.move";
@@ -28,6 +30,8 @@ public static class Permissions
 
     public static readonly IReadOnlyList<PermissionInfo> All =
     [
+        new(StockView, "دیدن اقلام، موجودی و محل‌ها", "انبار"),
+        new(ProductsManage, "تعریف قلم، بارکد، محل و حداقل موجودی", "انبار"),
         new(EquipmentView, "دیدن و جست‌وجوی تجهیزات", "تجهیزات"),
         new(EquipmentManage, "ثبت و ویرایش دستگاه", "تجهیزات"),
         new(EquipmentMove, "جابه‌جایی دستگاه", "تجهیزات"),
