@@ -63,6 +63,7 @@ if (!builder.Environment.IsDevelopment())
 // رهگیر تاریخچه scoped است چون کاربر هر درخواست را از AuditContext می‌خواند.
 builder.Services.AddScoped<AuditContext>();
 builder.Services.AddScoped<AuditInterceptor>();
+builder.Services.AddScoped<PharmacyWarehouse.Api.Stock.StockLedger>();
 
 builder.Services.AddDbContext<WarehouseDbContext>((services, options) =>
     options.UseSqlite(sqlite.ConnectionString)

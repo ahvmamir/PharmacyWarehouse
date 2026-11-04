@@ -9,7 +9,10 @@ using Microsoft.Extensions.DependencyInjection;
 using PharmacyWarehouse.Api.Data;
 using PharmacyWarehouse.Api.Operations;
 using PharmacyWarehouse.Domain.Auth;
+using PharmacyWarehouse.Api.Stock;
 using PharmacyWarehouse.Domain.Contracts;
+using PharmacyWarehouse.Domain.Stock;
+using PharmacyWarehouse.Domain.Text;
 
 namespace PharmacyWarehouse.Api.Tests;
 
@@ -215,6 +218,71 @@ public sealed class TestApp : IAsyncDisposable
         finally
         {
             await connection.CloseAsync();
+        }
+    }
+
+    // Test only: adds a product through the DbContext, so the audit interceptor runs.
+    public async Task<Guid> AddProductRawAsync(string name, Guid? locationId)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<WarehouseDbContext>();
+
+        var product = new Product
+        {
+            Id = Guid.NewGuid(),
+            Name = name,
+            NameKey = TextNormalizer.Key(name)!,
+            LocationId = locationId,
+            SearchText = TextNormalizer.SearchKey(name)!,
+            CreatedAtUtc = DateTime.UtcNow
+        };
+        db.Products.Add(product);
+        await db.SaveChangesAsync();
+        return product.Id;
+    }
+
+    // Test only: adds a batch; when onHand > 0 it also posts a matching Import movement so the ledger stays consistent.
+    public async Task<Guid> AddBatchRawAsync(Guid productId, string batchNumber, Guid? locationId, int onHand = 0)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<WarehouseDbContext>();
+        var ledger = scope.ServiceProvider.GetRequiredService<StockLedger>();
+
+        var batch = new Batch
+        {
+            Id = Guid.NewGuid(),
+            ProductId = productId,
+            BatchNumber = batchNumber,
+            BatchKey = TextNormalizer.Key(batchNumber)!,
+            LocationId = locationId,
+            CreatedAtUtc = DateTime.UtcNow
+        };
+        db.Batches.Add(batch);
+        if (onHand > 0) ledger.Post(batch, StockMovementKind.Import, onHand, DateTime.UtcNow);
+        await db.SaveChangesAsync();
+        return batch.Id;
+    }
+
+    public async Task<List<StockMovement>> MovementsAsync(Guid batchId)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<WarehouseDbContext>();
+        var rows = await db.StockMovements.AsNoTracking().Where(m => m.BatchId == batchId).ToListAsync();
+        return rows.OrderBy(m => m.AtUtc).ToList();
+    }
+
+    // For every batch OnHand must equal the sum of its movements.
+    public async Task AssertLedgerConsistentAsync()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<WarehouseDbContext>();
+
+        var batches = await db.Batches.AsNoTracking().ToListAsync();
+        var movements = await db.StockMovements.AsNoTracking().ToListAsync();
+        foreach (var batch in batches)
+        {
+            var sum = movements.Where(m => m.BatchId == batch.Id).Sum(m => m.Quantity);
+            Assert.True(sum == batch.OnHand, $"Batch {batch.BatchNumber}: OnHand {batch.OnHand} != movements sum {sum}");
         }
     }
 

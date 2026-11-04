@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using PharmacyWarehouse.Domain.Contracts;
+using PharmacyWarehouse.Domain.Stock;
 using PharmacyWarehouse.Domain.Storage;
 
 namespace PharmacyWarehouse.Api.Data;
@@ -13,6 +14,10 @@ public class WarehouseDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>,
     }
 
     public DbSet<StorageLocation> StorageLocations => Set<StorageLocation>();
+    public DbSet<Product> Products => Set<Product>();
+    public DbSet<ProductBarcode> ProductBarcodes => Set<ProductBarcode>();
+    public DbSet<Batch> Batches => Set<Batch>();
+    public DbSet<StockMovement> StockMovements => Set<StockMovement>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 
     protected override void OnModelCreating(ModelBuilder builder)
@@ -27,6 +32,52 @@ public class WarehouseDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>,
             location.Property(l => l.Version).IsConcurrencyToken();
             location.HasOne<StorageLocation>().WithMany().HasForeignKey(l => l.ParentId).OnDelete(DeleteBehavior.Restrict);
             location.HasIndex(l => new { l.ParentKey, l.NameKey }).IsUnique();
+        });
+
+        builder.Entity<Product>(product =>
+        {
+            product.Property(p => p.Name).IsRequired().HasMaxLength(ProductRules.MaxName);
+            product.Property(p => p.NameKey).IsRequired().HasMaxLength(ProductRules.MaxName);
+            product.Property(p => p.Brand).HasMaxLength(ProductRules.MaxBrand);
+            product.Property(p => p.BrandKey).IsRequired().HasMaxLength(ProductRules.MaxBrand);
+            product.Property(p => p.PackDescription).HasMaxLength(ProductRules.MaxPack);
+            product.Property(p => p.PackKey).IsRequired().HasMaxLength(ProductRules.MaxPack);
+            product.Property(p => p.SearchText).IsRequired();
+            product.Property(p => p.Version).IsConcurrencyToken();
+            product.HasOne<StorageLocation>().WithMany().HasForeignKey(p => p.LocationId).OnDelete(DeleteBehavior.Restrict);
+            product.HasIndex(p => new { p.NameKey, p.BrandKey, p.PackKey }).IsUnique();
+        });
+
+        builder.Entity<ProductBarcode>(barcode =>
+        {
+            barcode.Property(b => b.Code).IsRequired().HasMaxLength(ProductRules.MaxCode);
+            barcode.Property(b => b.CodeKey).IsRequired().HasMaxLength(ProductRules.MaxCode);
+            barcode.Property(b => b.Version).IsConcurrencyToken();
+            barcode.HasOne<Product>().WithMany().HasForeignKey(b => b.ProductId).OnDelete(DeleteBehavior.Restrict);
+            barcode.HasIndex(b => b.CodeKey).IsUnique();
+        });
+
+        builder.Entity<Batch>(batch =>
+        {
+            batch.ToTable(t => t.HasCheckConstraint("CK_Batches_OnHand", "OnHand >= 0"));
+            batch.Property(b => b.BatchNumber).IsRequired().HasMaxLength(ProductRules.MaxBatch);
+            batch.Property(b => b.BatchKey).IsRequired().HasMaxLength(ProductRules.MaxBatch);
+            batch.Property(b => b.ExpiryPrecision).HasConversion<string>().HasMaxLength(10);
+            batch.Property(b => b.ExpiryCalendar).HasConversion<string>().HasMaxLength(10);
+            batch.Property(b => b.Version).IsConcurrencyToken();
+            batch.HasOne<Product>().WithMany().HasForeignKey(b => b.ProductId).OnDelete(DeleteBehavior.Restrict);
+            batch.HasOne<StorageLocation>().WithMany().HasForeignKey(b => b.LocationId).OnDelete(DeleteBehavior.Restrict);
+            batch.HasIndex(b => new { b.ProductId, b.BatchKey }).IsUnique();
+            batch.HasIndex(b => b.LocationId);
+        });
+
+        builder.Entity<StockMovement>(movement =>
+        {
+            movement.Property(m => m.Kind).HasConversion<string>().HasMaxLength(20);
+            movement.Property(m => m.Note).HasMaxLength(ProductRules.MaxNote);
+            movement.HasOne<Batch>().WithMany().HasForeignKey(m => m.BatchId).OnDelete(DeleteBehavior.Restrict);
+            movement.HasOne<StockMovement>().WithMany().HasForeignKey(m => m.ReversesId).OnDelete(DeleteBehavior.Restrict);
+            movement.HasIndex(m => new { m.BatchId, m.AtUtc });
         });
 
         builder.Entity<AuditEntry>(entry =>

@@ -171,6 +171,21 @@ public static class StorageLocationEndpoints
             .ToListAsync();
 
         var items = children.Order(StringComparer.Ordinal).Select(n => new DependencyItem("زیرشاخه", n)).ToList();
+
+        var products = await db.Products.AsNoTracking()
+            .Where(p => p.LocationId == id)
+            .Select(p => new { p.Id, p.Name })
+            .ToListAsync();
+        items.AddRange(products.OrderBy(p => p.Name, StringComparer.Ordinal).Select(p => new DependencyItem("قلم", p.Name, p.Id)));
+
+        var batches = await db.Batches.AsNoTracking()
+            .Where(b => b.LocationId == id)
+            .Join(db.Products, b => b.ProductId, p => p.Id, (b, p) => new { p.Id, p.Name, b.BatchNumber })
+            .ToListAsync();
+        items.AddRange(batches
+            .OrderBy(b => b.Name, StringComparer.Ordinal).ThenBy(b => b.BatchNumber, StringComparer.Ordinal)
+            .Select(b => new DependencyItem("بچ", $"{b.Name} — {b.BatchNumber}", b.Id)));
+
         return new DependencyList { Items = items, Total = items.Count };
     }
 
@@ -185,7 +200,7 @@ public static class StorageLocationEndpoints
         if (location is null) return ApiProblems.NotFound();
 
         var dependencies = await FindDependenciesAsync(db, id);
-        if (!dependencies.CanDelete) return ApiProblems.Conflict("این محل زیرشاخه دارد و حذف نمی‌شود.");
+        if (!dependencies.CanDelete) return ApiProblems.Conflict("این محل زیرشاخه، قلم یا بچ دارد و حذف نمی‌شود.");
 
         db.StorageLocations.Remove(location);
         try
@@ -196,7 +211,7 @@ public static class StorageLocationEndpoints
         catch (DbUpdateException)
         {
             // زیرشاخه‌ای که هم‌زمان ساخته شد؛ کلید خارجی Restrict جلوی حذف را گرفت.
-            return ApiProblems.Conflict("این محل زیرشاخه دارد و حذف نمی‌شود.");
+            return ApiProblems.Conflict("این محل زیرشاخه، قلم یا بچ دارد و حذف نمی‌شود.");
         }
     }
 }

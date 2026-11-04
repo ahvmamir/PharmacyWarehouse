@@ -177,6 +177,35 @@ public class StorageLocationTests : ApiTestBase
     }
 
     [Fact]
+    public async Task Delete_LocationWithProduct_Returns409AndListsIt()
+    {
+        var a = await CreateAsync("TEST-LOC-A");
+        var productId = await App.AddProductRawAsync("TEST-DRUG-01", a.Id);
+
+        var dependencies = await Admin.GetFromJsonAsync<DependencyList>(ApiRoutes.Dependencies(ApiRoutes.Locations, a.Id));
+        var delete = await Admin.DeleteAsync(ApiRoutes.ById(ApiRoutes.Locations, a.Id));
+
+        Assert.False(dependencies!.CanDelete);
+        Assert.Contains(dependencies.Items, d => d.Kind == "قلم" && d.Label == "TEST-DRUG-01" && d.SubjectId == productId);
+        Assert.Equal(HttpStatusCode.Conflict, delete.StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_LocationWithBatch_Returns409AndListsIt()
+    {
+        var a = await CreateAsync("TEST-LOC-A");
+        var productId = await App.AddProductRawAsync("TEST-DRUG-01", null);
+        await App.AddBatchRawAsync(productId, "TEST-BATCH-01", a.Id);
+
+        var dependencies = await Admin.GetFromJsonAsync<DependencyList>(ApiRoutes.Dependencies(ApiRoutes.Locations, a.Id));
+        var delete = await Admin.DeleteAsync(ApiRoutes.ById(ApiRoutes.Locations, a.Id));
+
+        Assert.False(dependencies!.CanDelete);
+        Assert.Contains(dependencies.Items, d => d.Kind == "بچ" && d.Label == "TEST-DRUG-01 — TEST-BATCH-01" && d.SubjectId == productId);
+        Assert.Equal(HttpStatusCode.Conflict, delete.StatusCode);
+    }
+
+    [Fact]
     public async Task Delete_Leaf_Succeeds_AndIsAudited()
     {
         var a = await CreateAsync("TEST-LOC-A");

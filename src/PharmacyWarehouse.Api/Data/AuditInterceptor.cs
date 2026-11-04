@@ -144,6 +144,12 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             (StorageLocation, "ParentId") =>
                 db.ChangeTracker.Entries<StorageLocation>().FirstOrDefault(e => e.Entity.Id == id)?.Entity.Name
                 ?? await db.StorageLocations.AsNoTracking().Where(l => l.Id == id).Select(l => l.Name).FirstOrDefaultAsync(ct),
+            (Product or Batch, "LocationId") =>
+                db.ChangeTracker.Entries<StorageLocation>().FirstOrDefault(e => e.Entity.Id == id)?.Entity.Name
+                ?? await db.StorageLocations.AsNoTracking().Where(l => l.Id == id).Select(l => l.Name).FirstOrDefaultAsync(ct),
+            (Batch or ProductBarcode, "ProductId") =>
+                db.ChangeTracker.Entries<Product>().FirstOrDefault(e => e.Entity.Id == id)?.Entity.Name
+                ?? await db.Products.AsNoTracking().Where(p => p.Id == id).Select(p => p.Name).FirstOrDefaultAsync(ct),
             _ => null
         };
 
