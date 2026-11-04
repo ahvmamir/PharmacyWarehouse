@@ -57,7 +57,7 @@ else
                 }
                 @if (CanManage)
                 {
-                    @if (item.IsActive)
+                    @if (item.IsUsable)
                     {
                         <button type="button" class="btn btn-sm btn-ghost" @onclick="() => OpenNew(item)"><AppIcon Name="plus" Size="13" /> زیرشاخه</button>
                     }
@@ -163,34 +163,21 @@ else
         _loaded = true;
     }
 
-    // درخت به ترتیب: هر گره، بعد فرزندانش با SortOrder و نام. گره‌ی بی‌پدر (داده‌ی خراب) در سطح اول.
+    // ترتیب درختی از Domain؛ همان منطق سرور.
     private IEnumerable<(StorageLocationItem Item, int Depth)> Ordered()
     {
-        var ids = _items.Select(i => i.Id).ToHashSet();
-        var children = _items.ToLookup(i => i.ParentId is { } p && ids.Contains(p) ? p : (Guid?)null);
-        var seen = new HashSet<Guid>();
-
-        IEnumerable<(StorageLocationItem, int)> Walk(Guid? parent, int depth)
-        {
-            foreach (var item in children[parent].OrderBy(i => i.SortOrder).ThenBy(i => i.Name, StringComparer.Ordinal))
-            {
-                if (!seen.Add(item.Id)) continue;
-                yield return (item, depth);
-                foreach (var child in Walk(item.Id, depth + 1)) yield return child;
-            }
-        }
-
-        return Walk(null, 0).ToList();
+        var byId = _items.ToDictionary(i => i.Id);
+        return LocationTree.Ordered(_items.Select(i => new LocationNode(i.Id, i.ParentId, i.Name, i.SortOrder)))
+            .Select(o => (byId[o.Node.Id], o.Depth));
     }
 
-    // پدر ممکن: فعال‌ها، به‌جز خودِ گره و نواده‌هایش (سرور هم حلقه را رد می‌کند).
+    // پدر ممکن: محل‌های قابل‌استفاده (خود و نیاکان فعال) و پدر فعلیِ ویرایش، به‌جز خودِ گره و نواده‌هایش.
     private IEnumerable<StorageLocationItem> ParentOptions()
     {
         var nodes = _items.Select(i => new LocationNode(i.Id, i.ParentId, i.Name, i.SortOrder)).ToList();
-        return _items
-            .Where(i => i.IsActive || i.Id == _editing?.ParentId)
-            .Where(i => _editing is null || !LocationTree.WouldCreateCycle(nodes, _editing.Id, i.Id))
-            .OrderBy(i => i.Path, StringComparer.Ordinal);
+        return Ordered().Select(o => o.Item)
+            .Where(i => i.IsUsable || i.Id == _editing?.ParentId)
+            .Where(i => _editing is null || !LocationTree.WouldCreateCycle(nodes, _editing.Id, i.Id));
     }
 
     private void OpenNew(StorageLocationItem? parent)

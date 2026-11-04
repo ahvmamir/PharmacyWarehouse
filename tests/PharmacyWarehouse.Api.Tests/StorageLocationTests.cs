@@ -202,4 +202,55 @@ public class StorageLocationTests : ApiTestBase
         Assert.True(activated.IsActive);
         Assert.True(activated.Version > deactivated.Version);
     }
+
+    [Fact]
+    public async Task List_IsInTreeOrder_WithSortOrder()
+    {
+        var shelf = await CreateAsync("قفسه", sortOrder: 2);
+        var other = await CreateAsync("قفسه یخچال", sortOrder: 3);
+        var tier = await CreateAsync("طبقه 1", shelf.Id);
+        var first = await CreateAsync("ضلع", sortOrder: 1);
+
+        var all = await Admin.GetFromJsonAsync<List<StorageLocationItem>>(ApiRoutes.Locations);
+
+        Assert.Equal([first.Id, shelf.Id, tier.Id, other.Id], all!.Select(l => l.Id));
+    }
+
+    [Fact]
+    public async Task List_ChildOfInactive_IsNotUsable()
+    {
+        var parent = await CreateAsync("TEST-LOC-A");
+        var child = await CreateAsync("TEST-LOC-B", parent.Id);
+        var off = await Admin.PostAsJsonAsync(ApiRoutes.ById(ApiRoutes.Locations, parent.Id) + "/deactivate", new VersionRequest { Version = parent.Version });
+        Assert.Equal(HttpStatusCode.OK, off.StatusCode);
+
+        Assert.False((await GetAsync(parent.Id)).IsUsable);
+        var reloadedChild = await GetAsync(child.Id);
+        Assert.True(reloadedChild.IsActive);
+        Assert.False(reloadedChild.IsUsable);
+    }
+
+    [Fact]
+    public async Task Create_UnderInactiveParent_Returns400()
+    {
+        var parent = await CreateAsync("TEST-LOC-A");
+        await Admin.PostAsJsonAsync(ApiRoutes.ById(ApiRoutes.Locations, parent.Id) + "/deactivate", new VersionRequest { Version = parent.Version });
+
+        var response = await Admin.PostAsJsonAsync(ApiRoutes.Locations, new SaveStorageLocationRequest { Name = "TEST-LOC-B", ParentId = parent.Id });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("محل بالاتر غیرفعال است", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Create_WithDeletedParent_Returns400()
+    {
+        var parent = await CreateAsync("TEST-LOC-A");
+        var delete = await Admin.DeleteAsync(ApiRoutes.ById(ApiRoutes.Locations, parent.Id));
+        Assert.Equal(HttpStatusCode.OK, delete.StatusCode);
+
+        var response = await Admin.PostAsJsonAsync(ApiRoutes.Locations, new SaveStorageLocationRequest { Name = "TEST-LOC-B", ParentId = parent.Id });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
 }

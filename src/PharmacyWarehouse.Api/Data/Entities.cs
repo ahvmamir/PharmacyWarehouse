@@ -12,6 +12,9 @@ public interface IAudited
 // مقدارهای NULL را برابر نمی‌داند و دو ریشه‌ی هم‌نام را می‌پذیرفت.
 public class StorageLocation : IAudited
 {
+    // تنها جای ساختن ParentKey: "" برای ریشه، در غیر این صورت شناسه‌ی پدر.
+    public static string KeyOf(Guid? parentId) => parentId?.ToString() ?? "";
+
     public Guid Id { get; set; }
     public Guid? ParentId { get; set; }
     public string ParentKey { get; set; } = "";

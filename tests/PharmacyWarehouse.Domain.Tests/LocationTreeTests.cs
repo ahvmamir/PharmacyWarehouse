@@ -65,4 +65,60 @@ public class LocationTreeTests
         Assert.Equal("یتیم", paths[orphan.Id]);
         Assert.Contains("Q", paths[q.Id]);
     }
+
+    [Fact]
+    public void Ordered_SiblingNameExtendingParentName_StaysOutsideParentsChildren()
+    {
+        var shelf = N("قفسه");
+        var fridge = N("قفسه یخچال");
+        var tier = N("طبقه 1", shelf);
+
+        var result = LocationTree.Ordered([fridge, tier, shelf]);
+
+        Assert.Equal([shelf.Id, tier.Id, fridge.Id], result.Select(r => r.Node.Id));
+        Assert.Equal([0, 1, 0], result.Select(r => r.Depth));
+    }
+
+    [Fact]
+    public void Ordered_UsesSortOrderBeforeName()
+    {
+        var a = N("الف", order: 2);
+        var b = N("ب", order: 1);
+
+        var result = LocationTree.Ordered([a, b]);
+
+        Assert.Equal([b.Id, a.Id], result.Select(r => r.Node.Id));
+    }
+
+    [Fact]
+    public void Ordered_CycleNodes_AreStillListed()
+    {
+        var root = N("ریشه");
+        var a = new LocationNode(Guid.NewGuid(), null, "A", 0);
+        var b = new LocationNode(Guid.NewGuid(), a.Id, "B", 0);
+        a = a with { ParentId = b.Id };
+
+        var result = LocationTree.Ordered([a, b, root]);
+
+        Assert.Equal(3, result.Count);
+        Assert.Equal(root.Id, result[0].Node.Id);
+        Assert.Contains(result, r => r.Node.Id == a.Id);
+        Assert.Contains(result, r => r.Node.Id == b.Id);
+    }
+
+    [Fact]
+    public void EffectivelyActive_InactiveAncestor_DeactivatesBranch()
+    {
+        var a = N("A");
+        var b = N("B", a);
+        var c = N("C", b);
+        var d = N("D");
+
+        var active = LocationTree.EffectivelyActive([(a, true), (b, false), (c, true), (d, true)]);
+
+        Assert.Contains(a.Id, active);
+        Assert.DoesNotContain(b.Id, active);
+        Assert.DoesNotContain(c.Id, active);
+        Assert.Contains(d.Id, active);
+    }
 }

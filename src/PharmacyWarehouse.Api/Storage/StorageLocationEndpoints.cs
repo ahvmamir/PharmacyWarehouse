@@ -32,34 +32,47 @@ public static class StorageLocationEndpoints
             .ToListAsync();
 
     // مسیر از روی درخت ذخیره‌شده به‌اضافه‌ی همین گره (که شاید هنوز ذخیره نشده یا تازه تغییر کرده).
+    // IsUsable به فعال بودن نیاکان هم بستگی دارد، پس وضعیت فعال بقیه‌ی گره‌ها هم خوانده می‌شود.
     private static async Task<StorageLocationItem> ToItemAsync(WarehouseDbContext db, StorageLocation location)
     {
-        var nodes = (await NodesAsync(db)).Where(n => n.Id != location.Id).ToList();
-        nodes.Add(new LocationNode(location.Id, location.ParentId, location.Name, location.SortOrder));
+        var stored = await db.StorageLocations.AsNoTracking().Where(l => l.Id != location.Id).ToListAsync();
+        var entries = stored.Select(l => (new LocationNode(l.Id, l.ParentId, l.Name, l.SortOrder), l.IsActive)).ToList();
+        entries.Add((new LocationNode(location.Id, location.ParentId, location.Name, location.SortOrder), location.IsActive));
+
+        var nodes = entries.Select(e => e.Item1).ToList();
         var path = LocationTree.Paths(nodes)[location.Id];
-        return new StorageLocationItem(location.Id, location.ParentId, location.Name, path, location.SortOrder, location.IsActive, location.Version);
+        var usable = LocationTree.EffectivelyActive(entries).Contains(location.Id);
+        return new StorageLocationItem(location.Id, location.ParentId, location.Name, path, location.SortOrder, location.IsActive, location.Version, usable);
     }
 
     private static async Task<IResult> ListAsync(WarehouseDbContext db)
     {
         var locations = await db.StorageLocations.AsNoTracking().ToListAsync();
-        var paths = LocationTree.Paths(locations.Select(l => new LocationNode(l.Id, l.ParentId, l.Name, l.SortOrder)));
+        var nodes = locations.Select(l => new LocationNode(l.Id, l.ParentId, l.Name, l.SortOrder)).ToList();
+        var paths = LocationTree.Paths(nodes);
+        var usable = LocationTree.EffectivelyActive(locations.Select(l => (new LocationNode(l.Id, l.ParentId, l.Name, l.SortOrder), l.IsActive)));
+        var byId = locations.ToDictionary(l => l.Id);
 
-        // مرتب‌سازی مسیر در حافظه، نه در SQLite (مقایسه‌ی متن فارسی در SQLite ممنوع است).
-        var items = locations
-            .Select(l => new StorageLocationItem(l.Id, l.ParentId, l.Name, paths[l.Id], l.SortOrder, l.IsActive, l.Version))
-            .OrderBy(i => i.Path, StringComparer.Ordinal)
+        // ترتیب درختی در حافظه، نه در SQLite (مقایسه‌ی متن فارسی در SQLite ممنوع است).
+        var items = LocationTree.Ordered(nodes)
+            .Select(o => byId[o.Node.Id])
+            .Select(l => new StorageLocationItem(l.Id, l.ParentId, l.Name, paths[l.Id], l.SortOrder, l.IsActive, l.Version, usable.Contains(l.Id)))
             .ToList();
         return Results.Ok(items);
     }
 
-    private static async Task<IResult?> ValidateAsync(WarehouseDbContext db, string? name, Guid? parentId)
+    // unchangedParent: در ویرایش، پدر فعلی؛ نگه داشتن پدرِ غیرفعال ایرادی ندارد، فقط رفتن زیر آن.
+    private static async Task<IResult?> ValidateAsync(WarehouseDbContext db, string? name, Guid? parentId, Guid? unchangedParent = null)
     {
         if (name is null) return ApiProblems.Validation("Name", "نام محل را وارد کنید.");
         if (name.Length > LocationTree.MaxName) return ApiProblems.Validation("Name", $"نام محل حداکثر {LocationTree.MaxName} نویسه است.");
-        if (parentId is { } p && !await db.StorageLocations.AnyAsync(l => l.Id == p))
+        if (parentId is { } p)
         {
-            return ApiProblems.Validation("ParentId", "محل بالاتر پیدا نشد.");
+            var all = await db.StorageLocations.AsNoTracking().ToListAsync();
+            if (all.All(l => l.Id != p)) return ApiProblems.Validation("ParentId", "محل بالاتر پیدا نشد.");
+
+            var usable = LocationTree.EffectivelyActive(all.Select(l => (new LocationNode(l.Id, l.ParentId, l.Name, l.SortOrder), l.IsActive)));
+            if (!usable.Contains(p) && p != unchangedParent) return ApiProblems.Validation("ParentId", "محل بالاتر غیرفعال است.");
         }
 
         return null;
@@ -80,9 +93,12 @@ public static class StorageLocationEndpoints
         {
             return ApiProblems.Conflict(Duplicate);
         }
+        catch (DbUpdateException)
+        {
+            // محل بالا بین اعتبارسنجی و ذخیره حذف شد؛ کلید خارجی جلوی ذخیره را گرفت.
+            return ApiProblems.Validation("ParentId", "محل بالاتر پیدا نشد.");
+        }
     }
-
-    private static string KeyOf(Guid? parentId) => parentId?.ToString() ?? "";
 
     private static async Task<IResult> CreateAsync(SaveStorageLocationRequest request, WarehouseDbContext db)
     {
@@ -90,7 +106,7 @@ public static class StorageLocationEndpoints
         if (await ValidateAsync(db, name, request.ParentId) is { } invalid) return invalid;
 
         var key = TextNormalizer.Key(name)!;
-        var parentKey = KeyOf(request.ParentId);
+        var parentKey = StorageLocation.KeyOf(request.ParentId);
         if (await db.StorageLocations.AnyAsync(l => l.ParentKey == parentKey && l.NameKey == key)) return ApiProblems.Conflict(Duplicate);
 
         var location = new StorageLocation
@@ -109,7 +125,8 @@ public static class StorageLocationEndpoints
     private static async Task<IResult> UpdateAsync(Guid id, SaveStorageLocationRequest request, WarehouseDbContext db)
     {
         var name = TextNormalizer.Clean(request.Name);
-        if (await ValidateAsync(db, name, request.ParentId) is { } invalid) return invalid;
+        var currentParent = await db.StorageLocations.AsNoTracking().Where(l => l.Id == id).Select(l => l.ParentId).FirstOrDefaultAsync();
+        if (await ValidateAsync(db, name, request.ParentId, currentParent) is { } invalid) return invalid;
 
         var location = await db.StorageLocations.FirstOrDefaultAsync(l => l.Id == id);
         if (location is null) return ApiProblems.NotFound();
@@ -120,7 +137,7 @@ public static class StorageLocationEndpoints
         }
 
         var key = TextNormalizer.Key(name)!;
-        var parentKey = KeyOf(request.ParentId);
+        var parentKey = StorageLocation.KeyOf(request.ParentId);
         if (await db.StorageLocations.AnyAsync(l => l.ParentKey == parentKey && l.NameKey == key && l.Id != id))
         {
             return ApiProblems.Conflict(Duplicate);

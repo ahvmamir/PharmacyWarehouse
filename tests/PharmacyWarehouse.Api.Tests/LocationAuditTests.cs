@@ -58,6 +58,18 @@ public class LocationAuditTests : ApiTestBase
     }
 
     [Fact]
+    public async Task DerivedKeyColumns_AreNotAudited()
+    {
+        var location = await CreateAsync("TEST-LOC-01");
+
+        await PutAsync(location, "TEST-LOC-02", null);
+
+        var updates = (await App.AuditRowsAsync(location.Id)).Where(r => r.Action == "Updated").ToList();
+        var row = Assert.Single(updates);
+        Assert.Equal("Name", row.Field);
+    }
+
+    [Fact]
     public async Task SaveWithoutChanges_WritesNoRows_ButAdvancesVersion()
     {
         var location = await CreateAsync("TEST-LOC-01");

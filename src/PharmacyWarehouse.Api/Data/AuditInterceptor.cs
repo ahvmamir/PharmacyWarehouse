@@ -10,11 +10,13 @@ namespace PharmacyWarehouse.Api.Data;
 // به کد endpointها بستگی ندارد، پس فراموش نمی‌شود. ExecuteUpdate و SQL مستقیم از اینجا رد نمی‌شوند؛ پس ممنوع‌اند.
 public sealed class AuditInterceptor : SaveChangesInterceptor
 {
-    // مشتق‌اند یا کلید؛ تغییرشان خبر تازه‌ای نیست.
+    // مشتق‌اند یا کلید؛ تغییرشان خبر تازه‌ای نیست. هر ستونی که نامش با Key تمام شود هم ignore است (IsDerived).
     private static readonly HashSet<string> Ignored =
     [
-        "Id", "Version", "SearchText", "NameKey", "ParentKey", "CreatedAtUtc", "UpdatedAtUtc"
+        "Id", "Version", "SearchText", "CreatedAtUtc", "UpdatedAtUtc"
     ];
+
+    private static bool IsDerived(string name) => Ignored.Contains(name) || name.EndsWith("Key", StringComparison.Ordinal);
 
     private readonly AuditContext _audit;
 
@@ -93,7 +95,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
                     foreach (var property in entry.Properties)
                     {
                         var name = property.Metadata.Name;
-                        if (Ignored.Contains(name) || Equals(property.OriginalValue, property.CurrentValue)) continue;
+                        if (IsDerived(name) || Equals(property.OriginalValue, property.CurrentValue)) continue;
 
                         rows.Add(Row(
                             AuditActions.Updated,
@@ -117,7 +119,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         var values = new Dictionary<string, string?>();
         foreach (var property in entry.Properties)
         {
-            if (Ignored.Contains(property.Metadata.Name)) continue;
+            if (IsDerived(property.Metadata.Name)) continue;
             values[property.Metadata.Name] = Format(useOriginal ? property.OriginalValue : property.CurrentValue);
         }
 

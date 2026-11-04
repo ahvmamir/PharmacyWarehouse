@@ -44,4 +44,59 @@ public static class LocationTree
 
         return false;
     }
+
+    // پیمایش درخت: ریشه‌ها، سپس فرزندان هر گره؛ هم‌سطح‌ها با SortOrder و بعد Name (Ordinal).
+    // مرتب‌سازی روی مسیر متنی اشتباه است («قفسه یخچال» بین «قفسه» و «قفسه › طبقه» می‌افتد).
+    // گره با پدر ناموجود در سطح اول می‌آید و گره‌ی داخل حلقه بعد از بقیه با عمق ۰، تا پنهان نشود.
+    public static IReadOnlyList<(LocationNode Node, int Depth)> Ordered(IEnumerable<LocationNode> nodes)
+    {
+        var all = nodes.ToList();
+        var ids = all.Select(n => n.Id).ToHashSet();
+        var children = all.ToLookup(n => n.ParentId is { } p && ids.Contains(p) ? p : (Guid?)null);
+        var seen = new HashSet<Guid>();
+        var result = new List<(LocationNode, int)>(all.Count);
+
+        void Walk(Guid? parent, int depth)
+        {
+            foreach (var node in children[parent].OrderBy(n => n.SortOrder).ThenBy(n => n.Name, StringComparer.Ordinal))
+            {
+                if (!seen.Add(node.Id)) continue;
+                result.Add((node, depth));
+                Walk(node.Id, depth + 1);
+            }
+        }
+
+        Walk(null, 0);
+
+        foreach (var node in all.OrderBy(n => n.SortOrder).ThenBy(n => n.Name, StringComparer.Ordinal))
+        {
+            if (!seen.Add(node.Id)) continue;
+            result.Add((node, 0));
+            Walk(node.Id, 1);
+        }
+
+        return result;
+    }
+
+    // گره‌هایی که خودشان و همه‌ی نیاکانشان فعال‌اند؛ زیرشاخه‌ی غیرفعال از انتخاب‌گرها بیرون است.
+    public static IReadOnlySet<Guid> EffectivelyActive(IEnumerable<(LocationNode Node, bool IsActive)> nodes)
+    {
+        var byId = nodes.ToDictionary(n => n.Node.Id);
+        var result = new HashSet<Guid>();
+
+        foreach (var (id, entry) in byId)
+        {
+            var seen = new HashSet<Guid>();
+            var active = true;
+            for (var current = ((LocationNode Node, bool IsActive)?)entry; current is { } at && seen.Add(at.Node.Id);)
+            {
+                if (!at.IsActive) { active = false; break; }
+                current = at.Node.ParentId is { } parentId && byId.TryGetValue(parentId, out var parent) ? parent : null;
+            }
+
+            if (active) result.Add(id);
+        }
+
+        return result;
+    }
 }
