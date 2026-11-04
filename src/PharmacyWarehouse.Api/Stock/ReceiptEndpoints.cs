@@ -77,7 +77,7 @@ public static class ReceiptEndpoints
             db.ExpectVersion(batch, version);
         }
 
-        ledger.Post(batch, StockMovementKind.Receipt, request.Quantity, now, note);
+        ledger.Post(batch, StockMovementKind.Receipt, request.Quantity, now, note, atUtc: now);
         try
         {
             await db.SaveChangesAsync();
