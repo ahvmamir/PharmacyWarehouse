@@ -14,7 +14,8 @@ public static class AuditLabels
         ["Batch"] = "بچ",
         ["ProductBarcode"] = "بارکد",
         ["StorageLocation"] = "محل",
-        ["Withdrawal"] = "برداشت"
+        ["Withdrawal"] = "برداشت",
+        ["AppSetting"] = "تنظیم"
     };
 
     private static readonly Dictionary<string, string> Actions = new()
@@ -54,7 +55,9 @@ public static class AuditLabels
         ["ReviewedById"] = "بررسی‌کننده",
         ["ReviewedAtUtc"] = "زمان بررسی",
         ["ReviewNote"] = "یادداشت بررسی",
-        ["SelfReviewed"] = "بررسی توسط خود ثبت‌کننده"
+        ["SelfReviewed"] = "بررسی توسط خود ثبت‌کننده",
+        ["Key"] = "نام تنظیم",
+        ["Value"] = "مقدار"
     };
 
     public static string Entity(string? entityType) =>

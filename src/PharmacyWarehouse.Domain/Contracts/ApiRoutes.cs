@@ -24,6 +24,8 @@ public static class ApiRoutes
     public const string ImportTemplate = "/api/import/template";
     public const string Alerts = "/api/alerts";
     public const string AppInfo = "/api/app-info";
+    public const string Dashboard = "/api/dashboard";
+    public const string Settings = "/api/settings";
 
     // مسیرهای ساخته‌شده برای کلاینت
     public static string ById(string collection, Guid id) => $"{collection}/{id}";

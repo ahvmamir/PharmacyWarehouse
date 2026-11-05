@@ -19,6 +19,7 @@ public class WarehouseDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>,
     public DbSet<Batch> Batches => Set<Batch>();
     public DbSet<StockMovement> StockMovements => Set<StockMovement>();
     public DbSet<Withdrawal> Withdrawals => Set<Withdrawal>();
+    public DbSet<AppSetting> AppSettings => Set<AppSetting>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 
     protected override void OnModelCreating(ModelBuilder builder)
@@ -92,6 +93,17 @@ public class WarehouseDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>,
         });
 
         builder.Entity<StockMovement>().HasOne<Withdrawal>().WithMany().HasForeignKey(m => m.WithdrawalId).OnDelete(DeleteBehavior.Restrict);
+
+        builder.Entity<AppSetting>(setting =>
+        {
+            setting.Property(s => s.Key).IsRequired().HasMaxLength(AppSetting.MaxKey);
+            setting.Property(s => s.Value).IsRequired().HasMaxLength(AppSetting.MaxValue);
+            setting.Property(s => s.Version).IsConcurrencyToken();
+            setting.HasIndex(s => s.Key).IsUnique();
+            setting.HasData(
+                new AppSetting { Id = new Guid("6f3b1c52-0a11-4d7e-9c10-3a5e7d210001"), Key = DashboardRules.NearMonthsKey, Value = "3" },
+                new AppSetting { Id = new Guid("6f3b1c52-0a11-4d7e-9c10-3a5e7d210002"), Key = DashboardRules.FarMonthsKey, Value = "6" });
+        });
 
         builder.Entity<AuditEntry>(entry =>
         {

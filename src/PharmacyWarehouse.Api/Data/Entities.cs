@@ -110,6 +110,18 @@ public class Withdrawal : IAudited
     public int Version { get; set; } = 1;
 }
 
+// تنظیم کلید/مقدار؛ مقدار متن است و معنایش را DashboardRules تعیین می‌کند. ردیف‌ها با migration ساخته می‌شوند، پس Version همیشه هست.
+public class AppSetting : IAudited
+{
+    public const int MaxKey = 50;
+    public const int MaxValue = 200;
+
+    public Guid Id { get; set; }
+    public string Key { get; set; } = "";
+    public string Value { get; set; } = "";
+    public int Version { get; set; } = 1;
+}
+
 // فقط اضافه‌شونده؛ trigger جلوی UPDATE و DELETE را می‌گیرد.
 public class AuditEntry
 {

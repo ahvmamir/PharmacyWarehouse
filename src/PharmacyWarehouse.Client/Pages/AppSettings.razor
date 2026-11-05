@@ -1,0 +1,89 @@
+@page "/admin/settings"
+@attribute [Authorize]
+@inject DashboardClient DashboardApi
+@inject ToastService Toasts
+
+<PageTitle>تنظیمات | انبار داروخانه</PageTitle>
+
+<RequirePermission Permission="@Permissions.SettingsManage">
+<div class="page-head">
+    <div>
+        <h1>تنظیمات</h1>
+        <p>آستانه‌های هشدار انقضا در داشبورد، بر حسب ماه.</p>
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <div class="form-alert mb-2" role="alert"><AppIcon Name="warning" /> <span>@_error</span></div>
+}
+
+@if (_settings is not null)
+{
+    <section class="card-emu">
+        <div class="form-field">
+            <label for="near-months">آستانه‌ی اول (ماه)</label>
+            <input id="near-months" type="number" min="1" max="60" class="form-control import-narrow" dir="ltr" @bind="_near" />
+        </div>
+        <div class="form-field">
+            <label for="far-months">آستانه‌ی دوم (ماه)</label>
+            <input id="far-months" type="number" min="1" max="60" class="form-control import-narrow" dir="ltr" @bind="_far" />
+        </div>
+        <button type="button" class="btn btn-primary mt-2" disabled="@_busy" @onclick="SaveAsync">ذخیره</button>
+    </section>
+}
+else if (_error is null)
+{
+    <div class="loading-line">در حال بارگذاری…</div>
+}
+</RequirePermission>
+
+@code {
+    private AppSettingsResponse? _settings;
+    private int _near;
+    private int _far;
+    private string? _error;
+    private bool _busy;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var result = await DashboardApi.GetSettingsAsync();
+        if (result.IsSuccess) Show(result.Value!);
+        else _error = result.ErrorMessage;
+    }
+
+    private void Show(AppSettingsResponse settings)
+    {
+        _settings = settings;
+        _near = settings.NearMonths;
+        _far = settings.FarMonths;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_busy || _settings is not { } current) return;
+
+        _busy = true;
+        var result = await DashboardApi.SaveSettingsAsync(new SaveAppSettingsRequest
+        {
+            NearMonths = _near, FarMonths = _far, NearVersion = current.NearVersion, FarVersion = current.FarVersion
+        });
+
+        if (result.IsSuccess)
+        {
+            _error = null;
+            Show(result.Value!);
+            Toasts.Show("ذخیره شد.");
+        }
+        else
+        {
+            _error = result.ErrorMessage;
+            // ۴۰۹: مقدارهای تازه نشان داده می‌شوند تا کاربر آگاهانه دوباره ذخیره کند.
+            if (result.Outcome == ApiOutcome.Conflict) await LoadAsync();
+        }
+
+        _busy = false;
+    }
+}

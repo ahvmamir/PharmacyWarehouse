@@ -237,6 +237,7 @@ app.MapRoleEndpoints();
 app.MapBackupEndpoints();
 app.MapImportEndpoints();
 app.MapAlertEndpoints();
+PharmacyWarehouse.Api.Dashboard.DashboardEndpoints.MapDashboardEndpoints(app);
 
 // مسیر ناشناخته‌ی زیر /api باید ۴۰۴ بماند، نه صفحه‌ی Client؛ بقیه‌ی مسیرها را Router کلاینت می‌فهمد.
 app.Map("/api/{**rest}", () => Results.NotFound());

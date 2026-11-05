@@ -1,0 +1,203 @@
+@page "/dashboard"
+@attribute [Authorize]
+@using PharmacyWarehouse.Domain.Stock
+@inject DashboardClient DashboardApi
+
+<PageTitle>داشبورد | انبار داروخانه</PageTitle>
+
+<RequirePermission Permission="@Permissions.DashboardView">
+<div class="page-head">
+    <div>
+        <h1>داشبورد</h1>
+    </div>
+    <button type="button" class="btn btn-quiet" disabled="@_loading" @onclick="LoadAsync"><AppIcon Name="history" /> تازه‌سازی</button>
+</div>
+
+@if (_error is not null)
+{
+    <div class="form-alert" role="alert"><AppIcon Name="warning" /> <span>@_error</span></div>
+}
+
+@if (_data is { } data)
+{
+    <section class="card-emu">
+        <h2>انقضا</h2>
+        @ExpiryTable("منقضی‌شده", data.Expiry.Expired)
+        @ExpiryTable($"تا {Num(data.Expiry.NearMonths)} ماه", data.Expiry.Near)
+        @ExpiryTable($"تا {Num(data.Expiry.FarMonths)} ماه", data.Expiry.Far)
+    </section>
+
+    <section class="card-emu">
+        <h2>کمتر از حداقل</h2>
+        @if (data.BelowMinimum.Count == 0)
+        {
+            <p class="form-hint">موردی نیست.</p>
+        }
+        else
+        {
+            <div style="overflow-x:auto;">
+                <table class="table-emu">
+                    <thead><tr><th>قلم</th><th>موجودی منقضی‌نشده</th><th>حداقل</th></tr></thead>
+                    <tbody>
+                        @foreach (var item in data.BelowMinimum)
+                        {
+                            <tr @key="item.ProductId">
+                                <td><a href="products/@item.ProductId">@item.ProductName</a> <span class="cell-sub">@item.Brand</span></td>
+                                <td>@Num(item.UnexpiredOnHand)</td>
+                                <td>@Num(item.MinStock)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+    <section class="card-emu">
+        <h2>مصرف خالص</h2>
+        <p class="form-hint">برداشت منهای برگشت، بر پایه‌ی زمان خود برداشت.</p>
+        @ConsumptionTable("۷ روز اخیر", data.Consumption7Days)
+        @ConsumptionTable("۳۰ روز اخیر", data.Consumption30Days)
+    </section>
+
+    <section class="card-emu">
+        <h2>تأییدنشده‌ها</h2>
+        <ul>
+            <li>در انتظار بررسی: <strong>@Num(data.Unreviewed.PendingCount)</strong></li>
+            <li>قدیمی‌ترین: <bdi>@(data.Unreviewed.OldestPendingAtUtc is { } oldest ? JalaliDate.Format(oldest) : "—")</bdi></li>
+            <li>تأیید توسط خود ثبت‌کننده در ۳۰ روز: <strong>@Num(data.Unreviewed.SelfReviewed30Days)</strong></li>
+            <li>ثبت دیرهنگام در ۳۰ روز: <strong>@Num(data.Unreviewed.Late30Days)</strong></li>
+            <li>پس از انبارگردانی در ۳۰ روز: <strong>@Num(data.Unreviewed.AfterStocktake30Days)</strong></li>
+        </ul>
+    </section>
+
+    <section class="card-emu">
+        <h2>اصلاح و اسقاط در ۳۰ روز اخیر</h2>
+        @if (data.Corrections30Days.Count == 0)
+        {
+            <p class="form-hint">موردی نیست.</p>
+        }
+        else
+        {
+            <div style="overflow-x:auto;">
+                <table class="table-emu">
+                    <thead><tr><th>نوع</th><th>زمان</th><th>قلم</th><th>بچ</th><th>مقدار</th><th>کاربر</th><th>یادداشت</th></tr></thead>
+                    <tbody>
+                        @foreach (var item in data.Corrections30Days)
+                        {
+                            <tr @key="item.MovementId">
+                                <td>@(item.Kind == StockMovementKind.Disposal ? "اسقاط" : "اصلاح")</td>
+                                <td><bdi>@JalaliDate.Format(item.AtUtc)</bdi></td>
+                                <td>@item.ProductName</td>
+                                <td><bdi>@item.BatchNumber</bdi></td>
+                                <td><bdi>@JalaliDate.ToPersianDigits(item.Quantity.ToString())</bdi></td>
+                                <td><bdi>@item.UserName</bdi></td>
+                                <td>@item.Note</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+}
+else if (_error is null)
+{
+    <div class="loading-line">در حال بارگذاری…</div>
+}
+</RequirePermission>
+
+@code {
+    private DashboardResponse? _data;
+    private string? _error;
+    private bool _loading;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        var result = await DashboardApi.GetAsync();
+        _loading = false;
+        if (result.IsSuccess)
+        {
+            _error = null;
+            _data = result.Value;
+        }
+        else
+        {
+            _error = result.ErrorMessage;
+        }
+    }
+
+    private static string Num(int value) => JalaliDate.ToPersianDigits(value.ToString());
+
+    private RenderFragment ExpiryTable(string title, DashboardExpiryBucket bucket) => __builder =>
+    {
+        <h3 class="mt-3">@title (@Num(bucket.Total))</h3>
+        @if (bucket.Total == 0)
+        {
+            <p class="form-hint">موردی نیست.</p>
+        }
+        else
+        {
+            <div style="overflow-x:auto;">
+                <table class="table-emu">
+                    <thead><tr><th>قلم</th><th>بچ</th><th>انقضا</th><th>موجودی</th><th>محل</th></tr></thead>
+                    <tbody>
+                        @foreach (var item in bucket.Items)
+                        {
+                            <tr @key="item.BatchId">
+                                <td><a href="products/@item.ProductId">@item.ProductName</a> <span class="cell-sub">@item.Brand</span></td>
+                                <td><bdi>@item.BatchNumber</bdi></td>
+                                <td><bdi>@item.ExpiryText</bdi></td>
+                                <td>@Num(item.OnHand)</td>
+                                <td><bdi>@item.LocationPath</bdi></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            @if (bucket.Total > bucket.Items.Count)
+            {
+                <p class="form-hint">فقط @Num(bucket.Items.Count) مورد زودتر منقضی‌شونده نمایش داده شد.</p>
+            }
+        }
+    };
+
+    private RenderFragment ConsumptionTable(string title, DashboardConsumption consumption) => __builder =>
+    {
+        <h3 class="mt-3">@title</h3>
+        @if (consumption.TopProducts.Count == 0)
+        {
+            <p class="form-hint">مصرفی ثبت نشده است.</p>
+        }
+        else
+        {
+            <div class="d-flex gap-3 flex-wrap">
+                <div style="flex:1; min-width:16rem;">
+                    <strong>پرمصرف‌ترین اقلام</strong>
+                    <table class="table-emu">
+                        <tbody>
+                            @foreach (var item in consumption.TopProducts)
+                            {
+                                <tr @key="item.Id"><td>@item.Name</td><td>@Num(item.Quantity)</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div style="flex:1; min-width:16rem;">
+                    <strong>به تفکیک فرد</strong>
+                    <table class="table-emu">
+                        <tbody>
+                            @foreach (var item in consumption.ByUser)
+                            {
+                                <tr @key="item.Id"><td><bdi>@item.Name</bdi></td><td>@Num(item.Quantity)</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+    };
+}

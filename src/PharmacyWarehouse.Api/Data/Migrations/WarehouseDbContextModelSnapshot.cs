@@ -143,6 +143,50 @@ namespace PharmacyWarehouse.Api.Data.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("PharmacyWarehouse.Api.Data.AppSetting", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Key")
+                        .IsUnique();
+
+                    b.ToTable("AppSettings");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("6f3b1c52-0a11-4d7e-9c10-3a5e7d210001"),
+                            Key = "expiry.nearMonths",
+                            Value = "3",
+                            Version = 1
+                        },
+                        new
+                        {
+                            Id = new Guid("6f3b1c52-0a11-4d7e-9c10-3a5e7d210002"),
+                            Key = "expiry.farMonths",
+                            Value = "6",
+                            Version = 1
+                        });
+                });
+
             modelBuilder.Entity("PharmacyWarehouse.Api.Data.AppUser", b =>
                 {
                     b.Property<Guid>("Id")

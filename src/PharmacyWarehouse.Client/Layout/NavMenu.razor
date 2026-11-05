@@ -28,6 +28,12 @@
         <nav class="sidebar-nav">
             @if (Session.CurrentUser is { MustChangePassword: false })
             {
+                @if (Session.Can(Permissions.DashboardView))
+                {
+                    <NavLink class="sidebar-link" href="dashboard">
+                        <AppIcon Name="info" /> داشبورد
+                    </NavLink>
+                }
                 @if (Session.Can(Permissions.WithdrawalCreate))
                 {
                     <NavLink class="sidebar-link" href="withdraw">
@@ -62,9 +68,15 @@
                     </NavLink>
                 }
 
-                @if (Session.Can(Permissions.UsersManage) || Session.Can(Permissions.RolesManage) || Session.Can(Permissions.BackupDownload) || Session.Can(Permissions.DataImport) || Session.Can(Permissions.DataExport))
+                @if (Session.Can(Permissions.UsersManage) || Session.Can(Permissions.RolesManage) || Session.Can(Permissions.BackupDownload) || Session.Can(Permissions.DataImport) || Session.Can(Permissions.DataExport) || Session.Can(Permissions.SettingsManage))
                 {
                     <div class="nav-section">تنظیمات</div>
+                }
+                @if (Session.Can(Permissions.SettingsManage))
+                {
+                    <NavLink class="sidebar-link" href="admin/settings">
+                        <AppIcon Name="key" /> آستانه‌های انقضا
+                    </NavLink>
                 }
                 @if (Session.Can(Permissions.UsersManage))
                 {
