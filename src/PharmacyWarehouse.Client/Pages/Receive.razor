@@ -318,14 +318,23 @@
         else
         {
             // شماره‌ی بچ موجود در حالت «بچ تازه»: سرور آن را بچ موجود می‌بیند و بدون Version ۴۰۹ می‌دهد.
-            // پس همین‌جا بچ موجود انتخاب می‌شود (بدون ثبت خودکار) تا کاربر تأیید کند.
-            var typedKey = TextNormalizer.ScanKey(_batchNumber);
-            if (typedKey is not null && product.Batches.FirstOrDefault(b => TextNormalizer.ScanKey(b.BatchNumber) == typedKey) is { } match)
+            // تصمیم در ReceiptBatchMatcher (Domain، با تست) است: فقط اگر تاریخ خالی یا برابر باشد به بچ موجود می‌رویم
+            // (بدون ثبت خودکار تا کاربر تأیید کند)؛ تاریخ متفاوت هرگز بی‌صدا دور ریخته نمی‌شود.
+            var match = ReceiptBatchMatcher.Resolve(_batchNumber, _expiry, product.Batches);
+            switch (match.Kind)
             {
-                _batchId = match.Id;
-                _batchNumber = "";
-                _formError = "این بچ قبلاً ثبت شده؛ فقط تعداد به آن اضافه می‌شود.";
-                return;
+                case BatchMatchKind.UseExisting:
+                    _batchId = match.Batch!.Id;
+                    _batchNumber = "";
+                    _expiry = null;
+                    _formError = "این بچ قبلاً ثبت شده؛ فقط تعداد به آن اضافه می‌شود.";
+                    return;
+                case BatchMatchKind.DateMismatch:
+                    _formError = match.Message;
+                    return;
+                case BatchMatchKind.InvalidExpiry:
+                    _errors = new() { ["Expiry"] = [match.Message!] };
+                    return;
             }
 
             request.BatchNumber = _batchNumber;
