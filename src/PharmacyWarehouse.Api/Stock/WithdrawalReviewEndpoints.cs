@@ -22,30 +22,37 @@ public static class WithdrawalReviewEndpoints
         group.MapPost("approve", BulkApproveAsync);
     }
 
-    // status: Pending (پیش‌فرض)، Approved، Rejected یا all. بررسی‌نشده‌ها قدیمی‌ترین اول (نوبت)، بقیه تازه‌ترین اول.
+    // status: Pending (پیش‌فرض)، Approved، Rejected یا all؛ فقط همین نام‌ها (عدد یا فهرست جداشده با ویرگول رد می‌شود).
+    // بررسی‌نشده‌ها قدیمی‌ترین اول (نوبت)، بقیه تازه‌ترین اول. صفحه‌بندی در SQL است، نه در حافظه.
     private static async Task<IResult> ListAsync(WarehouseDbContext db, string? status, int take = 100)
     {
         take = Math.Clamp(take, 1, MaxListTake);
         var query = db.Withdrawals.AsNoTracking().AsQueryable();
-        var pending = true;
-        if (!string.IsNullOrEmpty(status) && !status.Equals("Pending", StringComparison.OrdinalIgnoreCase))
+        bool pending;
+        switch (status?.Trim().ToLowerInvariant())
         {
-            pending = false;
-            if (!status.Equals("all", StringComparison.OrdinalIgnoreCase))
-            {
-                if (!Enum.TryParse<WithdrawalStatus>(status, ignoreCase: true, out var parsed)) return ApiProblems.Validation("Status", "وضعیت نامعتبر است.");
-                query = query.Where(w => w.Status == parsed);
-            }
-        }
-        else
-        {
-            query = query.Where(w => w.Status == WithdrawalStatus.Pending);
+            case null or "" or "pending":
+                pending = true;
+                query = query.Where(w => w.Status == WithdrawalStatus.Pending);
+                break;
+            case "approved":
+                pending = false;
+                query = query.Where(w => w.Status == WithdrawalStatus.Approved);
+                break;
+            case "rejected":
+                pending = false;
+                query = query.Where(w => w.Status == WithdrawalStatus.Rejected);
+                break;
+            case "all":
+                pending = false;
+                break;
+            default:
+                return ApiProblems.Validation("Status", "وضعیت نامعتبر است.");
         }
 
-        var rows = await query.ToListAsync();
-        var page = (pending
-            ? rows.OrderBy(w => w.AtUtc).ThenBy(w => w.Id)
-            : rows.OrderByDescending(w => w.AtUtc).ThenByDescending(w => w.Id)).Take(take).ToList();
+        var page = await (pending
+            ? query.OrderBy(w => w.AtUtc).ThenBy(w => w.Id)
+            : query.OrderByDescending(w => w.AtUtc).ThenByDescending(w => w.Id)).Take(take).ToListAsync();
         return Results.Ok(await WithdrawalEndpoints.ToItemsAsync(db, page));
     }
 
@@ -115,10 +122,11 @@ public static class WithdrawalReviewEndpoints
         if (audit.UserId is not { } userId) return ApiProblems.Forbidden("کاربر شناخته نشد.");
         if (request.Items is null || request.Items.Count == 0) return ApiProblems.Validation("Items", "حداقل یک برداشت انتخاب کنید.");
         if (request.Items.Count > MaxListTake) return ApiProblems.Validation("Items", $"حداکثر {MaxListTake} برداشت در هر بار.");
+        if (request.Items.Select(t => t.Id).Distinct().Count() != request.Items.Count) return ApiProblems.Validation("Items", "یک برداشت فقط یک بار می‌آید.");
 
         var approved = new List<Guid>();
         var failed = new List<BulkFailure>();
-        foreach (var target in request.Items.DistinctBy(t => t.Id))
+        foreach (var target in request.Items)
         {
             // هر برداشت جدا ذخیره می‌شود؛ پس از هر شکست، ردیابی پاک می‌شود تا ردیف نیمه‌کاره نماند.
             db.ChangeTracker.Clear();
@@ -136,6 +144,11 @@ public static class WithdrawalReviewEndpoints
             catch (DbUpdateConcurrencyException)
             {
                 failed.Add(new BulkFailure(target.Id, "این برداشت در این فاصله تغییر کرده است؛ فهرست را تازه کنید."));
+            }
+            catch (DbUpdateException)
+            {
+                // مثلاً قفل موقت دیتابیس؛ موارد قبلی ثبت شده‌اند و گزارش می‌شوند، نه ۵۰۰ بی‌نتیجه.
+                failed.Add(new BulkFailure(target.Id, "ثبت انجام نشد؛ کمی بعد دوباره تلاش کنید."));
             }
         }
 

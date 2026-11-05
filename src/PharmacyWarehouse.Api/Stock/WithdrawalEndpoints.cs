@@ -136,8 +136,8 @@ public static class WithdrawalEndpoints
         if (audit.UserId is not { } userId) return ApiProblems.Forbidden("کاربر شناخته نشد.");
 
         take = Math.Clamp(take, 1, MaxListTake);
-        var rows = await db.Withdrawals.AsNoTracking().Where(w => w.UserId == userId).ToListAsync();
-        var page = rows.OrderByDescending(w => w.AtUtc).ThenByDescending(w => w.Id).Take(take).ToList();
+        var page = await db.Withdrawals.AsNoTracking().Where(w => w.UserId == userId)
+            .OrderByDescending(w => w.AtUtc).ThenByDescending(w => w.Id).Take(take).ToListAsync();
         return Results.Ok(await ToItemsAsync(db, page));
     }
 

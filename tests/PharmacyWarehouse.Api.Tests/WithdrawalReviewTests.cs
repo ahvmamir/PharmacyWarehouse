@@ -259,6 +259,55 @@ public class WithdrawalReviewTests : ApiTestBase
     }
 
     [Fact]
+    public async Task BulkApprove_ValidItemsAfterAFailure_AreStillApproved_AndFailedItemLeavesNoAudit()
+    {
+        var (_, _, _, stale) = await WithdrawalAsync(name: "TEST-DRUG-R10");
+        var (_, _, _, good1) = await WithdrawalAsync(name: "TEST-DRUG-R11");
+        var (_, _, _, good2) = await WithdrawalAsync(name: "TEST-DRUG-R12");
+
+        var request = new BulkApproveRequest
+        {
+            Items = [new() { Id = stale.Id, Version = stale.Version + 9 }, new() { Id = good1.Id, Version = good1.Version }, new() { Id = good2.Id, Version = good2.Version }]
+        };
+        var result = (await (await Keeper.PostAsJsonAsync(ApiRoutes.WithdrawalBulkApprove, request)).Content.ReadFromJsonAsync<BulkApproveResult>())!;
+
+        Assert.Equal([good1.Id, good2.Id], result.Approved);
+        var failure = Assert.Single(result.Failed);
+        Assert.Equal(stale.Id, failure.Id);
+        Assert.False(string.IsNullOrWhiteSpace(failure.Message));
+        // اگر ChangeTracker پاک نمی‌شد، ردیف تاریخچه‌ی برداشت کهنه هم ذخیره می‌شد.
+        Assert.DoesNotContain(await App.AuditRowsAsync(stale.Id), r => r.Field == "Status");
+        Assert.Contains(await App.AuditRowsAsync(good2.Id), r => r.Field == "Status" && r.NewValue == "Approved");
+    }
+
+    [Fact]
+    public async Task BulkApprove_DuplicateIds_Returns400()
+    {
+        var (_, _, _, item) = await WithdrawalAsync(name: "TEST-DRUG-R13");
+        var request = new BulkApproveRequest { Items = [new() { Id = item.Id, Version = item.Version + 9 }, new() { Id = item.Id, Version = item.Version }] };
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await Keeper.PostAsJsonAsync(ApiRoutes.WithdrawalBulkApprove, request)).StatusCode);
+    }
+
+    [Theory]
+    [InlineData("99")]
+    [InlineData("0")]
+    [InlineData("Pending,Approved")]
+    public async Task ReviewList_NumericOrListStatus_Returns400(string status) =>
+        Assert.Equal(HttpStatusCode.BadRequest, (await Keeper.GetAsync(ApiRoutes.WithdrawalReviewList + "?status=" + status)).StatusCode);
+
+    [Fact]
+    public async Task ReviewList_PendingOrder_IsOldestFirst()
+    {
+        var (_, _, _, first) = await WithdrawalAsync(name: "TEST-DRUG-R14");
+        var (_, _, _, second) = await WithdrawalAsync(name: "TEST-DRUG-R15");
+
+        var pending = (await Keeper.GetFromJsonAsync<List<WithdrawalItem>>(ApiRoutes.WithdrawalReviewList))!;
+
+        Assert.Equal([first.Id, second.Id], pending.Select(w => w.Id));
+    }
+
+    [Fact]
     public async Task BulkApprove_EmptyOrNull_Returns400()
     {
         Assert.Equal(HttpStatusCode.BadRequest, (await Keeper.PostAsJsonAsync(ApiRoutes.WithdrawalBulkApprove, new BulkApproveRequest())).StatusCode);

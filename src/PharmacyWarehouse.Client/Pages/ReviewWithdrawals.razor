@@ -181,25 +181,27 @@ else
 
     private async Task ApproveAsync(WithdrawalItem item)
     {
+        if (_busy) return;
         _busy = true;
         var result = await WithdrawalsApi.ApproveAsync(item);
-        _busy = false;
         if (result.IsSuccess) Toasts.Show("تأیید شد.");
         else Toasts.Show(result.ErrorMessage, isWarning: true);
         await LoadAsync(); // ۴۰۹ هم یعنی وضعیت عوض شده؛ فهرست تازه می‌شود
+        _busy = false; // تا بارگذاری تمام نشده دکمه‌های کارت‌های کهنه غیرفعال می‌مانند
     }
 
     private async Task BulkApproveAsync()
     {
-        if (_items is null || _selected.Count == 0) return;
+        if (_busy || _items is null || _selected.Count == 0) return;
 
         _busy = true;
         var result = await WithdrawalsApi.BulkApproveAsync(_items.Where(i => _selected.Contains(i.Id)));
-        _busy = false;
 
         if (!result.IsSuccess)
         {
             Toasts.Show(result.ErrorMessage, isWarning: true);
+            await LoadAsync(); // ممکن است بخشی ثبت شده باشد
+            _busy = false;
             return;
         }
 
@@ -208,6 +210,7 @@ else
             + (failed > 0 ? $"؛ {JalaliDate.ToPersianDigits(failed.ToString())} مورد انجام نشد: {result.Value.Failed[0].Message}" : "."), isWarning: failed > 0);
         _selected.Clear();
         await LoadAsync();
+        _busy = false;
     }
 
     private void StartReject(WithdrawalItem item)
@@ -222,23 +225,32 @@ else
 
     private async Task RejectAsync()
     {
-        if (_rejecting is not { } item) return;
+        if (_busy || _rejecting is not { } item) return;
 
         _busy = true;
         var result = await WithdrawalsApi.RejectAsync(item, _rejectNote);
-        _busy = false;
 
         if (result.IsSuccess)
         {
             _rejecting = null;
             Toasts.Show("رد شد و موجودی برگشت.");
             await LoadAsync();
+            _busy = false;
             return;
         }
 
         _errors = result.Problem?.Errors ?? [];
         _formError = result.ErrorMessage;
-        if (result.Outcome == ApiOutcome.Conflict) await LoadAsync();
+        if (result.Outcome == ApiOutcome.Conflict)
+        {
+            await LoadAsync();
+            // کس دیگری بررسی کرده ← پنجره بسته شود؛ وگرنه به نسخه‌ی تازه وصل شود تا دوباره‌کردن بی‌نتیجه نماند.
+            var fresh = _items?.FirstOrDefault(i => i.Id == item.Id && i.Status == WithdrawalStatus.Pending);
+            if (fresh is null) { _rejecting = null; Toasts.Show("این برداشت در این فاصله بررسی شد؛ فهرست تازه شد.", isWarning: true); }
+            else _rejecting = fresh;
+        }
+
+        _busy = false;
     }
 
     private static string StatusText(WithdrawalStatus status) => status switch

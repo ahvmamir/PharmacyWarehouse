@@ -38,7 +38,7 @@ public static class ProductEndpoints
 
     private static DateOnly Today() => BatchMapping.Today();
 
-    private static string BuildSearchText(Product p, IEnumerable<string> codes) =>
+    internal static string BuildSearchText(Product p, IEnumerable<string> codes) =>
         TextNormalizer.SearchKey(string.Join(' ', new[] { p.Name, p.Brand, p.PackDescription }.Concat(codes).Where(s => !string.IsNullOrEmpty(s))))!;
 
     private sealed record Locations(IReadOnlyDictionary<Guid, string> Paths, List<StorageLocation> All);
