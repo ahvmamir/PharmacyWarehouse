@@ -196,6 +196,12 @@ if (args.Length > 0 && args[0] == "backup")
     return;
 }
 
+if (args.Length > 0 && args[0] == "verify-stock")
+{
+    Environment.ExitCode = await OperationCommands.VerifyStockAsync(app);
+    return;
+}
+
 if (args.Length > 0 && args[0] == "seed-test-data")
 {
     Environment.ExitCode = await OperationCommands.SeedTestDataAsync(app);
@@ -238,6 +244,10 @@ app.MapProductEndpoints();
 app.MapReceiptEndpoints();
 app.MapWithdrawalEndpoints();
 app.MapWithdrawalReviewEndpoints();
+app.MapBatchEndpoints();
+app.MapStocktakeEndpoints();
+app.MapLabelEndpoints();
+PharmacyWarehouse.Api.Reports.ReportEndpoints.MapReportEndpoints(app);
 app.MapUserEndpoints();
 app.MapRoleEndpoints();
 app.MapBackupEndpoints();

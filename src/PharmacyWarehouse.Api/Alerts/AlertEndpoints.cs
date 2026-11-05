@@ -4,6 +4,7 @@ using PharmacyWarehouse.Api.Data;
 using PharmacyWarehouse.Api.Operations;
 using PharmacyWarehouse.Domain.Auth;
 using PharmacyWarehouse.Domain.Contracts;
+using PharmacyWarehouse.Domain.Storage;
 using PharmacyWarehouse.Domain.Time;
 
 namespace PharmacyWarehouse.Api.Alerts;
@@ -60,6 +61,21 @@ public static class AlertEndpoints
                     Detail = $"روی درایو دیتابیس {JalaliDate.ToPersianDigits((bytes / 1024d / 1024 / 1024).ToString("0.0"))} گیگابایت خالی مانده. اگر پر شود، ذخیره‌ی تغییرات شکست می‌خورد."
                 });
             }
+        }
+
+        // بخش ۷.۶: تا نوبت باز است همه باید برداشت‌های ثبت‌نشده را ثبت کنند، وگرنه کسری به‌اشتباه اصلاح می‌شود.
+        var open = await db.Stocktakes.AsNoTracking().Where(s => s.ClosedAtUtc == null).Select(s => s.LocationId).ToListAsync();
+        if (open.Count > 0)
+        {
+            var locations = await db.StorageLocations.AsNoTracking().ToListAsync();
+            var paths = LocationTree.Paths(locations.Select(l => new LocationNode(l.Id, l.ParentId, l.Name, l.SortOrder)));
+            alerts.Add(new AlertItem
+            {
+                Key = AlertKeys.Stocktake,
+                Severity = AlertSeverity.Warning,
+                Title = "انبارگردانی در جریان است",
+                Detail = $"برداشت‌های ثبت‌نشده را همین حالا ثبت کنید. محل: {string.Join("، ", open.Select(id => paths.GetValueOrDefault(id, "—")))}"
+            });
         }
 
         // مهم‌ترها اول.

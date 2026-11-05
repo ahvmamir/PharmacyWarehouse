@@ -20,6 +20,9 @@
     [Parameter] public string? InputId { get; set; }
     [Parameter] public string EmptyLabel { get; set; } = "— بدون محل —";
     [Parameter] public bool Disabled { get; set; }
+
+    // اسکن برچسب محل (LOC-...) همان محل را مستقیم انتخاب می‌کند.
+    [Parameter] public bool AutoPick { get; set; }
     [Parameter, EditorRequired] public IEnumerable<StorageLocationItem> Items { get; set; } = [];
     [Parameter] public Guid? Value { get; set; }
     [Parameter] public EventCallback<Guid?> ValueChanged { get; set; }
@@ -37,6 +40,11 @@
         {
             // فهرست خالی‌جست‌وجو همان ترتیب درخت سرور است.
             return Task.FromResult(new ComboboxResult<StorageLocationItem>(items.Take(MaxOptions).ToList()));
+        }
+
+        if (AutoPick && items.FirstOrDefault(l => LocationLabel.Matches(l.Id, text)) is { } scanned)
+        {
+            return Task.FromResult(new ComboboxResult<StorageLocationItem>([scanned], scanned));
         }
 
         var byId = items.ToDictionary(l => l.Id);

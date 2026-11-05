@@ -27,8 +27,9 @@
   <PropertyGroup Condition="'$(WarehousePackage)' == 'true'">
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
-    <!-- کد از پیش کامپایل‌شده: شروع سرویس و اولین درخواست سریع‌تر؛ بسته بزرگ‌تر می‌شود. -->
-    <PublishReadyToRun>true</PublishReadyToRun>
+    <!-- کد از پیش کامپایل‌شده: شروع سرویس و اولین درخواست سریع‌تر؛ بسته بزرگ‌تر می‌شود.
+         با WarehousePrecompile خاموش می‌شود، نه با -p:PublishReadyToRun: ویژگی خط فرمان به Client هم می‌رسد و WebAssembly خطای NETSDK1095 می‌دهد. -->
+    <PublishReadyToRun Condition="'$(WarehousePrecompile)' != 'false'">true</PublishReadyToRun>
   </PropertyGroup>
 
 </Project>

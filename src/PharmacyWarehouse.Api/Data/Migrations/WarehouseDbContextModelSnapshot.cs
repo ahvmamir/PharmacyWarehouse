@@ -533,13 +533,98 @@ namespace PharmacyWarehouse.Api.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ReversesId");
+                    b.HasIndex("ReversesId")
+                        .IsUnique()
+                        .HasFilter("\"ReversesId\" IS NOT NULL");
+
+                    b.HasIndex("StocktakeCountId")
+                        .IsUnique()
+                        .HasFilter("\"StocktakeCountId\" IS NOT NULL");
 
                     b.HasIndex("WithdrawalId");
 
                     b.HasIndex("BatchId", "AtUtc");
 
                     b.ToTable("StockMovements");
+                });
+
+            modelBuilder.Entity("PharmacyWarehouse.Api.Data.Stocktake", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ClosedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("ClosedById")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("LocationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("StartedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("StartedById")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClosedAtUtc");
+
+                    b.HasIndex("LocationId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Stocktakes_OpenLocation")
+                        .HasFilter("\"ClosedAtUtc\" IS NULL");
+
+                    b.ToTable("Stocktakes");
+                });
+
+            modelBuilder.Entity("PharmacyWarehouse.Api.Data.StocktakeCount", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("AdjustmentId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("AtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Counted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ExpectedOnHand")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("StocktakeId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AdjustmentId");
+
+                    b.HasIndex("StocktakeId");
+
+                    b.HasIndex("BatchId", "AtUtc");
+
+                    b.ToTable("StocktakeCounts");
                 });
 
             modelBuilder.Entity("PharmacyWarehouse.Api.Data.StorageLocation", b =>
@@ -738,10 +823,44 @@ namespace PharmacyWarehouse.Api.Data.Migrations
                         .HasForeignKey("ReversesId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("PharmacyWarehouse.Api.Data.StocktakeCount", null)
+                        .WithMany()
+                        .HasForeignKey("StocktakeCountId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("PharmacyWarehouse.Api.Data.Withdrawal", null)
                         .WithMany()
                         .HasForeignKey("WithdrawalId")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("PharmacyWarehouse.Api.Data.Stocktake", b =>
+                {
+                    b.HasOne("PharmacyWarehouse.Api.Data.StorageLocation", null)
+                        .WithMany()
+                        .HasForeignKey("LocationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PharmacyWarehouse.Api.Data.StocktakeCount", b =>
+                {
+                    b.HasOne("PharmacyWarehouse.Api.Data.StockMovement", null)
+                        .WithMany()
+                        .HasForeignKey("AdjustmentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("PharmacyWarehouse.Api.Data.Batch", null)
+                        .WithMany()
+                        .HasForeignKey("BatchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PharmacyWarehouse.Api.Data.Stocktake", null)
+                        .WithMany()
+                        .HasForeignKey("StocktakeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("PharmacyWarehouse.Api.Data.StorageLocation", b =>

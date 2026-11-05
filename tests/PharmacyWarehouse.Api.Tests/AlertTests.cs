@@ -22,6 +22,23 @@ public class AlertTests : ApiTestBase
         (await client.GetFromJsonAsync<List<AlertItem>>(ApiRoutes.Alerts))!;
 
     [Fact]
+    public async Task OpenStocktake_AlertsEveryone_UntilClosed()
+    {
+        var location = await (await Admin.PostAsJsonAsync(ApiRoutes.Locations, new SaveStorageLocationRequest { Name = "TEST-LOC-1" }))
+            .Content.ReadFromJsonAsync<StorageLocationItem>();
+        Assert.DoesNotContain(await AlertsAsync(Staff), a => a.Key == AlertKeys.Stocktake);
+
+        var stocktake = await (await Admin.PostAsJsonAsync(ApiRoutes.Stocktakes, new StartStocktakeRequest { LocationId = location!.Id }))
+            .Content.ReadFromJsonAsync<StocktakeDetail>();
+
+        var alert = Assert.Single(await AlertsAsync(Staff), a => a.Key == AlertKeys.Stocktake);
+        Assert.Contains("TEST-LOC-1", alert.Detail);
+
+        await Admin.PostAsJsonAsync(ApiRoutes.StocktakeClose(stocktake!.Id), new VersionRequest { Version = stocktake.Version });
+        Assert.DoesNotContain(await AlertsAsync(Staff), a => a.Key == AlertKeys.Stocktake);
+    }
+
+    [Fact]
     public async Task BackupAlert_OnlyForBackupPermission_AndClearsAfterBackup()
     {
         Assert.DoesNotContain(await AlertsAsync(Staff), a => a.Key == AlertKeys.Backup);

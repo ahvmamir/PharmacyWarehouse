@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @using PharmacyWarehouse.Domain.Stock
 @inject ProductsClient ProductsApi
+@inject StockClient StockApi
 @inject ToastService Toasts
 @inject NavigationManager Navigation
 @inject ApiAuthenticationStateProvider Session
@@ -88,7 +89,13 @@ else
             <div class="table-card">
                 <table class="data-table">
                     <thead>
-                        <tr><th>شماره‌ی بچ</th><th>محل</th><th>انقضا</th><th>موجودی (جعبه)</th></tr>
+                        <tr>
+                            <th>شماره‌ی بچ</th><th>محل</th><th>انقضا</th><th>موجودی (جعبه)</th>
+                            @if (CanAdjust)
+                            {
+                                <th></th>
+                            }
+                        </tr>
                     </thead>
                     <tbody>
                         @foreach (var batch in _detail.Batches)
@@ -104,6 +111,13 @@ else
                                     }
                                 </td>
                                 <td>@JalaliDate.ToPersianDigits(batch.OnHand.ToString())</td>
+                                @if (CanAdjust)
+                                {
+                                    <td>
+                                        <button type="button" class="btn btn-sm btn-quiet" @onclick="() => OpenAdjust(batch)">اصلاح</button>
+                                        <button type="button" class="btn btn-sm btn-danger-quiet" disabled="@(batch.OnHand == 0)" @onclick="() => OpenDispose(batch)">اسقاط</button>
+                                    </td>
+                                }
                             </tr>
                         }
                     </tbody>
@@ -168,7 +182,7 @@ else
                         {
                             <tr @key="movement.Id">
                                 <td>@JalaliDate.Format(movement.OccurredAtUtc)</td>
-                                <td>@KindLabel(movement.Kind)</td>
+                                <td>@MovementLabels.Kind(movement.Kind)</td>
                                 <td><bdi>@movement.BatchNumber</bdi></td>
                                 <td dir="ltr" style="text-align:right;">@Signed(movement.Quantity)</td>
                                 <td>@movement.UserName</td>
@@ -208,6 +222,65 @@ else
                       OnCancel="() => _showDelete = false"
                       OnDeleted="OnDeletedAsync" />
     }
+
+    @if (_adjusting is { } adjusting)
+    {
+        <ModalDialog Title="@($"اصلاح موجودی بچ {adjusting.BatchNumber}")" OnClose="CloseBatchDialog">
+            <EditForm Model="this" OnSubmit="SaveAdjustAsync">
+                <p class="form-hint">موجودی فعلی: @JalaliDate.ToPersianDigits(adjusting.OnHand.ToString()) جعبه. تعداد واقعی را وارد کنید؛ تفاوت به‌صورت یک حرکت اصلاح ثبت می‌شود.</p>
+                <div class="form-field">
+                    <label for="adjust-counted">تعداد شمرده‌شده <span class="required">*</span></label>
+                    <input id="adjust-counted" class="form-control" type="number" min="0" dir="ltr" @bind="_counted" />
+                </div>
+                <div class="form-field mt-3">
+                    <label for="adjust-note">یادداشت <span class="required">*</span></label>
+                    <input id="adjust-note" class="form-control" maxlength="@ProductRules.MaxNote" @bind="_batchNote" />
+                </div>
+                @if (_batchError is not null)
+                {
+                    <div class="form-alert mt-3 mb-0" role="alert">@_batchError</div>
+                }
+                <div class="modal-actions">
+                    <button type="submit" class="btn btn-primary" disabled="@_batchBusy">@(_batchBusy ? "در حال ثبت…" : "ثبت اصلاح")</button>
+                    <button type="button" class="btn btn-quiet" @onclick="CloseBatchDialog">انصراف</button>
+                </div>
+            </EditForm>
+        </ModalDialog>
+    }
+
+    @if (_disposing is { } disposing)
+    {
+        <ModalDialog Title="@($"اسقاط از بچ {disposing.BatchNumber}")" OnClose="CloseBatchDialog">
+            <EditForm Model="this" OnSubmit="SaveDisposeAsync">
+                <p class="form-hint">موجودی فعلی: @JalaliDate.ToPersianDigits(disposing.OnHand.ToString()) جعبه.</p>
+                <div class="form-field">
+                    <label for="dispose-quantity">تعداد <span class="required">*</span></label>
+                    <input id="dispose-quantity" class="form-control" type="number" min="1" max="@disposing.OnHand" dir="ltr" @bind="_disposeQuantity" />
+                </div>
+                <div class="form-field mt-3">
+                    <label for="dispose-reason">دلیل <span class="required">*</span></label>
+                    <select id="dispose-reason" class="form-select" @bind="_disposeReason">
+                        @foreach (var reason in Enum.GetValues<DisposalReason>())
+                        {
+                            <option value="@reason">@DisposalRules.Label(reason)</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-field mt-3">
+                    <label for="dispose-note">یادداشت <span class="required">*</span></label>
+                    <input id="dispose-note" class="form-control" maxlength="@ProductRules.MaxNote" @bind="_batchNote" />
+                </div>
+                @if (_batchError is not null)
+                {
+                    <div class="form-alert mt-3 mb-0" role="alert">@_batchError</div>
+                }
+                <div class="modal-actions">
+                    <button type="submit" class="btn btn-danger-quiet" disabled="@_batchBusy">@(_batchBusy ? "در حال ثبت…" : "ثبت اسقاط")</button>
+                    <button type="button" class="btn btn-quiet" @onclick="CloseBatchDialog">انصراف</button>
+                </div>
+            </EditForm>
+        </ModalDialog>
+    }
 }
 </RequirePermission>
 
@@ -223,8 +296,17 @@ else
     private bool _showDelete;
     private Guid _loadedId;
     private ScanInput? _scan;
+    private BatchItem? _adjusting;
+    private BatchItem? _disposing;
+    private int _counted;
+    private int _disposeQuantity = 1;
+    private DisposalReason _disposeReason = DisposalReason.Damaged;
+    private string? _batchNote;
+    private string? _batchError;
+    private bool _batchBusy;
 
     private bool CanManage => Session.Can(Permissions.ProductsManage);
+    private bool CanAdjust => Session.Can(Permissions.StockAdjust);
 
     protected override async Task OnParametersSetAsync()
     {
@@ -333,14 +415,69 @@ else
     private static string Signed(int quantity) =>
         JalaliDate.ToPersianDigits(quantity > 0 ? $"+{quantity}" : quantity.ToString());
 
-    private static string KindLabel(StockMovementKind kind) => kind switch
+    private void OpenAdjust(BatchItem batch)
     {
-        StockMovementKind.Import => "ورود از Excel",
-        StockMovementKind.Receipt => "ورود جنس",
-        StockMovementKind.Withdrawal => "برداشت",
-        StockMovementKind.Reversal => "برگشت",
-        StockMovementKind.Adjustment => "اصلاح",
-        StockMovementKind.Disposal => "اسقاط",
-        _ => kind.ToString()
-    };
+        _batchError = null;
+        _counted = batch.OnHand;
+        _batchNote = null;
+        _adjusting = batch;
+    }
+
+    private void OpenDispose(BatchItem batch)
+    {
+        _batchError = null;
+        _disposeQuantity = 1;
+        _disposeReason = batch.IsExpired ? DisposalReason.Expired : DisposalReason.Damaged;
+        _batchNote = null;
+        _disposing = batch;
+    }
+
+    private void CloseBatchDialog()
+    {
+        _adjusting = null;
+        _disposing = null;
+    }
+
+    private async Task SaveAdjustAsync()
+    {
+        if (_adjusting is not { } batch || _batchBusy) return;
+
+        _batchBusy = true;
+        _batchError = null;
+        var result = await StockApi.AdjustAsync(batch.Id, new AdjustBatchRequest { Counted = _counted, Note = _batchNote, Version = batch.Version });
+        _batchBusy = false;
+        await FinishBatchActionAsync(result, "اصلاح ثبت شد.");
+    }
+
+    private async Task SaveDisposeAsync()
+    {
+        if (_disposing is not { } batch || _batchBusy) return;
+
+        _batchBusy = true;
+        _batchError = null;
+        var result = await StockApi.DisposeAsync(batch.Id, new DisposeBatchRequest { Quantity = _disposeQuantity, Reason = _disposeReason, Note = _batchNote, Version = batch.Version });
+        _batchBusy = false;
+        await FinishBatchActionAsync(result, "اسقاط ثبت شد.");
+    }
+
+    // ۴۰۹: موجودی یا Version بچ عوض شده؛ پنجره بسته می‌شود و صفحه تازه تا کاربر عدد درست را ببیند.
+    private async Task FinishBatchActionAsync(ApiResult<BatchItem> result, string success)
+    {
+        if (result.IsSuccess)
+        {
+            CloseBatchDialog();
+            Toasts.Show(success);
+            await LoadAsync();
+        }
+        else if (result.Outcome == ApiOutcome.Conflict)
+        {
+            CloseBatchDialog();
+            Toasts.Show(result.ErrorMessage, isWarning: true);
+            await LoadAsync();
+        }
+        else
+        {
+            _batchError = result.ErrorMessage;
+        }
+    }
 }

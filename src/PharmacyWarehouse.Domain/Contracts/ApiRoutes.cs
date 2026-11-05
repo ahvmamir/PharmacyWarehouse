@@ -32,6 +32,18 @@ public static class ApiRoutes
     public static string Deactivate(string collection, Guid id) => $"{collection}/{id}/deactivate";
     public static string Activate(string collection, Guid id) => $"{collection}/{id}/activate";
     public static string Dependencies(string collection, Guid id) => $"{collection}/{id}/dependencies";
+    public const string Batches = "/api/batches";
+    public const string Stocktakes = "/api/stocktakes";
+    public const string ReportMovements = "/api/reports/movements";
+    public const string ReportConsumption = "/api/reports/consumption";
+    public const string LabelProducts = "/api/labels/products";
+    public const string LabelProductsGenerate = "/api/labels/products/generate";
+    public static string BatchAdjust(Guid id) => $"{Batches}/{id}/adjust";
+    public static string BatchDispose(Guid id) => $"{Batches}/{id}/dispose";
+    public static string StocktakeBatches(Guid id, Guid productId) => $"{Stocktakes}/{id}/batches?productId={productId}";
+    public static string StocktakeCounts(Guid id) => $"{Stocktakes}/{id}/counts";
+    public static string StocktakeClose(Guid id) => $"{Stocktakes}/{id}/close";
+    public static string StocktakeApprove(Guid id, Guid countId) => $"{Stocktakes}/{id}/counts/{countId}/approve";
     public const string ReceiptsBulk = "/api/receipts/bulk";
     public static string ProductSearch(string query) => $"{Products}/search?q={Uri.EscapeDataString(query)}";
     public static string ProductByCode(string code) => $"{Products}/by-code/{Uri.EscapeDataString(code)}";

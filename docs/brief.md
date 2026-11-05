@@ -30,6 +30,15 @@
 
 ## ۷. وضعیت جاری و تحویل
 
+**۲۰۲۶-۱۱-۰۵ (برش ۶: اصلاح، اسقاط، انبارگردانی، گزارش‌ها، برچسب؛ همان branch؛ commit نشده):**
+- **انجام شد:** `/api/batches`، `/api/stocktakes`، `/api/reports`، `/api/labels`، `verify-stock`، صفحه‌های `/stocktakes`، `/stocktakes/{id}`، `/reports`، `/labels`، دکمه‌های اصلاح و اسقاط در جزئیات قلم، کارت «آخرین انبارگردانی». تصمیم‌ها: انتهای بخش ۷.۶ spec.
+- **تست:** `dotnet build PharmacyWarehouse.sln` سبز (Claude). تست خودکار: ۷۰۶ از ۷۰۶ سبز (گزارش امیر، از `publish-package.bat`). تست مرورگر هنوز گزارش نشده.
+- **رفع بسته‌سازی:** `publish-package.bat` با NETSDK1095 شکست می‌خورد، چون `-p:PublishReadyToRun` به Client (WebAssembly) هم می‌رسید؛ به ویژگی `WarehousePrecompile` عوض شد.
+- **migration:** `Stocktake` و `StocktakeTriggers` (برگشت ندارند). روی هر دو سیستم: `dotnet ef database update --project src\PharmacyWarehouse.Api`.
+- **ریسک ارتقا:** ایندکس `ReversesId` یکتا شد؛ اگر در داده‌ی موجود `ReversesId` تکراری باشد migration شکست می‌خورد. قبل از ارتقا پشتیبان بگیرید.
+- **استقرار:** اولین نصب روی لپ‌تاپ تستی انجام شد ولی `/api/health` در بررسی اسکریپت جواب نداد و علت هنوز باز است. گواهی self-signed روی اندروید نصب نشد؛ `deploy\setup-local-ca.ps1` و `deploy\apply-certificate.ps1` اضافه شد ([پیشنهاد]، راهنما در `docs\deploy.md`). ساخت CA با داده‌ی آزمایشی آزموده شد (Claude)؛ `apply-certificate.ps1` و نصب روی گوشی هنوز اجرا نشده‌اند.
+- **بعدی:** تأیید استقرار و مرورگر، سپس commit و push (`2773b6e` و `91e2043` هم هنوز push نشده‌اند).
+
 **۲۰۲۶-۱۱-۰۵ (برش ۵.۵: بازخورد رابط کاربری، همان branch):**
 - **انجام شد:** پایه‌ی بصری، منوی گروهی با آیکون، داشبورد خلاصه با کارت و نمودار و `/dashboard/{section}`، `Combobox`/`ProductCombobox`/`LocationPicker`، `GET /api/products/search`، `POST /api/receipts/bulk`، ورود جنس به‌شکل فهرست با پیش‌نویس `localStorage`، برداشت خطی، «ثبت و قلم بعدی»، ردیف قابل‌کلیک، تاریخچه‌ی خلاصه، رفع شناسه‌ی خام محل، فرمان `seed-test-data`. جزئیات: انتهای بخش ۱۵.۱ spec.
 - **تست:** `dotnet build` سبز، ۰ هشدار (Claude). طبق گزارش امیر برش تأیید شد (تست و گام‌های مرورگر با امیر). تست‌های تازه: `ProductSearchTests`، `BulkReceiptTests`، `ProductSearchEndpointTests`، `TestDataSeederTests`.

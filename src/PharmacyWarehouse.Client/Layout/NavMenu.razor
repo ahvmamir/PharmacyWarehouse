@@ -49,7 +49,7 @@
                     </NavLink>
                 }
 
-                @if (Session.Can(Permissions.DashboardView) || Session.Can(Permissions.WithdrawalReview) || Session.Can(Permissions.StockView))
+                @if (Session.Can(Permissions.DashboardView) || Session.Can(Permissions.WithdrawalReview) || Session.Can(Permissions.StockView) || Session.Can(Permissions.ReportsView))
                 {
                     <div class="nav-section">بررسی</div>
                 }
@@ -71,15 +71,36 @@
                         <AppIcon Name="bell" /> اعلان‌ها
                     </NavLink>
                 }
+                @if (Session.Can(Permissions.ReportsView))
+                {
+                    <NavLink class="sidebar-link" href="reports">
+                        <AppIcon Name="report" /> گزارش‌ها
+                    </NavLink>
+                }
 
-                @if (Session.Can(Permissions.StockView))
+                @if (Session.Can(Permissions.StockView) || Session.Can(Permissions.StockAdjust) || Session.Can(Permissions.ProductsManage))
                 {
                     <div class="nav-section">انبار</div>
+                }
+                @if (Session.Can(Permissions.StockView))
+                {
                     <NavLink class="sidebar-link" href="" Match="NavLinkMatch.All">
                         <AppIcon Name="box" /> اقلام
                     </NavLink>
                     <NavLink class="sidebar-link" href="locations">
                         <AppIcon Name="location" /> محل‌ها
+                    </NavLink>
+                }
+                @if (Session.Can(Permissions.StockAdjust))
+                {
+                    <NavLink class="sidebar-link" href="stocktakes">
+                        <AppIcon Name="scan" /> انبارگردانی
+                    </NavLink>
+                }
+                @if (Session.Can(Permissions.ProductsManage))
+                {
+                    <NavLink class="sidebar-link" href="labels">
+                        <AppIcon Name="barcode" /> برچسب
                     </NavLink>
                 }
 

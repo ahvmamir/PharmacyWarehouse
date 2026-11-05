@@ -11,13 +11,13 @@ cd /d "%~dp0"
 set R2R=true
 if /i "%~1"=="noprecompile" set R2R=false
 
-dotnet test PharmacyWarehouse.sln
-if errorlevel 1 goto fail
+@dotnet test PharmacyWarehouse.sln
+@if errorlevel 1 goto fail
 
 if exist publish\PharmacyWarehouse-package rmdir /s /q publish\PharmacyWarehouse-package
 if exist publish\PharmacyWarehouse-package.zip del /q publish\PharmacyWarehouse-package.zip
 
-dotnet publish src\PharmacyWarehouse.Api -c Release -p:WarehousePackage=true -p:PublishReadyToRun=%R2R% -o publish\PharmacyWarehouse-package\app
+dotnet publish src\PharmacyWarehouse.Api -c Release -p:WarehousePackage=true -p:WarehousePrecompile=%R2R% -o publish\PharmacyWarehouse-package\app
 if errorlevel 1 goto fail
 
 rem Never ship a database or settings file from the build machine.

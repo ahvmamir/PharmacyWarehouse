@@ -45,6 +45,37 @@ public static class LocationTree
         return false;
     }
 
+    // خود گره و همه‌ی نواده‌هایش؛ دامنه‌ی یک نوبت انبارگردانی.
+    public static HashSet<Guid> Subtree(IEnumerable<LocationNode> nodes, Guid root)
+    {
+        var children = nodes.Where(n => n.ParentId is not null).ToLookup(n => n.ParentId!.Value, n => n.Id);
+        var result = new HashSet<Guid> { root };
+        var pending = new Stack<Guid>();
+        pending.Push(root);
+        while (pending.Count > 0)
+        {
+            foreach (var child in children[pending.Pop()])
+            {
+                if (result.Add(child)) pending.Push(child);
+            }
+        }
+
+        return result;
+    }
+
+    // محل سطح اولِ هر گره. پدر ناموجود یا حلقه یعنی خود آخرین گره‌ی دیده‌شده ریشه حساب می‌شود.
+    public static Guid RootOf(IReadOnlyDictionary<Guid, Guid?> parentOf, Guid id)
+    {
+        var seen = new HashSet<Guid>();
+        var current = id;
+        while (seen.Add(current) && parentOf.TryGetValue(current, out var parent) && parent is { } next && parentOf.ContainsKey(next))
+        {
+            current = next;
+        }
+
+        return current;
+    }
+
     // پیمایش درخت: ریشه‌ها، سپس فرزندان هر گره؛ هم‌سطح‌ها با SortOrder و بعد Name (Ordinal).
     // مرتب‌سازی روی مسیر متنی اشتباه است («قفسه یخچال» بین «قفسه» و «قفسه › طبقه» می‌افتد).
     // گره با پدر ناموجود در سطح اول می‌آید و گره‌ی داخل حلقه بعد از بقیه با عمق ۰، تا پنهان نشود.

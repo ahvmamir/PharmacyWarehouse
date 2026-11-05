@@ -1,0 +1,132 @@
+@page "/stocktakes"
+@attribute [Authorize]
+@inject StockClient StockApi
+@inject LocationsClient LocationsApi
+@inject NavigationManager Navigation
+
+<PageTitle>انبارگردانی | انبار داروخانه</PageTitle>
+
+<RequirePermission Permission="@Permissions.StockAdjust">
+<div class="page-head">
+    <div>
+        <h1>انبارگردانی</h1>
+        <p>شمارش بچ‌های یک محل و زیرشاخه‌هایش؛ اختلاف‌ها پس از بستن نوبت تأیید می‌شوند.</p>
+    </div>
+</div>
+
+<section class="card-emu">
+    <h2>شروع نوبت تازه</h2>
+    <div class="form-alert warning">
+        <AppIcon Name="warning" />
+        <span>پیش از شروع از همه بخواهید برداشت‌های ثبت‌نشده را ثبت کنند؛ وگرنه کسری آن‌ها به‌اشتباه به‌عنوان اختلاف انبارگردانی دیده می‌شود.</span>
+    </div>
+    <div class="form-field mt-3" style="max-width:420px;">
+        <label for="stocktake-location">محل (جست‌وجو یا اسکن برچسب محل)</label>
+        <LocationPicker InputId="stocktake-location" AutoPick="true" EmptyLabel="محل را انتخاب کنید" Items="_locations" @bind-Value="_locationId" />
+    </div>
+    @if (_startError is not null)
+    {
+        <div class="form-alert mt-3 mb-0" role="alert">@_startError</div>
+    }
+    <div class="mt-3">
+        <button type="button" class="btn btn-primary" disabled="@(_busy || _locationId is null)" @onclick="StartAsync">
+            <AppIcon Name="scan" Size="15" /> @(_busy ? "در حال شروع…" : "شروع انبارگردانی")
+        </button>
+    </div>
+</section>
+
+@if (_error is not null)
+{
+    <div class="form-alert mt-3" role="alert">
+        <AppIcon Name="warning" /> <span>@_error</span>
+        <button type="button" class="btn btn-sm btn-quiet" @onclick="LoadAsync">تازه‌سازی</button>
+    </div>
+}
+
+@if (_items is null)
+{
+    @if (_error is null)
+    {
+        <div class="loading-line">در حال بارگذاری…</div>
+    }
+}
+else if (_items.Count == 0)
+{
+    <div class="empty-state"><p>هنوز انبارگردانی‌ای ثبت نشده.</p></div>
+}
+else
+{
+    <section class="table-card mt-3">
+        <table class="data-table">
+            <thead>
+                <tr><th>محل</th><th>شروع</th><th>شروع‌کننده</th><th>وضعیت</th><th>شمرده‌شده</th><th>اختلاف</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var item in _items)
+                {
+                    <tr class="row-link" @key="item.Id">
+                        <td><a class="row-link-main" href="stocktakes/@item.Id"><bdi>@item.LocationPath</bdi></a></td>
+                        <td><bdi>@JalaliDate.Format(item.StartedAtUtc)</bdi></td>
+                        <td><bdi>@item.StartedByName</bdi></td>
+                        <td>
+                            @if (item.ClosedAtUtc is { } closed)
+                            {
+                                <span>بسته: <bdi>@JalaliDate.Format(closed)</bdi></span>
+                            }
+                            else
+                            {
+                                <span class="status-badge status-expired">باز</span>
+                            }
+                        </td>
+                        <td>@JalaliDate.ToPersianDigits(item.CountedBatches.ToString())</td>
+                        @* شمارش کور: تا نوبت باز است اختلاف نشان داده نمی‌شود تا شمارنده اثر نگیرد. *@
+                        <td>@(item.ClosedAtUtc is null ? "—" : JalaliDate.ToPersianDigits(item.Differences.ToString()))</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+}
+</RequirePermission>
+
+@code {
+    private List<StocktakeListItem>? _items;
+    private List<StorageLocationItem> _locations = [];
+    private Guid? _locationId;
+    private string? _error;
+    private string? _startError;
+    private bool _busy;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        var list = await StockApi.StocktakesAsync();
+        if (list.IsSuccess) _items = list.Value;
+        else _error = list.ErrorMessage;
+
+        var locations = await LocationsApi.ListAsync();
+        if (locations.IsSuccess) _locations = locations.Value!.Where(l => l.IsUsable).ToList();
+        else _error ??= locations.ErrorMessage;
+    }
+
+    private async Task StartAsync()
+    {
+        if (_locationId is not { } locationId || _busy) return;
+
+        _busy = true;
+        _startError = null;
+        var result = await StockApi.StartStocktakeAsync(locationId);
+        _busy = false;
+
+        if (result.IsSuccess)
+        {
+            Navigation.NavigateTo($"stocktakes/{result.Value!.Id}");
+        }
+        else
+        {
+            _startError = result.ErrorMessage;
+        }
+    }
+}

@@ -110,6 +110,33 @@ public class Withdrawal : IAudited
     public int Version { get; set; } = 1;
 }
 
+// نوبت انبارگردانی برای یک محل و زیرشاخه‌هایش (بخش ۷.۶ spec). حذف ندارد.
+public class Stocktake : IAudited
+{
+    public Guid Id { get; set; }
+    public Guid LocationId { get; set; }
+    public Guid StartedById { get; set; }
+    public DateTime StartedAtUtc { get; set; }
+    public DateTime? ClosedAtUtc { get; set; }
+    public Guid? ClosedById { get; set; }
+    public int Version { get; set; } = 1;
+}
+
+// یک شمارش از یک بچ. شمارش دوباره ردیف تازه است و آخرین ردیف معتبر است. حذف ندارد.
+// ExpectedOnHand موجودی در لحظه‌ی همین شمارش است، چون برداشت در حین نوبت ادامه دارد.
+public class StocktakeCount : IAudited
+{
+    public Guid Id { get; set; }
+    public Guid StocktakeId { get; set; }
+    public Guid BatchId { get; set; }
+    public int ExpectedOnHand { get; set; }
+    public int Counted { get; set; }
+    public DateTime AtUtc { get; set; }
+    public Guid UserId { get; set; }
+    public Guid? AdjustmentId { get; set; }
+    public int Version { get; set; } = 1;
+}
+
 // تنظیم کلید/مقدار؛ مقدار متن است و معنایش را DashboardRules تعیین می‌کند. ردیف‌ها با migration ساخته می‌شوند، پس Version همیشه هست.
 public class AppSetting : IAudited
 {

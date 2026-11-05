@@ -56,6 +56,21 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1 -IpAddress <IP> -DataDir 
 
 **گواهی self-signed:** فایل `D:\PharmacyWarehouseData\cert\pharmacywarehouse.cer` را روی کامپیوترها و گوشی‌های کاربران در Trusted Root Certification Authorities نصب کنید (بهتر با Group Policy)، وگرنه مرورگر هشدار می‌دهد. اگر CA داخلی دارید، از `-PfxPath` استفاده کنید.
 
+**CA محلی (پیشنهادی برای گوشی‌ها):** اندروید گواهی self-signed بالا را نمی‌پذیرد («private key required») و عمر پنج‌ساله‌اش برای آیفون زیاد است. به‌جای آن یک CA محلی بسازید؛ هر دستگاه فقط یک بار به آن اعتماد می‌کند و تمدید گواهی سرور کاری روی دستگاه‌ها ندارد.
+
+1. IP سرور را روی مودم رزرو کنید (رزرو DHCP). اگر IP عوض شود، گواهی با آدرس نمی‌خواند.
+2. ساخت CA و گواهی سرور (مسیر خروجی بهتر است فلش باشد):
+   ```
+   powershell -ExecutionPolicy Bypass -File .\setup-local-ca.ps1 -OutDir E:\PharmacyCA -HostName <نام-کامپیوتر> -IpAddress <IP>
+   ```
+3. اعمال روی سرور: نصب تازه با `install.ps1 -PfxPath E:\PharmacyCA\pharmacywarehouse-server.pfx -IpAddress <IP>`، یا روی نصب موجود در PowerShell با Run as administrator:
+   ```
+   powershell -ExecutionPolicy Bypass -File .\apply-certificate.ps1 -PfxPath E:\PharmacyCA\pharmacywarehouse-server.pfx -AddHost <IP>,<نام-کامپیوتر>
+   ```
+4. فقط `pharmacywarehouse-root.cer` (یا `.crt`) را روی دستگاه‌ها نصب کنید. ویندوز: `certutil -addstore -f Root pharmacywarehouse-root.cer` در CMD با دسترسی Administrator. اندروید: تنظیمات، امنیت، نصب گواهی، «گواهی CA». آیفون: نصب پروفایل، سپس روشن کردن اعتماد در Settings › General › About › Certificate Trust Settings.
+5. `pharmacywarehouse-server.pfx` را بعد از اعمال پاک کنید. `pharmacywarehouse-root.pfx` کلید CA است: بیرون از سرور و در جای امن نگه دارید و هرگز روی گوشی نصب نکنید. هر کس آن را داشته باشد، می‌تواند برای دستگاه‌هایی که به این CA اعتماد دارند گواهی جعلی بسازد.
+6. تمدید پیش از پایان ۸۰۰ روز: همان `setup-local-ca.ps1` با `-RootPfx E:\PharmacyCA\pharmacywarehouse-root.pfx` و بعد `apply-certificate.ps1`. دستگاه‌ها کاری لازم ندارند.
+
 **به‌روزرسانی:** بسته‌ی جدید را Extract کنید و از داخل همان پوشه:
 
 ```

@@ -20,6 +20,21 @@ public static class OperationCommands
         return 0;
     }
 
+    // کد خروج ۱ یعنی ناسازگاری؛ برای استفاده در اسکریپت و Task Scheduler.
+    public static async Task<int> VerifyStockAsync(WebApplication app)
+    {
+        using var scope = app.Services.CreateScope();
+        var (count, mismatches) = await StockVerifier.VerifyAsync(scope.ServiceProvider.GetRequiredService<WarehouseDbContext>());
+
+        foreach (var m in mismatches)
+        {
+            Console.WriteLine($"MISMATCH batch {m.BatchId} ({m.BatchNumber}): OnHand {m.OnHand}, movements {m.MovementSum}");
+        }
+
+        Console.WriteLine($"Checked {count} batches, {mismatches.Count} mismatched. Nothing was changed.");
+        return mismatches.Count == 0 ? 0 : 1;
+    }
+
     // فقط در Development؛ روی دیتابیس واقعی هرگز داده‌ی ساختگی نمی‌نویسد.
     public static async Task<int> SeedTestDataAsync(WebApplication app)
     {

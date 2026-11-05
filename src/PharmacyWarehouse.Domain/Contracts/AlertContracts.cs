@@ -13,6 +13,7 @@ public static class AlertKeys
 {
     public const string Backup = "backup";
     public const string DiskSpace = "disk-space";
+    public const string Stocktake = "stocktake";
 }
 
 public sealed class AlertItem

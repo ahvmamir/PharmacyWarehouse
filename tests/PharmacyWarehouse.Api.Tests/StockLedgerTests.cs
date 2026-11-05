@@ -77,6 +77,24 @@ public class StockLedgerTests : ApiTestBase
         Assert.Throws<InvalidOperationException>(() => ledger.Post(batch, StockMovementKind.Receipt, 0, DateTime.UtcNow));
     }
 
+    [Fact]
+    public async Task ReversesId_IsUnique_SameMovementCannotBeReversedTwice()
+    {
+        var product = await App.AddProductRawAsync("TEST-DRUG-01", null);
+        var batchId = await App.AddBatchRawAsync(product, "TEST-BATCH-01", null, onHand: 5);
+        var original = Assert.Single(await App.MovementsAsync(batchId));
+        using var scope = App.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<WarehouseDbContext>();
+        var ledger = scope.ServiceProvider.GetRequiredService<StockLedger>();
+        var batch = await db.Batches.FirstAsync(b => b.Id == batchId);
+
+        ledger.Post(batch, StockMovementKind.Reversal, -1, DateTime.UtcNow, reversesId: original.Id);
+        await db.SaveChangesAsync();
+        ledger.Post(batch, StockMovementKind.Reversal, -1, DateTime.UtcNow, reversesId: original.Id);
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
     private static SqliteException FindSqlite(Exception ex)
     {
         for (var e = ex; e is not null; e = e.InnerException!)

@@ -1,0 +1,414 @@
+@page "/stocktakes/{Id:guid}"
+@attribute [Authorize]
+@inject StockClient StockApi
+@inject ToastService Toasts
+
+<PageTitle>نوبت انبارگردانی | انبار داروخانه</PageTitle>
+
+<RequirePermission Permission="@Permissions.StockAdjust">
+<p><a href="stocktakes" class="btn btn-sm btn-quiet">بازگشت به انبارگردانی‌ها</a></p>
+
+@if (_error is not null)
+{
+    <div class="form-alert" role="alert">
+        <AppIcon Name="warning" /> <span>@_error</span>
+        <button type="button" class="btn btn-sm btn-quiet" @onclick="LoadAsync">تازه‌سازی</button>
+    </div>
+}
+
+@if (_detail is null)
+{
+    @if (_error is null)
+    {
+        <div class="loading-line">در حال بارگذاری…</div>
+    }
+}
+else
+{
+    var isOpen = _detail.ClosedAtUtc is null;
+    <div class="page-head">
+        <div>
+            <h1>انبارگردانی: <bdi>@_detail.LocationPath</bdi></h1>
+            <p>
+                شروع <bdi>@JalaliDate.Format(_detail.StartedAtUtc)</bdi> توسط <bdi>@_detail.StartedByName</bdi>
+                @if (_detail.ClosedAtUtc is { } closed)
+                {
+                    <span> · بسته‌شده <bdi>@JalaliDate.Format(closed)</bdi></span>
+                }
+            </p>
+        </div>
+        @if (isOpen)
+        {
+            <div class="device-actions">
+                <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="() => _showClose = true"><AppIcon Name="check" Size="15" /> بستن نوبت</button>
+            </div>
+        }
+    </div>
+
+    @if (isOpen)
+    {
+        <section class="card-emu">
+            <h2>شمارش</h2>
+            <div style="max-width:420px;">
+                <ProductCombobox @ref="_combo" InputId="stocktake-product" OnPick="PickProductAsync" />
+            </div>
+            @if (_picked is { } picked)
+            {
+                <h3 class="mt-3">@picked.Name <span class="cell-sub">@picked.Brand</span></h3>
+                @if (_entries.Count == 0)
+                {
+                    <p class="form-hint">این قلم در محل این نوبت بچی ندارد. بچ بدون محل قابل انبارگردانی نیست؛ اول محلش را مشخص کنید.</p>
+                }
+                else
+                {
+                    <div class="table-card">
+                        <table class="data-table">
+                            <thead><tr><th>بچ</th><th>انقضا</th><th>محل</th><th>شمرده‌شده</th><th></th></tr></thead>
+                            <tbody>
+                                @foreach (var entry in _entries)
+                                {
+                                    <tr @key="entry.Batch.BatchId">
+                                        <td><bdi>@entry.Batch.BatchNumber</bdi></td>
+                                        <td><bdi>@(entry.Batch.ExpiryText ?? "—")</bdi></td>
+                                        <td><bdi>@(entry.Batch.LocationPath ?? "—")</bdi></td>
+                                        <td>
+                                            <input class="form-control" type="number" min="0" dir="ltr" style="max-width:7rem;" aria-label="تعداد شمرده‌شده‌ی بچ @entry.Batch.BatchNumber"
+                                                   @bind="entry.Counted" @bind:event="oninput" @onkeydown="e => OnEntryKeyAsync(e, entry)" />
+                                            @if (LastCounted(entry.Batch.BatchId) is { } last)
+                                            {
+                                                <div class="form-hint">شمارش قبلی: @Num(last)؛ ثبت دوباره جایگزین آن می‌شود.</div>
+                                            }
+                                        </td>
+                                        <td>
+                                            <button type="button" class="btn btn-sm btn-primary" disabled="@(_busy || entry.Counted is null)" @onclick="() => SubmitCountAsync(entry)">ثبت</button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            }
+            @if (_countError is not null)
+            {
+                <div class="form-alert mt-3 mb-0" role="alert">@_countError</div>
+            }
+        </section>
+
+        <section class="card-emu">
+            <h2>شمرده‌شده‌ها (@Num(_detail.Counts.Count))</h2>
+            @if (_detail.Counts.Count == 0)
+            {
+                <p class="form-hint">هنوز شمارشی ثبت نشده.</p>
+            }
+            else
+            {
+                <div class="table-card">
+                    <table class="data-table">
+                        <thead><tr><th>قلم</th><th>بچ</th><th>شمرده‌شده</th><th>زمان</th><th>شمارنده</th></tr></thead>
+                        <tbody>
+                            @* مورد انتظار عمداً نشان داده نمی‌شود: شمارش کور است. *@
+                            @foreach (var count in _detail.Counts)
+                            {
+                                <tr @key="count.Id">
+                                    <td>@count.ProductName <span class="cell-sub">@count.Brand</span></td>
+                                    <td><bdi>@count.BatchNumber</bdi></td>
+                                    <td>@Num(count.Counted)</td>
+                                    <td><bdi>@JalaliDate.Format(count.AtUtc)</bdi></td>
+                                    <td><bdi>@count.UserName</bdi></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+
+        <section class="card-emu">
+            <h2>جاافتاده‌ها (@Num(_detail.Missing.Count))</h2>
+            @if (_detail.Missing.Count == 0)
+            {
+                <p class="form-hint">بچ شمرده‌نشده‌ای با موجودی در این محل نیست.</p>
+            }
+            else
+            {
+                <p class="form-hint">بچ‌هایی که طبق سامانه در این محل موجودی دارند و هنوز شمرده نشده‌اند.</p>
+                <div class="table-card">
+                    <table class="data-table">
+                        <thead><tr><th>قلم</th><th>بچ</th><th>انقضا</th><th>محل</th></tr></thead>
+                        <tbody>
+                            @foreach (var item in _detail.Missing)
+                            {
+                                <tr @key="item.BatchId">
+                                    <td>@item.ProductName <span class="cell-sub">@item.Brand</span></td>
+                                    <td><bdi>@item.BatchNumber</bdi></td>
+                                    <td><bdi>@(item.ExpiryText ?? "—")</bdi></td>
+                                    <td><bdi>@(item.LocationPath ?? "—")</bdi></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    }
+    else
+    {
+        var pending = _detail.Counts.Where(IsPending).ToList();
+        <section class="card-emu">
+            <div class="page-head">
+                <div><h2>نتیجه‌ی شمارش</h2></div>
+                @if (pending.Count > 0)
+                {
+                    <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="ApproveAllAsync">
+                        <AppIcon Name="check" Size="15" /> تأیید همه (@Num(pending.Count))
+                    </button>
+                }
+            </div>
+            <p class="form-hint">تفاوت، شمرده‌شده منهای موجودی مورد انتظار در لحظه‌ی همان شمارش است؛ برداشت‌های بعد از شمارش در آن اثر ندارند. موجودی فقط با تأیید هر ردیف اصلاح می‌شود.</p>
+            @if (_approveError is not null)
+            {
+                <div class="form-alert mb-3" role="alert">@_approveError</div>
+            }
+            @if (_detail.Counts.Count == 0)
+            {
+                <p class="form-hint">در این نوبت شمارشی ثبت نشد.</p>
+            }
+            else
+            {
+                <div class="table-card">
+                    <table class="data-table">
+                        <thead><tr><th>قلم</th><th>بچ</th><th>مورد انتظار</th><th>شمرده‌شده</th><th>اختلاف</th><th>شمارنده</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var count in _detail.Counts)
+                            {
+                                <tr @key="count.Id">
+                                    <td><a href="products/@count.ProductId">@count.ProductName</a> <span class="cell-sub">@count.Brand</span></td>
+                                    <td><bdi>@count.BatchNumber</bdi></td>
+                                    <td>@Num(count.ExpectedOnHand)</td>
+                                    <td>@Num(count.Counted)</td>
+                                    <td dir="ltr" style="text-align:right;">@Signed(count.Difference)</td>
+                                    <td><bdi>@count.UserName</bdi></td>
+                                    <td>
+                                        @if (count.Difference == 0)
+                                        {
+                                            <span class="cell-sub">بدون اختلاف</span>
+                                        }
+                                        else if (count.IsAdjusted)
+                                        {
+                                            <span class="cell-sub">تأیید شد</span>
+                                        }
+                                        else
+                                        {
+                                            <button type="button" class="btn btn-sm btn-primary" disabled="@_busy" @onclick="() => ApproveOneAsync(count)">تأیید</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+
+        @if (_detail.Missing.Count > 0)
+        {
+            <section class="card-emu">
+                <h2>شمرده‌نشده‌ها (@Num(_detail.Missing.Count))</h2>
+                <p class="form-hint">این بچ‌ها در این نوبت شمرده نشدند و موجودی‌شان تغییری نکرد.</p>
+                <table class="table-emu">
+                    <tbody>
+                        @foreach (var item in _detail.Missing)
+                        {
+                            <tr @key="item.BatchId">
+                                <td>@item.ProductName <span class="cell-sub">@item.Brand</span></td>
+                                <td><bdi>@item.BatchNumber</bdi></td>
+                                <td><bdi>@(item.LocationPath ?? "—")</bdi></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+        }
+    }
+
+    @if (_showClose)
+    {
+        <ModalDialog Title="بستن نوبت انبارگردانی" OnClose="() => _showClose = false">
+            <p>پس از بستن، شمارش تازه ممکن نیست و اختلاف‌ها برای تأیید نشان داده می‌شوند. این کار برگشت ندارد.</p>
+            @if (_detail.Missing.Count > 0)
+            {
+                <div class="form-alert warning" role="alert">
+                    <AppIcon Name="warning" /> <span>@Num(_detail.Missing.Count) بچ با موجودی هنوز شمرده نشده است.</span>
+                </div>
+            }
+            <div class="modal-actions">
+                <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="CloseSessionAsync">@(_busy ? "در حال بستن…" : "بستن نوبت")</button>
+                <button type="button" class="btn btn-quiet" @onclick="() => _showClose = false">انصراف</button>
+            </div>
+        </ModalDialog>
+    }
+}
+</RequirePermission>
+
+@code {
+    private sealed class CountEntry(StocktakeBatchItem batch)
+    {
+        public StocktakeBatchItem Batch { get; } = batch;
+        public int? Counted { get; set; }
+    }
+
+    [Parameter] public Guid Id { get; set; }
+
+    private StocktakeDetail? _detail;
+    private ProductCombobox? _combo;
+    private ProductListItem? _picked;
+    private List<CountEntry> _entries = [];
+    private string? _error;
+    private string? _countError;
+    private string? _approveError;
+    private bool _busy;
+    private bool _showClose;
+    private Guid _loadedId;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedId == Id) return;
+
+        _loadedId = Id;
+        _detail = null;
+        _picked = null;
+        _entries = [];
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        var result = await StockApi.StocktakeAsync(Id);
+        if (result.IsSuccess) _detail = result.Value;
+        else _error = result.Outcome == ApiOutcome.NotFound ? "این نوبت پیدا نشد." : result.ErrorMessage;
+    }
+
+    private static bool IsPending(StocktakeCountItem count) => count.Difference != 0 && !count.IsAdjusted;
+
+    private int? LastCounted(Guid batchId) => _detail?.Counts.FirstOrDefault(c => c.BatchId == batchId)?.Counted;
+
+    private async Task PickProductAsync(ProductListItem product)
+    {
+        _countError = null;
+        _picked = product;
+        _entries = [];
+        var result = await StockApi.StocktakeBatchesAsync(Id, product.Id);
+        if (result.IsSuccess) _entries = result.Value!.Select(b => new CountEntry(b)).ToList();
+        else _countError = result.ErrorMessage;
+    }
+
+    private async Task OnEntryKeyAsync(KeyboardEventArgs e, CountEntry entry)
+    {
+        if (e.Key == "Enter" && entry.Counted is not null) await SubmitCountAsync(entry);
+    }
+
+    private async Task SubmitCountAsync(CountEntry entry)
+    {
+        if (entry.Counted is not { } counted || _busy) return;
+
+        _busy = true;
+        _countError = null;
+        var result = await StockApi.CountAsync(Id, entry.Batch.BatchId, counted);
+        _busy = false;
+
+        if (result.IsSuccess)
+        {
+            _detail = result.Value;
+            entry.Counted = null;
+            Toasts.Show($"شمارش بچ {entry.Batch.BatchNumber} ثبت شد.");
+        }
+        else if (result.Outcome == ApiOutcome.Conflict)
+        {
+            // نوبت را کس دیگری بسته است.
+            Toasts.Show(result.ErrorMessage, isWarning: true);
+            await LoadAsync();
+        }
+        else
+        {
+            _countError = result.ErrorMessage;
+        }
+    }
+
+    private async Task CloseSessionAsync()
+    {
+        if (_detail is null || _busy) return;
+
+        _busy = true;
+        var result = await StockApi.CloseStocktakeAsync(Id, _detail.Version);
+        _busy = false;
+        _showClose = false;
+
+        if (result.IsSuccess)
+        {
+            _detail = result.Value;
+            _picked = null;
+            _entries = [];
+            Toasts.Show("نوبت بسته شد.");
+            return;
+        }
+
+        if (result.Outcome == ApiOutcome.Conflict)
+        {
+            Toasts.Show(result.ErrorMessage, isWarning: true);
+            await LoadAsync();
+            return;
+        }
+
+        _error = result.ErrorMessage;
+    }
+
+    private async Task ApproveOneAsync(StocktakeCountItem count)
+    {
+        if (_busy) return;
+
+        _busy = true;
+        _approveError = null;
+        var ok = await ApproveCoreAsync(count);
+        _busy = false;
+        if (ok) Toasts.Show("اختلاف تأیید شد.");
+    }
+
+    // پشت‌سرهم و با پاسخ تازه‌ی هر تأیید؛ اولین خطا متوقف می‌کند تا کاربر علت را ببیند. ردیف‌های قبلی ثبت مانده‌اند.
+    private async Task ApproveAllAsync()
+    {
+        if (_busy || _detail is null) return;
+
+        _busy = true;
+        _approveError = null;
+        var done = 0;
+        while (_detail?.Counts.FirstOrDefault(IsPending) is { } next)
+        {
+            if (!await ApproveCoreAsync(next)) break;
+            done++;
+        }
+
+        _busy = false;
+        if (done > 0) Toasts.Show($"{Num(done)} اختلاف تأیید شد.");
+    }
+
+    private async Task<bool> ApproveCoreAsync(StocktakeCountItem count)
+    {
+        var result = await StockApi.ApproveCountAsync(Id, count.Id, count.Version);
+        if (result.IsSuccess)
+        {
+            _detail = result.Value;
+            StateHasChanged();
+            return true;
+        }
+
+        _approveError = $"{count.ProductName}، بچ {count.BatchNumber}: {result.ErrorMessage}";
+        if (result.Outcome == ApiOutcome.Conflict) await LoadAsync();
+        return false;
+    }
+
+    private static string Num(int value) => JalaliDate.ToPersianDigits(value.ToString());
+
+    private static string Signed(int value) => JalaliDate.ToPersianDigits(value > 0 ? $"+{value}" : value.ToString());
+}

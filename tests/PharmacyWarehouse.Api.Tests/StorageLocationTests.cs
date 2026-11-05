@@ -163,6 +163,21 @@ public class StorageLocationTests : ApiTestBase
     }
 
     [Fact]
+    public async Task Delete_WithStocktake_Returns409AndListsIt()
+    {
+        var a = await CreateAsync("TEST-LOC-A");
+        var start = await Admin.PostAsJsonAsync(ApiRoutes.Stocktakes, new StartStocktakeRequest { LocationId = a.Id });
+        Assert.Equal(HttpStatusCode.OK, start.StatusCode);
+
+        var dependencies = await Admin.GetFromJsonAsync<DependencyList>(ApiRoutes.Dependencies(ApiRoutes.Locations, a.Id));
+        var delete = await Admin.DeleteAsync(ApiRoutes.ById(ApiRoutes.Locations, a.Id));
+
+        Assert.False(dependencies!.CanDelete);
+        Assert.Contains(dependencies.Items, d => d.Kind == "انبارگردانی");
+        Assert.Equal(HttpStatusCode.Conflict, delete.StatusCode);
+    }
+
+    [Fact]
     public async Task Delete_WithChildren_Returns409WithDependencies()
     {
         var a = await CreateAsync("TEST-LOC-A");

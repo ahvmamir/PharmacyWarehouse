@@ -17,7 +17,11 @@ public class AuditLabelsTests
         { "StorageLocation", "ParentId" }, { "StorageLocation", "Name" }, { "StorageLocation", "SortOrder" }, { "StorageLocation", "IsActive" },
         { "Withdrawal", "UserId" }, { "Withdrawal", "AtUtc" }, { "Withdrawal", "OccurredAtUtc" }, { "Withdrawal", "IsLate" },
         { "Withdrawal", "AfterStocktake" }, { "Withdrawal", "Status" }, { "Withdrawal", "ReviewedById" },
-        { "Withdrawal", "ReviewedAtUtc" }, { "Withdrawal", "ReviewNote" }, { "Withdrawal", "SelfReviewed" }
+        { "Withdrawal", "ReviewedAtUtc" }, { "Withdrawal", "ReviewNote" }, { "Withdrawal", "SelfReviewed" },
+        { "Stocktake", "LocationId" }, { "Stocktake", "StartedById" }, { "Stocktake", "StartedAtUtc" },
+        { "Stocktake", "ClosedAtUtc" }, { "Stocktake", "ClosedById" },
+        { "StocktakeCount", "StocktakeId" }, { "StocktakeCount", "BatchId" }, { "StocktakeCount", "ExpectedOnHand" },
+        { "StocktakeCount", "Counted" }, { "StocktakeCount", "AtUtc" }, { "StocktakeCount", "UserId" }, { "StocktakeCount", "AdjustmentId" }
     };
 
     [Theory]

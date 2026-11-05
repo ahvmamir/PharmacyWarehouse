@@ -75,7 +75,7 @@
 - [تصمیم] موجودی مستقیم ویرایش نمی‌شود؛ فقط حرکت ثبت می‌شود.
 - `Batch.OnHand` در **همان تراکنش** حرکت به‌روز می‌شود. دلیل: `Version` بچ، دو برداشت هم‌زمان از یک بچ را به ۴۰۹ تبدیل می‌کند، پس موجودی منفی نمی‌شود.
 - ثابت: `OnHand = Σ Quantity` حرکت‌های همان بچ. تست خودکار بعد از هر سناریو و فرمان `verify-stock` (گزارش بچ‌های ناسازگار، بدون تغییر خودکار) آن را کنترل می‌کنند.
-- `Product`، `Batch`، `StorageLocation`، `ProductBarcode`، `Withdrawal`، `AppSetting` جدول‌های `IAudited` هستند. `StockMovement` خودش دفتر است و فقط اضافه می‌شود.
+- `Product`، `Batch`، `StorageLocation`، `ProductBarcode`، `Withdrawal`، `AppSetting`، `Stocktake` و `StocktakeCount` (هر دو با `Version`) جدول‌های `IAudited` هستند. `StockMovement` خودش دفتر است و فقط اضافه می‌شود.
 
 ### ۴.۳ واحد
 
@@ -169,6 +169,15 @@
 - بچ‌های محل که شمرده نشدند در پایان نوبت فهرست می‌شوند (احتمال جا افتادن).
 - **تداخل با ثبت دیرهنگام (مهم):** اگر تکنسین دیروز ۲ جعبه برداشته و هنوز ثبت نکرده، انبارگردانی امروز کسری ۲ را اصلاح می‌کند؛ وقتی تکنسین بعداً ثبت کند، **۲ جعبه دوباره کم می‌شود.** کاهش: برداشتی که `OccurredAtUtc` آن **قبل از** شمارش همان بچ است و بعد از آن ثبت می‌شود، علامت `AfterStocktake` می‌گیرد و در بررسی به انباردار گفته می‌شود «احتمالاً در انبارگردانی به‌عنوان کسری اصلاح شده». انباردار آن را **رد** می‌کند (برگشت موجودی) یا تأیید. [تصمیم] قبل از هر انبارگردانی، اعلان «برداشت‌های ثبت‌نشده را ثبت کنید» به همه.
 - مجوز: `stock.adjust` (برای شمارش و تأیید اختلاف).
+- تصمیم‌های پیاده‌سازی برش ۶ [تصمیم ۲۰۲۶-۱۱-۰۵]:
+  - شمارش دوباره ردیف تازه می‌سازد و آخرین ردیف معتبر است؛ ردیف قدیمی تأیید نمی‌شود.
+  - تأیید اختلاف فقط پس از بستن نوبت ممکن است.
+  - تفاوت = شمرده‌شده منهای مورد انتظار در لحظه‌ی شمارش، نه موجودی فعلی؛ برداشت بعد از شمارش با اصلاح خنثی نمی‌شود.
+  - شمارش `Version` نوبت را جلو نمی‌برد تا دو نفر هم‌زمان بتوانند بشمرند.
+  - بچ بیرون از دامنه‌ی نوبت رد می‌شود؛ بچ بدون محل مؤثر (نه خودش و نه قلمش) قابل انبارگردانی نیست.
+  - نوبت جزئی (روی زیرشاخه) برای محل سطح اول در «آخرین انبارگردانی» داشبورد حساب می‌شود و صفحه‌ی جزئیات این را می‌گوید.
+  - کد برچسب محل `LOC-` و ۸ رقم اول شناسه است (بخش ۹.۳).
+  - دلیل اسقاط در یادداشت حرکت ذخیره می‌شود، نه ستون جدا (بخش ۷.۴).
 
 ## ۸. محل‌های درختی
 
@@ -334,9 +343,10 @@
 | `POST /api/withdrawals/{id}/approve`، `/reject`، `POST /api/withdrawals/approve` (گروهی) | `withdrawal.review` |
 | `POST /api/receipts`، `POST /api/receipts/bulk` (همه یا هیچ) | `stock.receive` |
 | `POST /api/batches/{id}/adjust`، `/dispose` | `stock.adjust` |
-| `POST /api/stocktakes`، `POST /api/stocktakes/{id}/counts`، `GET /api/stocktakes/{id}`، `POST /api/stocktakes/{id}/close` | `stock.adjust` |
+| `GET/POST /api/stocktakes`، `GET /api/stocktakes/{id}`، `GET /api/stocktakes/{id}/batches?productId=`، `POST /api/stocktakes/{id}/counts`، `POST /api/stocktakes/{id}/close`، `POST /api/stocktakes/{id}/counts/{countId}/approve` | `stock.adjust` |
+| `GET /api/labels/products`، `POST /api/labels/products/generate` | `products.manage` |
 | `GET /api/dashboard` | `dashboard.view` |
-| `GET /api/reports/movements`، `/consumption` | `reports.view` |
+| `GET /api/reports/movements?days=&kind=&productId=&skip=&take=`، `GET /api/reports/consumption?days=` | `reports.view` |
 | `GET/PUT /api/settings` | خواندن: `dashboard.view`؛ تغییر: `settings.manage` |
 | داده و پشتیبان، کاربران، نقش‌ها، حساب، ورود | از Emu |
 

@@ -186,6 +186,10 @@ public static class StorageLocationEndpoints
             .OrderBy(b => b.Name, StringComparer.Ordinal).ThenBy(b => b.BatchNumber, StringComparer.Ordinal)
             .Select(b => new DependencyItem("بچ", $"{b.Name} — {b.BatchNumber}", b.Id)));
 
+        // نوبت انبارگردانی حذف ندارد، پس محلش هم حذف نمی‌شود؛ غیرفعال کردن همیشه ممکن است.
+        var stocktakes = await db.Stocktakes.AsNoTracking().Where(s => s.LocationId == id).Select(s => s.StartedAtUtc).ToListAsync();
+        items.AddRange(stocktakes.Order().Select(at => new DependencyItem("انبارگردانی", PharmacyWarehouse.Domain.Time.JalaliDate.Format(at))));
+
         return new DependencyList { Items = items, Total = items.Count };
     }
 
@@ -200,7 +204,7 @@ public static class StorageLocationEndpoints
         if (location is null) return ApiProblems.NotFound();
 
         var dependencies = await FindDependenciesAsync(db, id);
-        if (!dependencies.CanDelete) return ApiProblems.Conflict("این محل زیرشاخه، قلم یا بچ دارد و حذف نمی‌شود.");
+        if (!dependencies.CanDelete) return ApiProblems.Conflict("این محل زیرشاخه، قلم، بچ یا انبارگردانی دارد و حذف نمی‌شود.");
 
         db.StorageLocations.Remove(location);
         try
@@ -211,7 +215,7 @@ public static class StorageLocationEndpoints
         catch (DbUpdateException)
         {
             // زیرشاخه‌ای که هم‌زمان ساخته شد؛ کلید خارجی Restrict جلوی حذف را گرفت.
-            return ApiProblems.Conflict("این محل زیرشاخه، قلم یا بچ دارد و حذف نمی‌شود.");
+            return ApiProblems.Conflict("این محل زیرشاخه، قلم، بچ یا انبارگردانی دارد و حذف نمی‌شود.");
         }
     }
 }

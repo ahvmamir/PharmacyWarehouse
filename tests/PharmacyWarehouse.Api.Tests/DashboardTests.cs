@@ -29,6 +29,34 @@ public class DashboardTests : ApiTestBase
 
     private static DateOnly Today => LocalDay.Today(DateTime.UtcNow);
 
+    [Fact]
+    public async Task LastStocktakes_CountsClosedSubtreeForRoot_OpenOrNoneIsNull_ChildrenNotListed()
+    {
+        async Task<Guid> LocationAsync(string name, Guid? parent = null) =>
+            (await (await Keeper.PostAsJsonAsync(ApiRoutes.Locations, new SaveStorageLocationRequest { Name = name, ParentId = parent }))
+                .Content.ReadFromJsonAsync<StorageLocationItem>())!.Id;
+        async Task<StocktakeDetail> StartAsync(Guid location) =>
+            (await (await Keeper.PostAsJsonAsync(ApiRoutes.Stocktakes, new StartStocktakeRequest { LocationId = location }))
+                .Content.ReadFromJsonAsync<StocktakeDetail>())!;
+
+        var counted = await LocationAsync("TEST-LOC-A");
+        var child = await LocationAsync("TEST-LOC-A1", counted);
+        var open = await LocationAsync("TEST-LOC-B");
+        var never = await LocationAsync("TEST-LOC-C");
+        var closed = await StartAsync(child);
+        await Keeper.PostAsJsonAsync(ApiRoutes.StocktakeClose(closed.Id), new VersionRequest { Version = closed.Version });
+        await StartAsync(open);
+
+        var dashboard = await Keeper.GetFromJsonAsync<DashboardResponse>(ApiRoutes.Dashboard);
+
+        var rows = dashboard!.LastStocktakes.ToDictionary(s => s.LocationId);
+        Assert.Equal(3, rows.Count);
+        Assert.DoesNotContain(child, rows.Keys);
+        Assert.NotNull(rows[counted].CompletedAtUtc);
+        Assert.Null(rows[open].CompletedAtUtc);
+        Assert.Null(rows[never].CompletedAtUtc);
+    }
+
     private Task<DashboardResponse?> DashboardAsync(HttpClient? client = null) =>
         (client ?? Manager).GetFromJsonAsync<DashboardResponse>(ApiRoutes.Dashboard);
 

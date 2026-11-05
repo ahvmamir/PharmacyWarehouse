@@ -101,6 +101,8 @@ public static class WithdrawalEndpoints
             AtUtc = now,
             OccurredAtUtc = time.OccurredAtUtc,
             IsLate = time.IsLate,
+            // بخش ۷.۶: جعبه پیش از شمارش برداشته شده و بعد از آن ثبت می‌شود؛ احتمالاً انبارگردانی همین کسری را اصلاح کرده است.
+            AfterStocktake = await db.StocktakeCounts.AnyAsync(c => ids.Contains(c.BatchId) && c.AtUtc > time.OccurredAtUtc),
             Status = WithdrawalStatus.Pending
         };
         db.Withdrawals.Add(withdrawal);

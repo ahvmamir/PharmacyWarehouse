@@ -8,6 +8,52 @@ public class LocationTreeTests
         new(Guid.NewGuid(), parent?.Id, name, order);
 
     [Fact]
+    public void Subtree_ContainsSelfAndAllDescendants_NotSiblingsOrParent()
+    {
+        var root = N("R");
+        var a = N("A", root);
+        var a1 = N("A1", a);
+        var b = N("B", root);
+
+        Assert.Equal(new HashSet<Guid> { a.Id, a1.Id }, LocationTree.Subtree([root, a, a1, b], a.Id));
+        Assert.Equal(new HashSet<Guid> { root.Id, a.Id, a1.Id, b.Id }, LocationTree.Subtree([root, a, a1, b], root.Id));
+        Assert.Equal(new HashSet<Guid> { a1.Id }, LocationTree.Subtree([root, a, a1, b], a1.Id));
+    }
+
+    [Fact]
+    public void Subtree_WithCycle_Terminates()
+    {
+        var x = Guid.NewGuid();
+        var y = Guid.NewGuid();
+
+        Assert.Equal(new HashSet<Guid> { x, y }, LocationTree.Subtree([new LocationNode(x, y, "X", 0), new LocationNode(y, x, "Y", 0)], x));
+    }
+
+    [Fact]
+    public void RootOf_WalksToTopLevel()
+    {
+        var root = Guid.NewGuid();
+        var child = Guid.NewGuid();
+        var grandchild = Guid.NewGuid();
+        var parents = new Dictionary<Guid, Guid?> { [root] = null, [child] = root, [grandchild] = child };
+
+        Assert.Equal(root, LocationTree.RootOf(parents, grandchild));
+        Assert.Equal(root, LocationTree.RootOf(parents, root));
+    }
+
+    [Fact]
+    public void RootOf_MissingParentOrCycle_Terminates()
+    {
+        var orphan = Guid.NewGuid();
+        var x = Guid.NewGuid();
+        var y = Guid.NewGuid();
+        var parents = new Dictionary<Guid, Guid?> { [orphan] = Guid.NewGuid(), [x] = y, [y] = x };
+
+        Assert.Equal(orphan, LocationTree.RootOf(parents, orphan));
+        Assert.Contains(LocationTree.RootOf(parents, x), new[] { x, y });
+    }
+
+    [Fact]
     public void Paths_JoinAncestors()
     {
         var a = N("ضلع جنوبی");

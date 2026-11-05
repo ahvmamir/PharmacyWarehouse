@@ -1,0 +1,246 @@
+@page "/reports"
+@attribute [Authorize]
+@using PharmacyWarehouse.Domain.Stock
+@inject StockClient StockApi
+
+<PageTitle>گزارش‌ها | انبار داروخانه</PageTitle>
+
+<RequirePermission Permission="@Permissions.ReportsView">
+<div class="page-head">
+    <div>
+        <h1>گزارش‌ها</h1>
+        <p>حرکت‌های موجودی و مصرف خالص در یک بازه‌ی زمانی.</p>
+    </div>
+</div>
+
+<div class="tabs">
+    <button type="button" class="tab @(_tab == ReportTab.Movements ? "active" : "")" @onclick="() => SwitchTabAsync(ReportTab.Movements)">حرکت‌ها</button>
+    <button type="button" class="tab @(_tab == ReportTab.Consumption ? "active" : "")" @onclick="() => SwitchTabAsync(ReportTab.Consumption)">مصرف</button>
+</div>
+
+<div class="toolbar">
+    <div>
+        <label>بازه</label>
+        <div class="segmented">
+            @foreach (var days in DayOptions)
+            {
+                <button type="button" class="@(_days == days ? "on" : "")" @onclick="() => SetDaysAsync(days)">@JalaliDate.ToPersianDigits(days.ToString()) روز</button>
+            }
+        </div>
+    </div>
+    @if (_tab == ReportTab.Movements)
+    {
+        <div>
+            <label for="report-kind">نوع حرکت</label>
+            <select id="report-kind" class="form-select" value="@_kind?.ToString()" @onchange="OnKindChangedAsync">
+                <option value="">همه</option>
+                @foreach (var kind in Enum.GetValues<StockMovementKind>())
+                {
+                    <option value="@kind">@MovementLabels.Kind(kind)</option>
+                }
+            </select>
+        </div>
+        <div style="min-width:18rem;">
+            <label for="report-product">قلم</label>
+            @if (_product is { } product)
+            {
+                <div class="linked-item">
+                    <span style="flex:1;">@product.Name <span class="cell-sub">@product.Brand</span></span>
+                    <button type="button" class="icon-button" title="پاک کردن" aria-label="پاک کردن قلم" @onclick="ClearProductAsync"><AppIcon Name="close" Size="16" /></button>
+                </div>
+            }
+            else
+            {
+                <ProductCombobox InputId="report-product" AutoFocus="false" Placeholder="همه‌ی اقلام" OnPick="PickProductAsync" />
+            }
+        </div>
+    }
+</div>
+
+@if (_error is not null)
+{
+    <div class="form-alert" role="alert">
+        <AppIcon Name="warning" /> <span>@_error</span>
+        <button type="button" class="btn btn-sm btn-quiet" @onclick="LoadAsync">تازه‌سازی</button>
+    </div>
+}
+
+@if (_tab == ReportTab.Movements)
+{
+    @if (_movements is { } report)
+    {
+        @if (report.Total == 0)
+        {
+            <div class="empty-state"><p>در این بازه حرکتی پیدا نشد.</p></div>
+        }
+        else
+        {
+            <section class="table-card">
+                <table class="data-table">
+                    <thead><tr><th>زمان</th><th>نوع</th><th>قلم</th><th>بچ</th><th>تعداد</th><th>کاربر</th><th>یادداشت</th></tr></thead>
+                    <tbody>
+                        @foreach (var item in report.Items)
+                        {
+                            <tr class="row-link" @key="item.Id">
+                                <td><bdi>@JalaliDate.Format(item.OccurredAtUtc)</bdi></td>
+                                <td>@MovementLabels.Kind(item.Kind)</td>
+                                <td><a class="row-link-main" href="products/@item.ProductId">@item.ProductName</a> <span class="cell-sub">@item.Brand</span></td>
+                                <td><bdi>@item.BatchNumber</bdi></td>
+                                <td dir="ltr" style="text-align:right;">@Signed(item.Quantity)</td>
+                                <td><bdi>@item.UserName</bdi></td>
+                                <td>@item.Note</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+            <div class="d-flex gap-3 mt-3" style="align-items:center;">
+                <button type="button" class="btn btn-sm btn-quiet" disabled="@(_skip == 0 || _loading)" @onclick="() => MoveAsync(-PageSize)">قبلی</button>
+                <span class="form-hint">@Num(_skip + 1) تا @Num(_skip + report.Items.Count) از @Num(report.Total)</span>
+                <button type="button" class="btn btn-sm btn-quiet" disabled="@(_skip + report.Items.Count >= report.Total || _loading)" @onclick="() => MoveAsync(PageSize)">بعدی</button>
+            </div>
+        }
+    }
+    else if (_error is null)
+    {
+        <div class="loading-line">در حال بارگذاری…</div>
+    }
+}
+else
+{
+    @if (_consumption is { } consumption)
+    {
+        <p class="form-hint">برداشت منهای برگشت، بر پایه‌ی زمان خود برداشت.</p>
+        @if (consumption.Consumption.TopProducts.Count == 0)
+        {
+            <div class="empty-state"><p>در این بازه مصرفی ثبت نشده است.</p></div>
+        }
+        else
+        {
+            <div class="d-flex gap-3 flex-wrap">
+                <section class="card-emu" style="flex:1; min-width:16rem;">
+                    <h2>به تفکیک قلم</h2>
+                    <table class="table-emu">
+                        <tbody>
+                            @foreach (var item in consumption.Consumption.TopProducts)
+                            {
+                                <tr @key="item.Id"><td><a href="products/@item.Id">@item.Name</a></td><td>@Num(item.Quantity)</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </section>
+                <section class="card-emu" style="flex:1; min-width:16rem;">
+                    <h2>به تفکیک فرد</h2>
+                    <table class="table-emu">
+                        <tbody>
+                            @foreach (var item in consumption.Consumption.ByUser)
+                            {
+                                <tr @key="item.Id"><td><bdi>@item.Name</bdi></td><td>@Num(item.Quantity)</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </section>
+            </div>
+        }
+    }
+    else if (_error is null)
+    {
+        <div class="loading-line">در حال بارگذاری…</div>
+    }
+}
+</RequirePermission>
+
+@code {
+    private enum ReportTab { Movements, Consumption }
+
+    private const int PageSize = 100;
+    private static readonly int[] DayOptions = [7, 30, 90, 365];
+
+    private ReportTab _tab = ReportTab.Movements;
+    private int _days = 30;
+    private StockMovementKind? _kind;
+    private ProductListItem? _product;
+    private int _skip;
+    private int _seq;
+    private bool _loading;
+    private string? _error;
+    private MovementReportResponse? _movements;
+    private ConsumptionReportResponse? _consumption;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    // پاسخ کهنه نادیده گرفته می‌شود تا فیلتر تازه را با نتیجه‌ی قبلی جابه‌جا نکند.
+    private async Task LoadAsync()
+    {
+        var seq = ++_seq;
+        _loading = true;
+        _error = null;
+
+        if (_tab == ReportTab.Movements)
+        {
+            var result = await StockApi.MovementReportAsync(_days, _kind, _product?.Id, _skip, PageSize);
+            if (seq != _seq) return;
+            if (result.IsSuccess) _movements = result.Value;
+            else _error = result.ErrorMessage;
+        }
+        else
+        {
+            var result = await StockApi.ConsumptionReportAsync(_days);
+            if (seq != _seq) return;
+            if (result.IsSuccess) _consumption = result.Value;
+            else _error = result.ErrorMessage;
+        }
+
+        _loading = false;
+    }
+
+    private Task ReloadFromStartAsync()
+    {
+        _skip = 0;
+        return LoadAsync();
+    }
+
+    private Task SwitchTabAsync(ReportTab tab)
+    {
+        if (_tab == tab) return Task.CompletedTask;
+
+        _tab = tab;
+        _movements = null;
+        _consumption = null;
+        return ReloadFromStartAsync();
+    }
+
+    private Task SetDaysAsync(int days)
+    {
+        _days = days;
+        return ReloadFromStartAsync();
+    }
+
+    private Task OnKindChangedAsync(ChangeEventArgs e)
+    {
+        _kind = Enum.TryParse<StockMovementKind>(e.Value?.ToString(), out var kind) ? kind : null;
+        return ReloadFromStartAsync();
+    }
+
+    private Task PickProductAsync(ProductListItem product)
+    {
+        _product = product;
+        return ReloadFromStartAsync();
+    }
+
+    private Task ClearProductAsync()
+    {
+        _product = null;
+        return ReloadFromStartAsync();
+    }
+
+    private Task MoveAsync(int delta)
+    {
+        _skip = Math.Max(0, _skip + delta);
+        return LoadAsync();
+    }
+
+    private static string Num(int value) => JalaliDate.ToPersianDigits(value.ToString());
+
+    private static string Signed(int value) => JalaliDate.ToPersianDigits(value > 0 ? $"+{value}" : value.ToString());
+}

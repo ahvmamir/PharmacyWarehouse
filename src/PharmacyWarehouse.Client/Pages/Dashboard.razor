@@ -28,6 +28,8 @@
     var top = data.Consumption7Days.TopProducts.Take(MaxListItems).ToList();
     var maxTop = Math.Max(1, top.Select(t => t.Quantity).DefaultIfEmpty(0).Max());
     var soonest = expiry.Near.Items.Take(MaxListItems).ToList();
+    // بی‌خبرترین محل‌ها اول: انبارگردانی‌نشده، بعد قدیمی‌ترین.
+    var stocktakes = data.LastStocktakes.OrderBy(s => s.CompletedAtUtc ?? DateTime.MinValue).Take(MaxListItems).ToList();
 
     <div class="dash-cards">
         @Card("منقضی‌شده", expiry.Expired.Total, "dashboard/expiry?bucket=expired", "alert-danger-soft")
@@ -90,6 +92,22 @@
                 </a>
             }
             <a class="dash-more" href="dashboard/expiry?bucket=near">همه</a>
+        </section>
+
+        <section class="card-emu">
+            <h2>آخرین انبارگردانی</h2>
+            @if (stocktakes.Count == 0)
+            {
+                <p class="form-hint">محلی تعریف نشده است.</p>
+            }
+            @foreach (var item in stocktakes)
+            {
+                <a class="bar-row" href="dashboard/corrections" @key="item.LocationId">
+                    <span class="bar-label" title="@item.LocationName">@item.LocationName</span>
+                    <span class="cell-sub d-inline"><bdi>@(item.CompletedAtUtc is { } at ? JalaliDate.Format(at) : "انبارگردانی نشده")</bdi></span>
+                </a>
+            }
+            <a class="dash-more" href="dashboard/corrections">جزئیات</a>
         </section>
     </div>
 }

@@ -88,11 +88,7 @@ public static class DashboardEndpoints
         var since7 = now.AddDays(-7);
         var since30 = now.AddDays(-30);
         var movements = await ConsumptionRowsAsync(db, since30);
-        var userIds = movements.Select(m => m.UserId).Distinct().ToList();
-        var productIds = movements.Select(m => m.ProductId).Distinct().ToList();
-        var userNames = await db.Users.AsNoTracking().Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.UserName ?? "—");
-        var productNames = await db.Products.AsNoTracking().Where(p => productIds.Contains(p.Id))
-            .ToDictionaryAsync(p => p.Id, p => p.Brand == null ? p.Name : p.Name + " — " + p.Brand);
+        var (productNames, userNames) = await ConsumptionNamesAsync(db, movements);
 
         return Results.Ok(new DashboardResponse(
             await ExpiryAsync(db, today, thresholds.NearMonths, thresholds.FarMonths),
@@ -101,7 +97,42 @@ public static class DashboardEndpoints
             Consumption(movements, productNames, userNames),
             await UnreviewedAsync(db, since30),
             await CorrectionsAsync(db, since30),
-            [])); // جدول انبارگردانی در برش ۶ می‌آید
+            await LastStocktakesAsync(db)));
+    }
+
+    // هر محل سطح اول (بخش ۱۰): آخرین نوبت بسته‌شده روی خودش یا هر زیرشاخه‌اش. نوبت جزئی هم حساب است و صفحه این را می‌گوید.
+    private static async Task<List<DashboardLastStocktake>> LastStocktakesAsync(WarehouseDbContext db)
+    {
+        var locations = await db.StorageLocations.AsNoTracking().ToListAsync();
+        var parentOf = locations.ToDictionary(l => l.Id, l => l.ParentId);
+        var closed = await db.Stocktakes.AsNoTracking().Where(s => s.ClosedAtUtc != null).Select(s => new { s.LocationId, s.ClosedAtUtc }).ToListAsync();
+        var lastByRoot = closed
+            .GroupBy(s => LocationTree.RootOf(parentOf, s.LocationId))
+            .ToDictionary(g => g.Key, g => g.Max(s => s.ClosedAtUtc));
+
+        return locations
+            .Where(l => l.ParentId is null && l.IsActive)
+            .OrderBy(l => l.SortOrder).ThenBy(l => l.Name, StringComparer.Ordinal)
+            .Select(l => new DashboardLastStocktake(l.Id, l.Name, lastByRoot.GetValueOrDefault(l.Id)))
+            .ToList();
+    }
+
+    // گزارش مصرف همان محاسبه‌ی داشبورد است، بدون سقف پرمصرف‌ترین‌ها.
+    internal static async Task<DashboardConsumption> ConsumptionSinceAsync(WarehouseDbContext db, DateTime since)
+    {
+        var rows = await ConsumptionRowsAsync(db, since);
+        var (products, users) = await ConsumptionNamesAsync(db, rows);
+        return Consumption(rows, products, users, int.MaxValue);
+    }
+
+    private static async Task<(Dictionary<Guid, string> Products, Dictionary<Guid, string> Users)> ConsumptionNamesAsync(WarehouseDbContext db, List<ConsumptionRow> rows)
+    {
+        var userIds = rows.Select(m => m.UserId).Distinct().ToList();
+        var productIds = rows.Select(m => m.ProductId).Distinct().ToList();
+        var users = await db.Users.AsNoTracking().Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.UserName ?? "—");
+        var products = await db.Products.AsNoTracking().Where(p => productIds.Contains(p.Id))
+            .ToDictionaryAsync(p => p.Id, p => p.Brand == null ? p.Name : p.Name + " — " + p.Brand);
+        return (products, users);
     }
 
     private static async Task<DashboardExpiry> ExpiryAsync(WarehouseDbContext db, DateOnly today, int nearMonths, int farMonths)
@@ -158,7 +189,7 @@ public static class DashboardEndpoints
          where (m.Kind == StockMovementKind.Withdrawal || m.Kind == StockMovementKind.Reversal) && w.OccurredAtUtc >= since
          select new ConsumptionRow(w.ProductId, w.UserId, w.OccurredAtUtc, -m.Quantity)).ToListAsync();
 
-    private static DashboardConsumption Consumption(IEnumerable<ConsumptionRow> rows, Dictionary<Guid, string> products, Dictionary<Guid, string> users)
+    private static DashboardConsumption Consumption(IEnumerable<ConsumptionRow> rows, Dictionary<Guid, string> products, Dictionary<Guid, string> users, int maxTop = MaxTopProducts)
     {
         var list = rows as IReadOnlyCollection<ConsumptionRow> ?? rows.ToList();
         List<DashboardConsumptionItem> Totals(Func<ConsumptionRow, Guid> key, Dictionary<Guid, string> names) => list
@@ -167,7 +198,7 @@ public static class DashboardEndpoints
             .Where(i => i.Quantity > 0)
             .OrderByDescending(i => i.Quantity).ThenBy(i => i.Name, StringComparer.Ordinal).ThenBy(i => i.Id).ToList();
 
-        return new DashboardConsumption(Totals(r => r.ProductId, products).Take(MaxTopProducts).ToList(), Totals(r => r.UserId, users));
+        return new DashboardConsumption(Totals(r => r.ProductId, products).Take(maxTop).ToList(), Totals(r => r.UserId, users));
     }
 
     private static async Task<DashboardUnreviewed> UnreviewedAsync(WarehouseDbContext db, DateTime since)

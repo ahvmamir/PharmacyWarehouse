@@ -1,0 +1,239 @@
+@page "/labels"
+@attribute [Authorize]
+@using PharmacyWarehouse.Domain.Stock
+@inject StockClient StockApi
+@inject LocationsClient LocationsApi
+@inject ToastService Toasts
+@inject IJSRuntime JS
+
+<PageTitle>برچسب | انبار داروخانه</PageTitle>
+
+<RequirePermission Permission="@Permissions.ProductsManage">
+<div class="no-print">
+    <div class="page-head">
+        <div>
+            <h1>برچسب</h1>
+            <p>چاپ برچسب محل‌ها و اقلام بدون بارکد کارخانه. موارد را انتخاب و چاپ کنید.</p>
+        </div>
+        <button type="button" class="btn btn-primary" disabled="@(PrintCount == 0)" @onclick="PrintAsync"><AppIcon Name="print" Size="15" /> چاپ (@Num(PrintCount))</button>
+    </div>
+
+    <div class="tabs">
+        <button type="button" class="tab @(_showProducts ? "" : "active")" @onclick="() => _showProducts = false">محل‌ها</button>
+        <button type="button" class="tab @(_showProducts ? "active" : "")" @onclick="() => _showProducts = true">اقلام</button>
+    </div>
+
+    @if (_error is not null)
+    {
+        <div class="form-alert" role="alert">
+            <AppIcon Name="warning" /> <span>@_error</span>
+            <button type="button" class="btn btn-sm btn-quiet" @onclick="LoadAsync">تازه‌سازی</button>
+        </div>
+    }
+
+    @if (!_showProducts)
+    {
+        @if (_locations is null)
+        {
+            @if (_error is null)
+            {
+                <div class="loading-line">در حال بارگذاری…</div>
+            }
+        }
+        else if (_locations.Count == 0)
+        {
+            <div class="empty-state"><p>محلی تعریف نشده است.</p></div>
+        }
+        else
+        {
+            <section class="table-card">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" aria-label="انتخاب همه‌ی محل‌ها" checked="@(_selectedLocations.Count == _locations.Count)" @onchange="ToggleAllLocations" /></th>
+                            <th>محل</th><th>کد</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var location in _locations)
+                        {
+                            <tr @key="location.Id">
+                                <td><input type="checkbox" aria-label="انتخاب @location.Path" checked="@_selectedLocations.Contains(location.Id)" @onchange="() => Toggle(_selectedLocations, location.Id)" /></td>
+                                <td><bdi>@location.Path</bdi></td>
+                                <td><bdi class="mono">@LocationLabel.CodeOf(location.Id)</bdi></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+        }
+    }
+    else
+    {
+        @if (_products is null)
+        {
+            @if (_error is null)
+            {
+                <div class="loading-line">در حال بارگذاری…</div>
+            }
+        }
+        else if (_products.Count == 0)
+        {
+            <div class="empty-state"><p>قلم فعال بدون بارکد کارخانه‌ای نیست.</p></div>
+        }
+        else
+        {
+            <div class="mb-3">
+                <button type="button" class="btn btn-quiet" disabled="@(_busy || NeedingCode.Count == 0)" @onclick="GenerateAsync">
+                    <AppIcon Name="barcode" Size="15" /> @(_busy ? "در حال ساخت…" : $"ساخت کد داخلی برای {Num(NeedingCode.Count)} قلم انتخاب‌شده")
+                </button>
+            </div>
+            <section class="table-card">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" aria-label="انتخاب همه‌ی اقلام" checked="@(_selectedProducts.Count == _products.Count)" @onchange="ToggleAllProducts" /></th>
+                            <th>قلم</th><th>بسته</th><th>کد</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var product in _products)
+                        {
+                            <tr @key="product.ProductId">
+                                <td><input type="checkbox" aria-label="انتخاب @product.Name" checked="@_selectedProducts.Contains(product.ProductId)" @onchange="() => Toggle(_selectedProducts, product.ProductId)" /></td>
+                                <td>@product.Name <span class="cell-sub">@product.Brand</span></td>
+                                <td>@product.PackDescription</td>
+                                <td>
+                                    @if (product.Code is { } internalCode)
+                                    {
+                                        <bdi class="mono">@internalCode</bdi>
+                                    }
+                                    else
+                                    {
+                                        <span class="cell-sub">هنوز کد ندارد</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+        }
+    }
+
+    @if (PrintCount > 0)
+    {
+        <h2 class="mt-3">پیش‌نمایش چاپ</h2>
+    }
+</div>
+
+@* فقط برچسب‌های تب فعال چاپ می‌شوند. *@
+@if (PrintCount > 0)
+{
+    <div class="labels labels-sheet">
+        @if (!_showProducts)
+        {
+            @foreach (var location in SelectedLocationItems)
+            {
+                <div class="asset-label" @key="location.Id">
+                    <div class="asset-label-title">@location.Name</div>
+                    <Barcode Value="@LocationLabel.CodeOf(location.Id)" />
+                    <div class="asset-label-number">@LocationLabel.CodeOf(location.Id)</div>
+                    <div class="asset-label-meta"><span><bdi>@location.Path</bdi></span></div>
+                </div>
+            }
+        }
+        else
+        {
+            @foreach (var product in PrintableProducts)
+            {
+                <div class="asset-label" @key="product.ProductId">
+                    <div class="asset-label-title">@product.Name</div>
+                    <Barcode Value="@product.Code" />
+                    <div class="asset-label-number">@product.Code</div>
+                    <div class="asset-label-meta"><span>@string.Join(" · ", new[] { product.Brand, product.PackDescription }.Where(s => !string.IsNullOrEmpty(s)))</span></div>
+                </div>
+            }
+        }
+    </div>
+}
+</RequirePermission>
+
+@code {
+    private List<StorageLocationItem>? _locations;
+    private List<ProductLabelItem>? _products;
+    private readonly HashSet<Guid> _selectedLocations = [];
+    private readonly HashSet<Guid> _selectedProducts = [];
+    private bool _showProducts;
+    private bool _busy;
+    private string? _error;
+
+    private IEnumerable<StorageLocationItem> SelectedLocationItems =>
+        (_locations ?? []).Where(l => _selectedLocations.Contains(l.Id));
+
+    private IEnumerable<ProductLabelItem> PrintableProducts =>
+        (_products ?? []).Where(p => p.Code is not null && _selectedProducts.Contains(p.ProductId));
+
+    private List<Guid> NeedingCode =>
+        (_products ?? []).Where(p => p.Code is null && _selectedProducts.Contains(p.ProductId)).Select(p => p.ProductId).ToList();
+
+    private int PrintCount => _showProducts ? PrintableProducts.Count() : SelectedLocationItems.Count();
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        var locations = await LocationsApi.ListAsync();
+        if (locations.IsSuccess) _locations = locations.Value!.Where(l => l.IsUsable).ToList();
+        else _error = locations.ErrorMessage;
+
+        var products = await StockApi.LabelProductsAsync();
+        if (products.IsSuccess) _products = products.Value;
+        else _error ??= products.ErrorMessage;
+    }
+
+    private static void Toggle(HashSet<Guid> selected, Guid id)
+    {
+        if (!selected.Add(id)) selected.Remove(id);
+    }
+
+    private void ToggleAllLocations(ChangeEventArgs e)
+    {
+        _selectedLocations.Clear();
+        if (e.Value is true) _selectedLocations.UnionWith((_locations ?? []).Select(l => l.Id));
+    }
+
+    private void ToggleAllProducts(ChangeEventArgs e)
+    {
+        _selectedProducts.Clear();
+        if (e.Value is true) _selectedProducts.UnionWith((_products ?? []).Select(p => p.ProductId));
+    }
+
+    // سرور حداکثر MaxProducts را در یک درخواست می‌پذیرد. قلمی که کد دارد نادیده گرفته می‌شود، پس تکرار بی‌خطر است.
+    private async Task GenerateAsync()
+    {
+        if (_busy) return;
+
+        _busy = true;
+        _error = null;
+        foreach (var chunk in NeedingCode.Chunk(GenerateLabelsRequest.MaxProducts))
+        {
+            var result = await StockApi.GenerateLabelsAsync(chunk);
+            if (!result.IsSuccess)
+            {
+                _error = result.ErrorMessage;
+                break;
+            }
+
+            _products = result.Value;
+        }
+
+        _busy = false;
+        if (_error is null) Toasts.Show("کد داخلی ساخته شد.");
+    }
+
+    private async Task PrintAsync() => await JS.InvokeVoidAsync("print");
+
+    private static string Num(int value) => JalaliDate.ToPersianDigits(value.ToString());
+}

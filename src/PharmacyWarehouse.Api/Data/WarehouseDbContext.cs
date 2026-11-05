@@ -19,6 +19,8 @@ public class WarehouseDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>,
     public DbSet<Batch> Batches => Set<Batch>();
     public DbSet<StockMovement> StockMovements => Set<StockMovement>();
     public DbSet<Withdrawal> Withdrawals => Set<Withdrawal>();
+    public DbSet<Stocktake> Stocktakes => Set<Stocktake>();
+    public DbSet<StocktakeCount> StocktakeCounts => Set<StocktakeCount>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 
@@ -80,6 +82,9 @@ public class WarehouseDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>,
             movement.HasOne<Batch>().WithMany().HasForeignKey(m => m.BatchId).OnDelete(DeleteBehavior.Restrict);
             movement.HasOne<StockMovement>().WithMany().HasForeignKey(m => m.ReversesId).OnDelete(DeleteBehavior.Restrict);
             movement.HasIndex(m => new { m.BatchId, m.AtUtc });
+            // هر حرکت حداکثر یک بار برگشت می‌خورد و هر شمارش حداکثر یک اصلاح دارد؛ درخواست هم‌زمان دوم در دیتابیس رد می‌شود.
+            movement.HasIndex(m => m.ReversesId).IsUnique().HasFilter("\"ReversesId\" IS NOT NULL");
+            movement.HasIndex(m => m.StocktakeCountId).IsUnique().HasFilter("\"StocktakeCountId\" IS NOT NULL");
         });
 
         builder.Entity<Withdrawal>(withdrawal =>
@@ -93,6 +98,27 @@ public class WarehouseDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>,
         });
 
         builder.Entity<StockMovement>().HasOne<Withdrawal>().WithMany().HasForeignKey(m => m.WithdrawalId).OnDelete(DeleteBehavior.Restrict);
+
+        builder.Entity<Stocktake>(stocktake =>
+        {
+            stocktake.Property(s => s.Version).IsConcurrencyToken();
+            stocktake.HasOne<StorageLocation>().WithMany().HasForeignKey(s => s.LocationId).OnDelete(DeleteBehavior.Restrict);
+            // دو نوبت باز روی یک محل ممکن نیست؛ هم‌پوشانی با والد و فرزند را endpoint می‌سنجد.
+            stocktake.HasIndex(s => s.LocationId).IsUnique().HasFilter("\"ClosedAtUtc\" IS NULL").HasDatabaseName("IX_Stocktakes_OpenLocation");
+            stocktake.HasIndex(s => s.ClosedAtUtc);
+        });
+
+        builder.Entity<StocktakeCount>(count =>
+        {
+            count.Property(c => c.Version).IsConcurrencyToken();
+            count.HasOne<Stocktake>().WithMany().HasForeignKey(c => c.StocktakeId).OnDelete(DeleteBehavior.Restrict);
+            count.HasOne<Batch>().WithMany().HasForeignKey(c => c.BatchId).OnDelete(DeleteBehavior.Restrict);
+            count.HasOne<StockMovement>().WithMany().HasForeignKey(c => c.AdjustmentId).OnDelete(DeleteBehavior.Restrict);
+            count.HasIndex(c => new { c.BatchId, c.AtUtc });
+            count.HasIndex(c => c.StocktakeId);
+        });
+
+        builder.Entity<StockMovement>().HasOne<StocktakeCount>().WithMany().HasForeignKey(m => m.StocktakeCountId).OnDelete(DeleteBehavior.Restrict);
 
         builder.Entity<AppSetting>(setting =>
         {
