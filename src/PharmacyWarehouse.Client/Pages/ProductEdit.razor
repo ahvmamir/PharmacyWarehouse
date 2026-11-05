@@ -173,6 +173,19 @@ else
 
         if (!result.IsSuccess)
         {
+            // ناسازگاری Version: مقدارهای تازه‌ی سرور را بارگذاری می‌کنیم تا تلاش بعدی با Version درست برود.
+            // ۴۰۹ تکراری بودن نام/برند/بسته جدا می‌ماند و فقط پیام سرور را می‌گیرد.
+            if (Id is { } id && result.Outcome == ApiOutcome.Conflict && result.Problem?.Type == ProblemTypes.VersionConflict)
+            {
+                var fresh = await ProductsApi.GetAsync(id);
+                if (fresh.IsSuccess)
+                {
+                    Fill(fresh.Value!);
+                    _formError = "این قلم در این فاصله تغییر کرد؛ مقدارهای تازه بارگذاری شد. تغییرتان را دوباره اعمال کنید.";
+                    return;
+                }
+            }
+
             if (result.Problem is { Errors.Count: > 0 } problem) _errors = problem.Errors;
             if (_errors.Count == 0) _formError = result.ErrorMessage;
             return;

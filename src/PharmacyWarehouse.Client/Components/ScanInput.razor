@@ -21,7 +21,14 @@
 
     private async Task OnKeyDown(KeyboardEventArgs e)
     {
-        if (e.Key != "Enter" || _busy) return;
+        if (e.Key != "Enter") return;
+
+        // اسکن قبلی هنوز در حال پردازش است؛ متن را خالی می‌کنیم تا به اسکن بعدی نچسبد.
+        if (_busy)
+        {
+            _text = "";
+            return;
+        }
 
         var value = _text.Trim();
         _text = "";

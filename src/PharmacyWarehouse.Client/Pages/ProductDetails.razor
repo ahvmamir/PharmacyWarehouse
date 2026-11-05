@@ -284,7 +284,7 @@ else
 
         if (!result.IsSuccess)
         {
-            _error = result.ErrorMessage;
+            await HandleFailureAsync(result.Outcome, result.Problem, result.ErrorMessage, isBarcode: false);
             return;
         }
 
@@ -299,7 +299,7 @@ else
         var result = await ProductsApi.AddBarcodeAsync(Id, code);
         if (!result.IsSuccess)
         {
-            _barcodeError = result.ErrorMessage;
+            await HandleFailureAsync(result.Outcome, result.Problem, result.ErrorMessage, isBarcode: true);
             return;
         }
 
@@ -317,12 +317,26 @@ else
 
         if (!result.IsSuccess)
         {
-            _barcodeError = result.ErrorMessage;
+            await HandleFailureAsync(result.Outcome, result.Problem, result.ErrorMessage, isBarcode: true);
             return;
         }
 
         _detail = result.Value!;
         await LoadHistoryAsync();
+    }
+
+    // ناسازگاری Version: صفحه خودکار تازه می‌شود و پیام سرور toast می‌شود. بقیه‌ی خطاها همان‌جا نشان داده می‌شوند.
+    private async Task HandleFailureAsync(ApiOutcome outcome, ApiProblem? problem, string message, bool isBarcode)
+    {
+        if (outcome == ApiOutcome.Conflict && problem?.Type == ProblemTypes.VersionConflict)
+        {
+            Toasts.Show(message, isWarning: true);
+            await LoadAsync();
+            return;
+        }
+
+        if (isBarcode) _barcodeError = message;
+        else _error = message;
     }
 
     private void OnDeletedAsync()
