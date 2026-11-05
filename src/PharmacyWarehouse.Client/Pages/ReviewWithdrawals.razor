@@ -105,6 +105,10 @@ else
 {
     <ModalDialog Title="رد برداشت" OnClose="CancelReject">
         <p><strong>@target.ProductName</strong> — @JalaliDate.ToPersianDigits(target.TotalQuantity.ToString()) جعبه؛ موجودی به بچ‌ها برمی‌گردد.</p>
+        @if (target.AfterStocktake)
+        {
+            <div class="form-alert mb-2" role="alert"><AppIcon Name="warning" /> <span>این برداشت پس از انبارگردانی ثبت شده و احتمالاً کسری آن در همان شمارش اصلاح شده است. رد کردن آن ممکن است موجودی را دوبار برگرداند؛ پیش از رد، موجودی را بررسی کنید.</span></div>
+        }
         <div class="form-field">
             <label for="reject-note">یادداشت (اجباری) <span class="required">*</span></label>
             <input id="reject-note" class="form-control" autocomplete="off" @bind="_rejectNote" @bind:event="oninput" />

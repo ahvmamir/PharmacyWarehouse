@@ -87,7 +87,7 @@
                 <table class="table-emu import-table">
                     <thead>
                         <tr>
-                            <th>شیت / ردیف</th><th>نام دارو و دوز</th><th>نام تجاری</th><th>تعداد</th><th>در بسته</th><th>بچ نامبر</th><th>انقضا</th><th>انقضا لازم نیست</th><th>وضعیت</th>
+                            <th>شیت / ردیف</th><th>نام دارو و دوز</th><th>نام تجاری</th><th>تعداد</th><th>در بسته</th><th>بچ نامبر</th><th>انقضا</th><th>انقضا لازم نیست</th><th>محل</th><th>بارکد</th><th>حداقل</th><th>قیمت</th><th>وضعیت</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -104,6 +104,10 @@
                                 <td><input class="form-control" dir="ltr" value="@row.BatchNumber" aria-label="بچ" @onchange="e => Edit(row, r => r.BatchNumber = Val(e))" /></td>
                                 <td><input class="form-control" dir="ltr" value="@row.Expiry" aria-label="انقضا" @onchange="e => Edit(row, r => r.Expiry = Val(e))" /></td>
                                 <td><input type="checkbox" class="form-check-input" checked="@row.ExpiryNotRequired" aria-label="انقضا لازم نیست" @onchange="e => Edit(row, r => r.ExpiryNotRequired = (bool)e.Value!)" /></td>
+                                <td><input class="form-control" value="@row.Location" aria-label="محل" @onchange="e => Edit(row, r => r.Location = Val(e))" /></td>
+                                <td><input class="form-control" dir="ltr" value="@row.Barcode" aria-label="بارکد" @onchange="e => Edit(row, r => r.Barcode = Val(e))" /></td>
+                                <td><input class="form-control import-narrow" dir="ltr" value="@row.MinStock" aria-label="حداقل موجودی" @onchange="e => Edit(row, r => r.MinStock = Val(e))" /></td>
+                                <td><input class="form-control import-narrow" dir="ltr" value="@row.UnitCost" aria-label="قیمت" @onchange="e => Edit(row, r => r.UnitCost = Val(e))" /></td>
                                 <td>
                                     @if (status.Severity == ImportSeverity.Error) { <span class="status-badge status-expired">خطا</span> }
                                     else if (status.Severity == ImportSeverity.Warning) { <span class="status-badge status-pending">هشدار</span> }

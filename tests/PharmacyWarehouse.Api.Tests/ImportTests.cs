@@ -63,6 +63,116 @@ public class ImportTests : ApiTestBase
     private static string?[] R(string name, string qty, string batch, string expiry, string? brand = null, string pack = "30") =>
         [name, brand, qty, pack, batch, expiry];
 
+    private static ImportRowInput Input(string sheet, string batch, string name = "داروی آزمایشی ادغام") =>
+        new() { Sheet = sheet, RowNumber = 2, Name = name, Quantity = "2", BatchNumber = batch, Expiry = "31/05/2028" };
+
+    private Task<HttpResponseMessage> CommitRowsAsync(params ImportRowInput[] rows) =>
+        Keeper.PostAsJsonAsync(ApiRoutes.ImportCommit, new ImportRequest { Rows = rows.ToList() });
+
+    [Fact]
+    public async Task Commit_InactiveProduct_IsRejected_AndNothingIsPosted()
+    {
+        var product = await App.AddProductRawAsync("داروی آزمایشی غیرفعال", null);
+        using (var scope = App.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<WarehouseDbContext>();
+            (await db.Products.FirstAsync(p => p.Id == product)).IsActive = false;
+            await db.SaveChangesAsync();
+        }
+
+        var response = await CommitRowsAsync(Input("ضلع آزمایشی", "TEST-IN1", "داروی آزمایشی غیرفعال"));
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        using var check = App.CreateScope();
+        Assert.Empty(await check.ServiceProvider.GetRequiredService<WarehouseDbContext>().Batches.Where(b => b.ProductId == product).ToListAsync());
+    }
+
+    [Fact]
+    public async Task Commit_RowInAnotherSheet_KeepsItsLocationOnTheBatch()
+    {
+        var response = await CommitRowsAsync(Input("ضلع یک", "TEST-L1"), Input("ضلع دو", "TEST-L2"));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var scope = App.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<WarehouseDbContext>();
+        var one = await db.StorageLocations.AsNoTracking().FirstAsync(l => l.Name == "ضلع یک");
+        var two = await db.StorageLocations.AsNoTracking().FirstAsync(l => l.Name == "ضلع دو");
+        var product = await db.Products.AsNoTracking().FirstAsync(p => p.Name == "داروی آزمایشی ادغام");
+        var batches = await db.Batches.AsNoTracking().Where(b => b.ProductId == product.Id).ToListAsync();
+
+        Assert.Equal(one.Id, product.LocationId);
+        Assert.Null(batches.Single(b => b.BatchNumber == "TEST-L1").LocationId); // همان محل قلم
+        Assert.Equal(two.Id, batches.Single(b => b.BatchNumber == "TEST-L2").LocationId);
+    }
+
+    [Fact]
+    public async Task Commit_ExistingProduct_BatchGetsTheRowLocation_ProductUnchanged()
+    {
+        var product = await App.AddProductRawAsync("داروی آزمایشی موجود", null);
+
+        var response = await CommitRowsAsync(Input("ضلع سه", "TEST-E1", "داروی آزمایشی موجود"));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var scope = App.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<WarehouseDbContext>();
+        var location = await db.StorageLocations.AsNoTracking().FirstAsync(l => l.Name == "ضلع سه");
+        Assert.Null((await db.Products.AsNoTracking().FirstAsync(p => p.Id == product)).LocationId);
+        Assert.Equal(location.Id, (await db.Batches.AsNoTracking().FirstAsync(b => b.ProductId == product)).LocationId);
+    }
+
+    [Fact]
+    public async Task Commit_NewProduct_BarcodeAndMinStockFromLaterRows_AreApplied_RepeatedBarcodeOnce()
+    {
+        var first = Input("ضلع یک", "TEST-M1");
+        var second = Input("ضلع یک", "TEST-M2");
+        second.Barcode = "TEST-0777";
+        second.MinStock = "6";
+        var third = Input("ضلع یک", "TEST-M3");
+        third.Barcode = "TEST-0777";
+
+        var response = await CommitRowsAsync(first, second, third);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var scope = App.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<WarehouseDbContext>();
+        var product = await db.Products.AsNoTracking().FirstAsync(p => p.Name == "داروی آزمایشی ادغام");
+        Assert.Equal(6, product.MinStock);
+        Assert.Contains("0777", product.SearchText);
+        Assert.Equal("TEST-0777", (await db.ProductBarcodes.AsNoTracking().SingleAsync(c => c.ProductId == product.Id)).Code);
+    }
+
+    [Theory]
+    [InlineData(ApiRoutes.ImportValidate)]
+    [InlineData(ApiRoutes.ImportCommit)]
+    public async Task NullRowElement_Returns400_Not500(string route)
+    {
+        var response = await Keeper.PostAsync(route, new StringContent("""{"rows":[null]}""", System.Text.Encoding.UTF8, "application/json"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Parse_ImpossibleRowIndex_Returns400()
+    {
+        using var ms = new MemoryStream();
+        using (var zip = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, true))
+        {
+            void Add(string path, string xml)
+            {
+                using var w = new StreamWriter(zip.CreateEntry(path).Open());
+                w.Write(xml);
+            }
+
+            Add("xl/workbook.xml", """<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>""");
+            Add("xl/_rels/workbook.xml.rels", """<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>""");
+            Add("xl/worksheets/sheet1.xml", """<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="2147483647"/></sheetData></worksheet>""");
+        }
+
+        var response = await UploadAsync(Keeper, ms.ToArray());
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     [Fact]
     public async Task Parse_ReadsAllSheets_SkipsTemplateRows_KeepsExcelRowNumbers_IgnoresUnknownColumns()
     {

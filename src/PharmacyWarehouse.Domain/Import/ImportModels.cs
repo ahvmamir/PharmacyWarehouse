@@ -54,4 +54,8 @@ public sealed class ImportContext
     public HashSet<string> RootLocationKeys { get; } = [];
     // LocationKey مسیر کامل همه‌ی محل‌ها
     public HashSet<string> LocationPathKeys { get; } = [];
+    // productKey قلم‌های غیرفعال؛ بچ تازه نمی‌گیرند (مثل ورود جنس).
+    public HashSet<string> InactiveProducts { get; } = [];
+    // LocationKey محل‌هایی که خودشان یا یکی از نیاکانشان غیرفعال است.
+    public HashSet<string> InactiveLocationPathKeys { get; } = [];
 }

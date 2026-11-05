@@ -34,13 +34,23 @@ public static class ImportValidator
         return string.IsNullOrEmpty(cleaned) ? null : cleaned;
     }
 
+    // ویرگول فقط جداکننده‌ی سه‌رقمی است؛ «12,5» نباید بی‌صدا ۱۲۵ شود. خروجی: ارقام ASCII بدون جداکننده، یا null اگر الگو غلط است.
+    private static string? UngroupDigits(string? raw)
+    {
+        var text = TextNormalizer.ToAsciiDigits(raw ?? "").Replace('٬', ',').Trim();
+        if (!text.Contains(',')) return text;
+        var groups = text.Split(',');
+        var valid = groups[0].Length is >= 1 and <= 3 && groups.All(g => g.All(char.IsAsciiDigit)) && groups.Skip(1).All(g => g.Length == 3);
+        return valid ? text.Replace(",", "") : null;
+    }
+
     // عدد صحیح؛ «30.0» هم قبول است (Excel). null ← نامعتبر.
     private static int? ParseCount(string? raw)
     {
-        var text = TextNormalizer.ToAsciiDigits(raw ?? "").Replace(",", "").Replace("٬", "").Trim();
-        if (text.Length == 0) return null;
-        if (!decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture, out var d)) return null;
-        if (d != decimal.Truncate(d) || d < 0 || d > int.MaxValue) return null;
+        var text = UngroupDigits(raw);
+        if (string.IsNullOrEmpty(text)) return null;
+        if (!decimal.TryParse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var d)) return null;
+        if (d != decimal.Truncate(d) || d > int.MaxValue) return null;
         return (int)d;
     }
 
@@ -48,11 +58,31 @@ public static class ImportValidator
     {
         var cleaned = Strip(raw);
         if (cleaned is null) return null;
-        // «30.0» از Excel ← «30»
+        // «30.0» از Excel ← «30»؛ بقیه (از جمله «2,5» و عدد خارج از بازه) همان متن می‌ماند.
         var ascii = TextNormalizer.ToAsciiDigits(cleaned);
-        return decimal.TryParse(ascii, NumberStyles.Number, CultureInfo.InvariantCulture, out var d) && d == decimal.Truncate(d)
+        return decimal.TryParse(ascii, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var d) && d == decimal.Truncate(d) && d <= long.MaxValue
             ? ((long)d).ToString(CultureInfo.InvariantCulture)
             : cleaned;
+    }
+
+    // مقدار خطای Excel مثل #REF! اگر جایی از ردیف آمده باشد، داده‌ی واقعی نیست.
+    private static readonly HashSet<string> ExcelErrors = ["#REF!", "#N/A", "#VALUE!", "#DIV/0!", "#NAME?", "#NUM!", "#NULL!"];
+
+    private static bool HasExcelError(ImportRowInput row) =>
+        new[] { row.Name, row.Brand, row.Quantity, row.UnitsPerPack, row.BatchNumber, row.Expiry, row.Location, row.Barcode, row.MinStock, row.UnitCost }
+            .Any(c => c is not null && ExcelErrors.Contains(c.Trim().ToUpperInvariant()));
+
+    // خود مسیر یا یکی از نیاکانش غیرفعال است؟ (زیرشاخه‌ی تازه زیر محل غیرفعال هم مجاز نیست.)
+    private static bool IsInactivePath(string key, ImportContext context)
+    {
+        var separator = LocationTree.Separator.Trim();
+        var parts = key.Split(separator);
+        for (var n = 1; n <= parts.Length; n++)
+        {
+            if (context.InactiveLocationPathKeys.Contains(string.Join(separator, parts.Take(n)))) return true;
+        }
+
+        return false;
     }
 
     public static ImportReport Validate(IReadOnlyList<ImportRowInput> rows, ImportContext context)
@@ -94,6 +124,7 @@ public static class ImportValidator
                 continue;
             }
 
+            if (HasExcelError(row)) Error("این ردیف سلول خطای Excel دارد (مثل #REF!)؛ مقدار درست را وارد کنید.");
             if (name.Length > ProductRules.MaxName) Error($"نام حداکثر {ProductRules.MaxName} نویسه است.");
             var brand = Strip(row.Brand);
             if (brand is { Length: > ProductRules.MaxBrand }) Error($"برند حداکثر {ProductRules.MaxBrand} نویسه است.");
@@ -103,6 +134,12 @@ public static class ImportValidator
 
             var quantity = ParseCount(row.Quantity);
             if (quantity is null) Error("تعداد باید عدد صحیح (۰ یا بیشتر) باشد.");
+
+            var exists = context.ExistingProducts.TryGetValue(productKey, out var existingRequires);
+            if (exists && quantity != 0 && context.InactiveProducts.Contains(productKey)) Error("این قلم غیرفعال است و بچ تازه نمی‌گیرد.");
+
+            // ردیف تعداد ۰ روی قلم موجود هیچ ثبتی ندارد، پس محلی هم نمی‌سازد.
+            var usesLocation = !(exists && quantity == 0);
 
             // محل: ستون «محل» (مسیر کامل) یا نام شیت
             string? locationPath = null;
@@ -115,28 +152,30 @@ public static class ImportValidator
                 else
                 {
                     locationPath = locationText;
+                    if (usesLocation && IsInactivePath(key, context)) Error("این محل غیرفعال است.");
                     // مسیر ناموجود ساخته می‌شود (مثل نام شیت)، تا خروجی برنامه در سیستم تازه هم قابل ورود باشد.
-                    if (!context.LocationPathKeys.Contains(key) && !newLocations.Contains(locationText)) newLocations.Add(locationText);
+                    if (usesLocation && !context.LocationPathKeys.Contains(key) && !newLocations.Contains(locationText)) newLocations.Add(locationText);
                 }
             }
-            else if (TextNormalizer.Key(row.Sheet) is { } sheetKey && !context.RootLocationKeys.Contains(sheetKey))
+            else if (TextNormalizer.Key(row.Sheet) is { } sheetKey)
             {
                 var sheetName = TextNormalizer.Clean(row.Sheet)!;
-                if (!newLocations.Contains(sheetName)) newLocations.Add(sheetName);
+                if (sheetName.Length > LocationTree.MaxName) Error($"نام شیت به‌عنوان محل حداکثر {LocationTree.MaxName} نویسه است.");
+                else if (usesLocation && IsInactivePath(sheetKey, context)) Error("محل این شیت غیرفعال است.");
+                if (usesLocation && !context.RootLocationKeys.Contains(sheetKey) && !newLocations.Contains(sheetName)) newLocations.Add(sheetName);
             }
 
             if (productLocation.TryGetValue(productKey, out var firstLocation))
             {
                 var here = locationPath ?? TextNormalizer.Clean(row.Sheet) ?? "";
                 if (!string.Equals(TextNormalizer.Key(firstLocation), TextNormalizer.Key(here), StringComparison.Ordinal))
-                    Warn($"این قلم در «{here}» هم آمده؛ محل اولین ردیف («{firstLocation}») می‌ماند.");
+                    Warn($"این قلم در «{here}» هم آمده؛ این بچ همان‌جا ثبت می‌شود و محل قلم «{firstLocation}» می‌ماند.");
             }
             else
             {
                 productLocation[productKey] = locationPath ?? TextNormalizer.Clean(row.Sheet) ?? "";
             }
 
-            var exists = context.ExistingProducts.TryGetValue(productKey, out var existingRequires);
             // قلم موجود: همان RequiresExpiry خودش (ورود Excel تعریف قلم موجود را عوض نمی‌کند)؛ قلم تازه: مگر «انقضا لازم نیست» روشن باشد.
             var requiresExpiry = exists ? existingRequires : !noExpiry.Contains(productKey);
 
@@ -187,8 +226,7 @@ public static class ImportValidator
             long? unitCost = null;
             if (Strip(row.UnitCost) is { } costText)
             {
-                var ascii = TextNormalizer.ToAsciiDigits(costText).Replace(",", "").Replace("٬", "");
-                if (long.TryParse(ascii, NumberStyles.None, CultureInfo.InvariantCulture, out var cost)) unitCost = cost;
+                if (long.TryParse(UngroupDigits(costText), NumberStyles.None, CultureInfo.InvariantCulture, out var cost)) unitCost = cost;
                 else Error("قیمت باید عدد صحیح و نامنفی باشد.");
             }
 
@@ -201,6 +239,10 @@ public static class ImportValidator
                 else if (barcodeOwner.TryGetValue(barcodeKey, out var owner) && owner != productKey) Error("این بارکد برای قلم دیگری در همین فایل آمده است.");
                 else barcodeOwner[barcodeKey] = productKey;
             }
+
+            // تعریف قلم موجود عوض نمی‌شود؛ کاربر باید بداند این دو ستون اثری ندارند.
+            if (exists && barcodeKey is not null && !context.ExistingBarcodes.ContainsKey(barcodeKey)) Warn("بارکد روی قلم موجود اعمال نمی‌شود؛ از صفحه‌ی قلم اضافه کنید.");
+            if (exists && minStock is not null) Warn("حداقل موجودی روی قلم موجود اعمال نمی‌شود؛ از صفحه‌ی قلم ویرایش کنید.");
 
             var severity = errors > 0 ? ImportSeverity.Error : warnings > 0 ? ImportSeverity.Warning : ImportSeverity.Ok;
             statuses.Add(new ImportRowStatus(i, severity, messages));

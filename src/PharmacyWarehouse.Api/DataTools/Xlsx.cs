@@ -219,7 +219,13 @@ public static class XlsxReader
     private static readonly XNamespace PackageRel = "http://schemas.openxmlformats.org/package/2006/relationships";
 
     // سقف باز شدن هر بخش فایل، تا فایل فشرده‌ی دستکاری‌شده حافظه را پر نکند.
-    private const long MaxEntryBytes = 200 * 1024 * 1024;
+    // Length فایل قابل جعل است، پس همان سقف روی نویسه‌های خوانده‌شده‌ی XML هم هست.
+    private const long MaxEntryBytes = 50 * 1024 * 1024;
+    private const int MaxSheets = 100;
+    // سقف‌های خود قالب xlsx؛ بیش از این فایل دستکاری‌شده است و جای خالی ردیف/ستون نباید حافظه را پر کند.
+    private const int MaxRowNumber = 1_048_576;
+    private const int MaxColumnIndex = 16_383;
+    private const long MaxTotalCells = 5_000_000;
 
     // ردیف‌های برگه‌ی اول، با حفظ جای ستون‌ها. فایل نامعتبر InvalidDataException می‌دهد.
     public static List<string?[]> ReadFirstSheet(Stream stream)
@@ -240,9 +246,13 @@ public static class XlsxReader
                     .Select(si => string.Concat(si.Descendants(Main + "t").Select(t => t.Value)))
                     .ToList()
                 : [];
-            var dateStyles = DateStyles(zip);
+            var (dateStyles, monthYearStyles) = DateStyles(zip);
 
             var workbook = Load(zip.GetEntry("xl/workbook.xml") ?? throw new InvalidDataException("Workbook not found."));
+            var date1904 = workbook.Descendants(Main + "workbookPr").FirstOrDefault()?.Attribute("date1904")?.Value is "1" or "true";
+            var formats = new CellFormats(dateStyles, monthYearStyles, new DateTime(date1904 ? 1904 : 1899, date1904 ? 1 : 12, date1904 ? 1 : 30));
+            if (workbook.Descendants(Main + "sheet").Count() > MaxSheets) throw new InvalidDataException("Too many sheets.");
+            long cellBudget = MaxTotalCells;
             var rels = Load(zip.GetEntry("xl/_rels/workbook.xml.rels") ?? throw new InvalidDataException("Relations not found."));
             var targets = rels.Descendants(PackageRel + "Relationship")
                 .ToDictionary(r => r.Attribute("Id")!.Value, r => r.Attribute("Target")!.Value);
@@ -255,19 +265,21 @@ public static class XlsxReader
                 var target = targets[sheet.Attribute(Rel + "id")!.Value];
                 var path = target.StartsWith('/') ? target.TrimStart('/') : "xl/" + target;
                 var entry = zip.GetEntry(path) ?? throw new InvalidDataException("Worksheet not found.");
-                result.Add(new XlsxSheetData(sheet.Attribute("name")?.Value ?? "", ReadRows(Load(entry), shared, dateStyles)));
+                result.Add(new XlsxSheetData(sheet.Attribute("name")?.Value ?? "", ReadRows(Load(entry), shared, formats, ref cellBudget)));
             }
 
             return result;
         }
         // فایل غیر ZIP یا دستکاری‌شده بسته به محتوا هر کدام از این‌ها را می‌دهد؛ برای کاربر همه «فایل نامعتبر» است.
-        catch (Exception ex) when (ex is XmlException or InvalidOperationException or NullReferenceException or ArgumentException or KeyNotFoundException)
+        catch (Exception ex) when (ex is XmlException or InvalidOperationException or NullReferenceException or ArgumentException or KeyNotFoundException or FormatException or OverflowException)
         {
             throw new InvalidDataException("Not a readable xlsx file.", ex);
         }
     }
 
-    private static List<string?[]> ReadRows(XDocument sheet, List<string> shared, HashSet<int> dateStyles)
+    private sealed record CellFormats(HashSet<int> DateStyles, HashSet<int> MonthYearStyles, DateTime Epoch);
+
+    private static List<string?[]> ReadRows(XDocument sheet, List<string> shared, CellFormats formats, ref long cellBudget)
     {
         var rows = new List<string?[]>();
         foreach (var row in sheet.Descendants(Main + "row"))
@@ -279,14 +291,19 @@ public static class XlsxReader
             {
                 var reference = cell.Attribute("r")?.Value;
                 if (reference is not null) position = ColumnIndex(reference);
+                if (position > MaxColumnIndex) throw new InvalidDataException("Column index out of range.");
+
+                cellBudget -= position - cells.Count + 1;
+                if (cellBudget < 0) throw new InvalidDataException("Too many cells.");
 
                 while (cells.Count < position) cells.Add(null);
-                cells.Add(ReadCell(cell, shared, dateStyles));
+                cells.Add(ReadCell(cell, shared, formats));
                 position++;
             }
 
             // جای ردیف را هم نگه می‌داریم تا شماره‌ی سطر در خطاها با Excel یکی باشد.
             var rowNumber = int.TryParse(row.Attribute("r")?.Value, out var parsed) ? parsed : rows.Count + 1;
+            if (rowNumber is < 1 or > MaxRowNumber) throw new InvalidDataException("Row index out of range.");
             while (rows.Count < rowNumber - 1) rows.Add([]);
             rows.Add(cells.ToArray());
         }
@@ -295,10 +312,12 @@ public static class XlsxReader
     }
 
     // اندیس سبک‌هایی (cellXfs) که قالب تاریخ دارند: قالب‌های داخلی تاریخ یا قالب سفارشی با y/d/m بیرون از نقل‌قول.
-    private static HashSet<int> DateStyles(ZipArchive zip)
+    // زیرمجموعه‌ی دوم: قالب ماه/سال بدون روز (Excel تایپ «07/2028» را این‌طور ذخیره می‌کند)؛ روز ۱ آن ساختگی است.
+    private static (HashSet<int> Dates, HashSet<int> MonthYear) DateStyles(ZipArchive zip)
     {
         var result = new HashSet<int>();
-        if (zip.GetEntry("xl/styles.xml") is not { } entry) return result;
+        var monthYear = new HashSet<int>();
+        if (zip.GetEntry("xl/styles.xml") is not { } entry) return (result, monthYear);
 
         var styles = Load(entry).Root!;
         var custom = styles.Element(Main + "numFmts")?.Elements(Main + "numFmt")
@@ -309,25 +328,47 @@ public static class XlsxReader
         foreach (var xf in styles.Element(Main + "cellXfs")?.Elements(Main + "xf") ?? [])
         {
             var id = int.TryParse(xf.Attribute("numFmtId")?.Value, out var parsed) ? parsed : 0;
-            if (IsBuiltInDate(id) || (custom.TryGetValue(id, out var code) && IsDateFormat(code))) result.Add(index);
+            var hasCustom = custom.TryGetValue(id, out var code);
+            if (IsBuiltInDate(id) || (hasCustom && IsDateFormat(code!))) result.Add(index);
+            if (id == 17 || (hasCustom && IsMonthYearFormat(code!))) monthYear.Add(index);
             index++;
         }
 
-        return result;
+        return (result, monthYear);
     }
 
     private static bool IsBuiltInDate(int id) => id is >= 14 and <= 22 or >= 27 and <= 36 or >= 45 and <= 47 or >= 50 and <= 58;
 
     private static bool IsDateFormat(string code)
     {
+        var letters = FormatLetters(code);
+        return letters.Contains('y') || letters.Contains('d');
+    }
+
+    private static bool IsMonthYearFormat(string code)
+    {
+        var letters = FormatLetters(code);
+        return letters.Contains('y') && !letters.Contains('d');
+    }
+
+    // حروف قالب بیرون از نقل‌قول، کروشه ([Red]، [$-fa-IR]) و نویسه‌ی escape شده.
+    private static string FormatLetters(string code)
+    {
+        var letters = new System.Text.StringBuilder();
         var inQuotes = false;
-        foreach (var c in code)
+        var inBrackets = false;
+        for (var i = 0; i < code.Length; i++)
         {
-            if (c == '"') inQuotes = !inQuotes;
-            else if (!inQuotes && char.ToLowerInvariant(c) is 'y' or 'd') return true;
+            var c = code[i];
+            if (inQuotes) { inQuotes = c != '"'; continue; }
+            if (inBrackets) { inBrackets = c != ']'; continue; }
+            if (c == '"') inQuotes = true;
+            else if (c == '[') inBrackets = true;
+            else if (c == '\\') i++;
+            else letters.Append(char.ToLowerInvariant(c));
         }
 
-        return false;
+        return letters.ToString();
     }
 
     private static XDocument Load(ZipArchiveEntry entry)
@@ -337,11 +378,11 @@ public static class XlsxReader
         using var stream = entry.Open();
 
         // بدون DTD: فایل آپلودی نباید بتواند موجودیت خارجی بارگذاری کند.
-        using var reader = XmlReader.Create(stream, new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null });
+        using var reader = XmlReader.Create(stream, new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null, MaxCharactersInDocument = MaxEntryBytes });
         return XDocument.Load(reader);
     }
 
-    private static string? ReadCell(XElement cell, List<string> shared, HashSet<int> dateStyles)
+    private static string? ReadCell(XElement cell, List<string> shared, CellFormats formats)
     {
         var type = cell.Attribute("t")?.Value;
 
@@ -350,13 +391,15 @@ public static class XlsxReader
         var value = cell.Element(Main + "v")?.Value;
         if (value is null) return null;
 
-        // عدد سریال تاریخ Excel (مبدأ ۱۸۹۹-۱۲-۳۰) ← میلادی روزانه. سلول فقط‌ساعت (کمتر از ۱) تاریخ نیست.
-        if ((type is null or "n") && int.TryParse(cell.Attribute("s")?.Value, out var style) && dateStyles.Contains(style)
+        // عدد سریال تاریخ Excel (مبدأ ۱۸۹۹-۱۲-۳۰ یا ۱۹۰۴-۰۱-۰۱) ← میلادی. سلول فقط‌ساعت (کمتر از ۱) تاریخ نیست.
+        // قالب ماه/سال به «MM/yyyy» می‌رود تا ImportValidator آخر ماه و هشدار دقت ماه را بدهد.
+        if ((type is null or "n") && int.TryParse(cell.Attribute("s")?.Value, out var style) && formats.DateStyles.Contains(style)
             && double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var serial)
-            && serial >= 1 && serial < 2958466)
+            && serial >= 1 && serial < 2958466 - (formats.Epoch.Year == 1904 ? 1462 : 0))
         {
-            var date = new DateTime(1899, 12, 30).AddDays(Math.Floor(serial));
-            return date.ToString("dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture);
+            var date = formats.Epoch.AddDays(Math.Floor(serial));
+            var pattern = formats.MonthYearStyles.Contains(style) ? "MM/yyyy" : "dd/MM/yyyy";
+            return date.ToString(pattern, System.Globalization.CultureInfo.InvariantCulture);
         }
 
         return type == "s" && int.TryParse(value, out var index) && index >= 0 && index < shared.Count

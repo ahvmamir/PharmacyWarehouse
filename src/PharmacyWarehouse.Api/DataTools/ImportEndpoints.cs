@@ -91,7 +91,7 @@ public static class ImportEndpoints
 
     private static async Task<IResult> ValidateAsync(ImportRequest request, WarehouseDbContext db)
     {
-        if (request.Rows is null) return ApiProblems.Validation("Rows", "ردیفی فرستاده نشد.");
+        if (request.Rows is null || request.Rows.Any(r => r is null)) return ApiProblems.Validation("Rows", "ردیفی فرستاده نشد.");
         if (request.Rows.Count > ImportValidator.MaxRows) return ApiProblems.Validation("Rows", $"بیش از {ImportValidator.MaxRows} ردیف.");
         return Results.Ok(await PreviewAsync(db, request.Rows, 0));
     }
@@ -151,7 +151,12 @@ public static class ImportEndpoints
 
         var products = await db.Products.AsNoTracking().ToListAsync();
         var byId = products.ToDictionary(p => p.Id, KeyOf);
-        foreach (var p in products) context.ExistingProducts[byId[p.Id]] = p.RequiresExpiry;
+        foreach (var p in products)
+        {
+            context.ExistingProducts[byId[p.Id]] = p.RequiresExpiry;
+            if (!p.IsActive) context.InactiveProducts.Add(byId[p.Id]);
+        }
+
         foreach (var b in await db.Batches.AsNoTracking().Select(b => new { b.ProductId, b.BatchKey }).ToListAsync())
             context.ExistingBatches.Add(ImportValidator.BatchKeyOf(byId[b.ProductId], b.BatchKey));
         foreach (var c in await db.ProductBarcodes.AsNoTracking().Select(c => new { c.ProductId, c.CodeKey }).ToListAsync())
@@ -160,7 +165,14 @@ public static class ImportEndpoints
         var locations = await db.StorageLocations.AsNoTracking().ToListAsync();
         foreach (var l in locations.Where(l => l.ParentId is null)) context.RootLocationKeys.Add(l.NameKey);
         var paths = LocationTree.Paths(locations.Select(l => new LocationNode(l.Id, l.ParentId, l.Name, l.SortOrder)));
-        foreach (var path in paths.Values) if (ImportValidator.LocationKey(path) is { } key) context.LocationPathKeys.Add(key);
+        var usable = LocationTree.EffectivelyActive(locations.Select(l => (new LocationNode(l.Id, l.ParentId, l.Name, l.SortOrder), l.IsActive)));
+        foreach (var (id, path) in paths)
+        {
+            if (ImportValidator.LocationKey(path) is not { } key) continue;
+            context.LocationPathKeys.Add(key);
+            if (!usable.Contains(id)) context.InactiveLocationPathKeys.Add(key);
+        }
+
         return context;
     }
 
@@ -168,7 +180,7 @@ public static class ImportEndpoints
 
     private static async Task<IResult> CommitAsync(ImportRequest request, WarehouseDbContext db, StockLedger ledger, AuditContext audit)
     {
-        if (request.Rows is null || request.Rows.Count == 0) return ApiProblems.Validation("Rows", "ردیفی برای ثبت نیست.");
+        if (request.Rows is null || request.Rows.Count == 0 || request.Rows.Any(r => r is null)) return ApiProblems.Validation("Rows", "ردیفی برای ثبت نیست.");
         if (request.Rows.Count > ImportValidator.MaxRows) return ApiProblems.Validation("Rows", $"بیش از {ImportValidator.MaxRows} ردیف.");
 
         var report = ImportValidator.Validate(request.Rows, await BuildContextAsync(db));
@@ -216,8 +228,13 @@ public static class ImportEndpoints
             : TextNormalizer.Clean(row.Sheet) is { } sheet ? EnsureChain(sheet.Replace('/', ' ').Replace('>', ' ').Replace('›', ' ')) : null;
 
         string KeyOf(Product p) => ImportValidator.ProductKeyOf(p.Name, p.Brand, p.PackDescription);
-        var productIds = (await db.Products.AsNoTracking().ToListAsync()).ToDictionary(KeyOf, p => p.Id);
+        var existingProducts = await db.Products.AsNoTracking().ToListAsync();
+        var productIds = existingProducts.ToDictionary(KeyOf, p => p.Id);
+        // محل قلم، برای اینکه بچِ هم‌محل LocationId خودش را نگیرد (مثل ورود جنس: خالی = محل قلم).
+        var productLocations = existingProducts.ToDictionary(p => p.Id, p => p.LocationId);
         var newProducts = new HashSet<Guid>();
+        var newProductDrafts = new Dictionary<Guid, (Product Product, List<string> Codes)>();
+        var seenBarcodes = new HashSet<string>();
         var existing = new HashSet<Guid>();
         var batches = 0;
         var barcodes = 0;
@@ -237,41 +254,52 @@ public static class ImportEndpoints
                     PackDescription = row.Pack,
                     PackKey = TextNormalizer.Key(row.Pack) ?? "",
                     LocationId = ResolveLocation(row),
-                    MinStock = row.MinStock,
                     RequiresExpiry = row.RequiresExpiry,
                     CreatedAtUtc = now
                 };
-                var codes = new List<string>();
-                if (row.Barcode is not null && row.BarcodeKey is not null)
-                {
-                    db.ProductBarcodes.Add(new ProductBarcode { Id = Guid.NewGuid(), ProductId = product.Id, Code = row.Barcode, CodeKey = row.BarcodeKey });
-                    codes.Add(row.Barcode);
-                    barcodes++;
-                }
-
-                product.SearchText = ProductEndpoints.BuildSearchText(product, codes);
                 db.Products.Add(product);
                 productIds[row.ProductKey] = productId = product.Id;
+                productLocations[productId] = product.LocationId;
                 newProducts.Add(productId);
+                newProductDrafts[productId] = (product, []);
             }
             else if (!newProducts.Contains(productId))
             {
                 existing.Add(productId);
             }
 
+            // بارکد و حداقل از هر ردیف قلم تازه؛ اولین حداقلِ پر می‌ماند و بارکد تکراری یک بار ثبت می‌شود.
+            if (newProductDrafts.TryGetValue(productId, out var draft))
+            {
+                draft.Product.MinStock ??= row.MinStock;
+                if (row.Barcode is not null && row.BarcodeKey is not null && seenBarcodes.Add(row.BarcodeKey))
+                {
+                    db.ProductBarcodes.Add(new ProductBarcode { Id = Guid.NewGuid(), ProductId = productId, Code = row.Barcode, CodeKey = row.BarcodeKey });
+                    draft.Codes.Add(row.Barcode);
+                    barcodes++;
+                }
+            }
+
             if (row.Quantity <= 0) continue;
 
+            var rowLocation = ResolveLocation(row);
             var batch = new Batch
             {
                 Id = Guid.NewGuid(), ProductId = productId, BatchNumber = row.BatchNumber!, BatchKey = row.BatchKey!,
                 ExpiryDate = row.Expiry?.Date, ExpiryPrecision = row.Expiry?.Precision ?? ExpiryPrecision.Day,
                 ExpiryCalendar = row.Expiry?.Calendar ?? CalendarKind.Gregorian, UnitCost = row.UnitCost,
+                LocationId = rowLocation != productLocations[productId] ? rowLocation : null,
                 // به ترتیب ردیف جلو می‌رود تا FEFO بین بچ‌های همتاریخ پایدار باشد.
                 CreatedAtUtc = now.AddTicks(order++)
             };
             db.Batches.Add(batch);
             ledger.Post(batch, StockMovementKind.Import, row.Quantity, now, ImportReason);
             batches++;
+        }
+
+        foreach (var (product, codes) in newProductDrafts.Values)
+        {
+            product.SearchText = ProductEndpoints.BuildSearchText(product, codes);
         }
 
         try
@@ -302,7 +330,7 @@ public static class ImportEndpoints
         "هر شیت یک محل یا گروه است؛ نام شیت اگر محلی با آن نام نباشد، ساخته می‌شود.",
         "ستون‌های اجباری: نام دارو و دوز، تعداد. تعداد ۰ یعنی فقط قلم تعریف شود.",
         "تاریخ انقضا: روز/ماه/سال یا ماه/سال، میلادی یا شمسی (سال کمتر از ۱۵۰۰ شمسی است).",
-        "ستون‌های «محل»، «بارکد»، «حداقل موجودی» و «قیمت» اختیاری‌اند. بارکد و حداقل موجودی فقط برای قلم تازه اعمال می‌شود.",
+        "ستون‌های «محل»، «بارکد»، «حداقل موجودی» و «قیمت» اختیاری‌اند. بارکد و حداقل موجودی فقط برای قلم تازه اعمال می‌شود. بچ در محل ردیف خودش ثبت می‌شود.",
         "بچی که از قبل در سیستم هست خطا می‌دهد؛ ورود Excel موجودی را جایگزین نمی‌کند."
     ];
 

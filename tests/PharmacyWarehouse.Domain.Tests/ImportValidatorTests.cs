@@ -21,6 +21,142 @@ public class ImportValidatorTests
     private static ImportRowStatus Single(ImportReport r) => Assert.Single(r.Statuses);
 
     [Theory]
+    [InlineData("12,5")]
+    [InlineData("1,2,3")]
+    [InlineData("1,20")]
+    [InlineData("12٬5")]
+    public void Quantity_WithMisplacedComma_IsError_NotSilentlyMerged(string qty)
+    {
+        var report = ImportValidator.Validate([Row(qty: qty)], Ctx("ضلع آزمایشی"));
+
+        Assert.Equal(ImportSeverity.Error, Single(report).Severity);
+        Assert.Empty(report.Plan);
+    }
+
+    [Theory]
+    [InlineData("1,200", 1200)]
+    [InlineData("1٬200", 1200)]
+    [InlineData("1,200,000", 1200000)]
+    [InlineData("1200", 1200)]
+    [InlineData("30.0", 30)]
+    public void Quantity_ValidForms_AreAccepted(string qty, int expected)
+    {
+        var report = ImportValidator.Validate([Row(qty: qty)], Ctx("ضلع آزمایشی"));
+
+        Assert.Equal(expected, Assert.Single(report.Plan).Quantity);
+    }
+
+    [Fact]
+    public void Pack_WithComma_IsKeptAsText_NotMergedInto25()
+    {
+        var report = ImportValidator.Validate([Row(pack: "2,5")], Ctx("ضلع آزمایشی"));
+
+        Assert.Equal("2,5", Assert.Single(report.Plan).Pack);
+    }
+
+    [Fact]
+    public void Pack_HugeNumber_DoesNotThrow()
+    {
+        var report = ImportValidator.Validate([Row(pack: "99999999999999999999")], Ctx("ضلع آزمایشی"));
+
+        Assert.Equal("99999999999999999999", Assert.Single(report.Plan).Pack);
+    }
+
+    [Theory]
+    [InlineData("12,5", null)]
+    [InlineData("1,200", 1200L)]
+    public void UnitCost_Comma_OnlyAsThousandsSeparator(string cost, long? expected)
+    {
+        var row = Row();
+        row.UnitCost = cost;
+
+        var report = ImportValidator.Validate([row], Ctx("ضلع آزمایشی"));
+
+        if (expected is null) Assert.Equal(ImportSeverity.Error, Single(report).Severity);
+        else Assert.Equal(expected, Assert.Single(report.Plan).UnitCost);
+    }
+
+    [Theory]
+    [InlineData("#REF!")]
+    [InlineData("#N/A")]
+    [InlineData("#VALUE!")]
+    [InlineData("#DIV/0!")]
+    [InlineData("#NAME?")]
+    public void ExcelErrorCell_IsError(string cell)
+    {
+        var report = ImportValidator.Validate([Row(batch: cell)], Ctx("ضلع آزمایشی"));
+
+        Assert.Equal(ImportSeverity.Error, Single(report).Severity);
+    }
+
+    [Fact]
+    public void InactiveProduct_CannotReceiveBatch_ButZeroQuantityRowIsHarmless()
+    {
+        var context = Ctx("ضلع آزمایشی");
+        var key = ImportValidator.ProductKeyOf("داروی آزمایشی", null, null);
+        context.ExistingProducts[key] = true;
+        context.InactiveProducts.Add(key);
+
+        Assert.Equal(ImportSeverity.Error, Single(ImportValidator.Validate([Row()], context)).Severity);
+        Assert.NotEqual(ImportSeverity.Error, Single(ImportValidator.Validate([Row(qty: "0")], context)).Severity);
+    }
+
+    [Fact]
+    public void InactiveLocation_FromColumn_FromSheet_OrAsAncestor_IsError()
+    {
+        var context = Ctx("قفسه آزمایشی");
+        context.InactiveLocationPathKeys.Add(ImportValidator.LocationKey("قفسه آزمایشی")!);
+
+        var column = Row(sheet: "دیگر");
+        column.Location = "قفسه آزمایشی";
+        var child = Row(sheet: "دیگر");
+        child.Location = "قفسه آزمایشی › طبقه تازه";
+
+        Assert.Equal(ImportSeverity.Error, Single(ImportValidator.Validate([column], context)).Severity);
+        Assert.Equal(ImportSeverity.Error, Single(ImportValidator.Validate([child], context)).Severity);
+        Assert.Equal(ImportSeverity.Error, Single(ImportValidator.Validate([Row(sheet: "قفسه آزمایشی")], context)).Severity);
+    }
+
+    [Fact]
+    public void SheetName_TooLongForLocation_IsError()
+    {
+        var report = ImportValidator.Validate([Row(sheet: new string('ا', Storage.LocationTree.MaxName + 1))], Ctx());
+
+        Assert.Equal(ImportSeverity.Error, Single(report).Severity);
+    }
+
+    [Fact]
+    public void ExistingProduct_NewBarcodeOrMinStock_WarnsThatItIsNotApplied_OwnBarcodeDoesNot()
+    {
+        var context = Ctx("ضلع آزمایشی");
+        var key = ImportValidator.ProductKeyOf("داروی آزمایشی", null, null);
+        context.ExistingProducts[key] = true;
+        context.ExistingBarcodes["TEST0001"] = key;
+
+        var newCode = Row();
+        newCode.Barcode = "TEST-0009";
+        var min = Row(batch: "TEST-B2");
+        min.MinStock = "4";
+        var own = Row(batch: "TEST-B3");
+        own.Barcode = "TEST0001";
+
+        Assert.Equal(ImportSeverity.Warning, Single(ImportValidator.Validate([newCode], context)).Severity);
+        Assert.Equal(ImportSeverity.Warning, Single(ImportValidator.Validate([min], context)).Severity);
+        Assert.Equal(ImportSeverity.Ok, Single(ImportValidator.Validate([own], context)).Severity);
+    }
+
+    [Fact]
+    public void ExistingProduct_ZeroQuantityRow_DoesNotListNewLocation()
+    {
+        var context = Ctx();
+        context.ExistingProducts[ImportValidator.ProductKeyOf("داروی آزمایشی", null, null)] = true;
+
+        var report = ImportValidator.Validate([Row(qty: "0", sheet: "شیت تازه")], context);
+
+        Assert.Empty(report.Summary.NewLocations);
+    }
+
+    [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("*")]
