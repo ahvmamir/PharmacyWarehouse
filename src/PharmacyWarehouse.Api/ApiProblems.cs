@@ -41,7 +41,8 @@ public static class ApiProblems
         property.IsModified = true;
     }
 
-    // نقض یکتایی (خطای ۱۹ SQLite): دو درخواست هم‌زمان که هر دو از بررسی کد رد شده‌اند.
+    // نقض یکتایی: دو درخواست هم‌زمان که هر دو از بررسی کد رد شده‌اند.
+    // فقط کد گسترده‌ی UNIQUE (2067) و PRIMARYKEY (1555)؛ بقیه‌ی خطاهای ۱۹ (NOT NULL، کلید خارجی، CHECK) باگ‌اند، نه تکراری.
     public static bool IsUniqueViolation(DbUpdateException exception) =>
-        exception.InnerException is Microsoft.Data.Sqlite.SqliteException { SqliteErrorCode: 19 };
+        exception.InnerException is Microsoft.Data.Sqlite.SqliteException { SqliteExtendedErrorCode: 2067 or 1555 };
 }

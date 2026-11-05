@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -13,8 +14,11 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     // مشتق‌اند یا کلید؛ تغییرشان خبر تازه‌ای نیست. هر ستونی که نامش با Key تمام شود هم ignore است (IsDerived).
     private static readonly HashSet<string> Ignored =
     [
-        "Id", "Version", "SearchText", "CreatedAtUtc", "UpdatedAtUtc"
+        "Id", "Version", "SearchText", "CreatedAtUtc", "UpdatedAtUtc",
+        "OnHand" // تاریخچه‌ی موجودی همان دفتر حرکت‌هاست (StockMovement)؛ ردیف تکراری فقط شلوغی است.
     ];
+
+    private static readonly JsonSerializerOptions ReadableJson = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     private static bool IsDerived(string name) => Ignored.Contains(name) || name.EndsWith("Key", StringComparison.Ordinal);
 
@@ -123,7 +127,8 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             values[property.Metadata.Name] = Format(useOriginal ? property.OriginalValue : property.CurrentValue);
         }
 
-        return JsonSerializer.Serialize(values);
+        // نویسه‌های فارسی escape نشوند تا ردیف‌ها خوانا ذخیره شوند. خروجی را Blazor موقع نمایش encode می‌کند.
+        return JsonSerializer.Serialize(values, ReadableJson);
     }
 
     private static string? Format(object? value) => value switch

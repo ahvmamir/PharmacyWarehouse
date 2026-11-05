@@ -117,6 +117,34 @@ public class ReceiptTests : ApiTestBase
     }
 
     [Fact]
+    public async Task ExistingBatchNumber_WithoutVersion_Returns409WithBatchExistsMessage()
+    {
+        var product = await ProductAsync();
+        await ReceiveOkAsync(Req(product));
+
+        var response = await Keeper.PostAsJsonAsync(ApiRoutes.Receipts, Req(product, expiry: null, version: null));
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        using var body = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("این بچ قبلاً ثبت شده است؛ آن را از فهرست بچ‌ها انتخاب کنید.", body.RootElement.GetProperty("title").GetString());
+        var type = body.RootElement.TryGetProperty("type", out var t) ? t.GetString() : null;
+        Assert.NotEqual(ProblemTypes.VersionConflict, type);
+    }
+
+    [Fact]
+    public async Task Receipt_WritesNoOnHandAuditRow()
+    {
+        var product = await ProductAsync();
+        var first = await ReceiveOkAsync(Req(product, quantity: 5));
+        await ReceiveOkAsync(Req(product, expiry: null, quantity: 4, version: first.Batch.Version));
+
+        var rows = await App.AuditRowsAsync(first.Batch.Id);
+
+        Assert.DoesNotContain(rows, r => r.Field == "OnHand");
+        Assert.DoesNotContain(rows.Where(r => r.Action == "Created"), r => r.NewValue!.Contains("OnHand"));
+    }
+
+    [Fact]
     public async Task ExistingBatch_ExpiryGivenButBatchHasNone_Returns409()
     {
         var product = await ProductAsync(requiresExpiry: false);

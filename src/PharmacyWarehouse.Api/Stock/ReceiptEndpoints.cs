@@ -13,6 +13,7 @@ namespace PharmacyWarehouse.Api.Stock;
 public static class ReceiptEndpoints
 {
     private const string TwoDates = "یک بچ دو تاریخ ندارد؛ بچ نامبر را بررسی کنید.";
+    private const string BatchExists = "این بچ قبلاً ثبت شده است؛ آن را از فهرست بچ‌ها انتخاب کنید.";
     private const string RaceMessage = "این بچ هم‌زمان ثبت شد؛ دوباره تلاش کنید.";
 
     public static void MapReceiptEndpoints(this WebApplication app)
@@ -73,7 +74,8 @@ public static class ReceiptEndpoints
         {
             // تاریخ خالی = همان تاریخ ثبت‌شده؛ هر تاریخ دیگر (حتی وقتی بچ تاریخ ندارد) ناسازگار است.
             if (expiry.Value is { } given && batch.ExpiryDate != given.Date) return ApiProblems.Conflict(TwoDates);
-            if (request.BatchVersion is not { } version) return ApiProblems.VersionConflict();
+            // بدون Version یعنی Client «بچ تازه» فرستاده ولی شماره موجود است؛ پیام کهنه‌بودن گمراه‌کننده است.
+            if (request.BatchVersion is not { } version) return ApiProblems.Conflict(BatchExists);
             db.ExpectVersion(batch, version);
         }
 

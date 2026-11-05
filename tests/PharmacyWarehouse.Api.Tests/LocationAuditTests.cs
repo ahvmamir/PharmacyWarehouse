@@ -33,6 +33,17 @@ public class LocationAuditTests : ApiTestBase
     }
 
     [Fact]
+    public async Task Create_StoresPersianTextUnescaped()
+    {
+        var location = await CreateAsync("قفسه‌ی آزمایشی");
+
+        var row = Assert.Single(await App.AuditRowsAsync(location.Id));
+
+        Assert.Contains("قفسه‌ی آزمایشی", row.NewValue);
+        Assert.DoesNotContain("\\u", row.NewValue);
+    }
+
+    [Fact]
     public async Task Create_WritesOneCreatedRow_WithTheRightUser()
     {
         var location = await CreateAsync("TEST-LOC-01");
