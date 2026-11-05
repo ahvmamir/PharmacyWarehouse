@@ -204,29 +204,23 @@
         if (ProductId is { } id && id != _loadedProductId) await PickAsync(id);
     }
 
-    // اسم‌گونه: حرف فارسی یا فاصله دارد. بارکد واقعی هیچ‌کدام را ندارد (همان منطق Products.razor).
-    private static bool LooksLikeName(string text) =>
-        text.Any(c => c == ' ' || (c >= '؀' && c <= 'ۿ' && char.IsLetter(c)));
-
     private async Task OnScanAsync(string text)
     {
         _scanError = null;
         _results = null;
 
-        if (!LooksLikeName(text))
+        // اول بارکد (حتی اگر متن حرف فارسی دارد)، بعد جست‌وجوی نام.
+        var lookup = await ProductLookup.ByCodeAsync(ProductsApi, text);
+        if (lookup.Kind == LookupKind.Found)
         {
-            var byCode = await ProductsApi.ByCodeAsync(text);
-            if (byCode.IsSuccess)
-            {
-                StartProduct(byCode.Value!);
-                return;
-            }
+            StartProduct(lookup.Product!);
+            return;
+        }
 
-            if (byCode.Outcome != ApiOutcome.NotFound)
-            {
-                _scanError = byCode.ErrorMessage;
-                return;
-            }
+        if (lookup.Kind == LookupKind.Error)
+        {
+            _scanError = lookup.Error;
+            return;
         }
 
         var list = await ProductsApi.ListAsync(text);
@@ -237,7 +231,7 @@
         }
 
         _results = list.Value!;
-        if (_results.Count == 0 && !LooksLikeName(text)) _scanError = "بارکد ناشناخته؛ قلم را با نام جست‌وجو کنید.";
+        if (_results.Count == 0 && !ProductLookup.LooksLikeName(text)) _scanError = "بارکد ناشناخته؛ قلم را با نام جست‌وجو کنید.";
     }
 
     private async Task PickAsync(Guid id)
@@ -323,6 +317,17 @@
         }
         else
         {
+            // شماره‌ی بچ موجود در حالت «بچ تازه»: سرور آن را بچ موجود می‌بیند و بدون Version ۴۰۹ می‌دهد.
+            // پس همین‌جا بچ موجود انتخاب می‌شود (بدون ثبت خودکار) تا کاربر تأیید کند.
+            var typedKey = TextNormalizer.ScanKey(_batchNumber);
+            if (typedKey is not null && product.Batches.FirstOrDefault(b => TextNormalizer.ScanKey(b.BatchNumber) == typedKey) is { } match)
+            {
+                _batchId = match.Id;
+                _batchNumber = "";
+                _formError = "این بچ قبلاً ثبت شده؛ فقط تعداد به آن اضافه می‌شود.";
+                return;
+            }
+
             request.BatchNumber = _batchNumber;
             request.Expiry = _expiry;
             if (Guid.TryParse(_locationText, out var location)) request.LocationId = location;

@@ -242,26 +242,22 @@ else
         _loaded = true;
     }
 
-    // اسم‌گونه: حرف فارسی یا فاصله دارد. بارکد واقعی هیچ‌کدام را ندارد.
-    private static bool LooksLikeName(string text) =>
-        text.Any(c => c == ' ' || (c >= '؀' && c <= 'ۿ' && char.IsLetter(c)));
-
     private async Task OnScanAsync(string text)
     {
-        var result = await ProductsApi.ByCodeAsync(text);
-        if (result.IsSuccess)
+        var lookup = await ProductLookup.ByCodeAsync(ProductsApi, text);
+        if (lookup.Kind == LookupKind.Found)
         {
-            Navigation.NavigateTo($"products/{result.Value!.Summary.Id}");
+            Navigation.NavigateTo($"products/{lookup.Product!.Summary.Id}");
             return;
         }
 
-        if (result.Outcome != ApiOutcome.NotFound)
+        if (lookup.Kind == LookupKind.Error)
         {
-            _error = result.ErrorMessage;
+            _error = lookup.Error;
             return;
         }
 
-        if (LooksLikeName(text))
+        if (ProductLookup.LooksLikeName(text))
         {
             _query = text;
             await LoadAsync();
