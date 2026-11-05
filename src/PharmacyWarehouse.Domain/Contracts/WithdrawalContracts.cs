@@ -7,7 +7,8 @@ public sealed record AllocationLineItem(
     Guid BatchId, string BatchNumber, string? ExpiryText, string? LocationPath, int Quantity, int OnHand, bool IsExpired, int Version);
 
 // Lines = پیشنهاد FEFO (فقط بچ‌های منقضی‌نشده). Shortfall > 0 یعنی موجودی قابل‌استفاده کم است.
-// Available = همه‌ی بچ‌های دارای موجودی برای انتخاب دستی (منقضی‌ها آخر)؛ کلاینت برای برداشت به stock.view نیاز ندارد.
+// Available = همه‌ی بچ‌های دارای موجودی برای انتخاب دستی (منقضی‌ها آخر). «منقضی» نسبت به زمان برداشت (minutesAgo) سنجیده می‌شود.
+// توجه: صفحه‌ی برداشت برای یافتن قلم (اسکن/جست‌وجو) هنوز به stock.view نیاز دارد؛ خودِ allocation و ثبت نه.
 public sealed record AllocationResponse(
     Guid ProductId, string ProductName, string? Brand, string? PackDescription, bool AllowExpiredWithdrawal,
     IReadOnlyList<AllocationLineItem> Lines, IReadOnlyList<AllocationLineItem> Available, int Shortfall, int UsableOnHand);
@@ -25,6 +26,8 @@ public sealed class WithdrawalRequest
 {
     public Guid ProductId { get; set; }
     public DateTime? OccurredAtUtc { get; set; }
+    // اگر پر باشد بر OccurredAtUtc ارجح است و سرور «اکنون منهای این دقیقه» را حساب می‌کند؛ وابسته به ساعت دستگاه نیست.
+    public int? MinutesAgo { get; set; }
     public string? Note { get; set; }
     public List<WithdrawalLineRequest> Lines { get; set; } = [];
 }

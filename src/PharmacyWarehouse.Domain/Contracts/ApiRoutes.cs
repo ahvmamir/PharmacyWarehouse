@@ -28,7 +28,7 @@ public static class ApiRoutes
     public static string ProductByCode(string code) => $"{Products}/by-code/{Uri.EscapeDataString(code)}";
     public static string ProductBarcodes(Guid id) => $"{Products}/{id}/barcodes";
     public static string ProductBarcode(Guid id, Guid barcodeId) => $"{Products}/{id}/barcodes/{barcodeId}";
-    public static string ProductAllocation(Guid id, int quantity) => $"{Products}/{id}/allocation?quantity={quantity}";
+    public static string ProductAllocation(Guid id, int quantity, int minutesAgo = 0) => $"{Products}/{id}/allocation?quantity={quantity}&minutesAgo={minutesAgo}";
     public static string ProductHistory(Guid id) => $"{Products}/{id}/history";
     public static string UserResetPassword(Guid id) => $"{Users}/{id}/reset-password";
 }

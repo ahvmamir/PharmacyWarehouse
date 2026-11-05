@@ -13,6 +13,7 @@ namespace PharmacyWarehouse.Api.Stock;
 public static class WithdrawalEndpoints
 {
     private const int MaxListTake = 200;
+    private const int MaxMinutesAgo = WithdrawalRules.MaxBackdateDays * 24 * 60;
 
     public static void MapWithdrawalEndpoints(this WebApplication app)
     {
@@ -29,15 +30,17 @@ public static class WithdrawalEndpoints
         return LocationTree.Paths(all.Select(l => new LocationNode(l.Id, l.ParentId, l.Name, l.SortOrder))).ToDictionary(p => p.Key, p => p.Value);
     }
 
-    private static async Task<IResult> AllocationAsync(Guid id, int quantity, WarehouseDbContext db)
+    private static async Task<IResult> AllocationAsync(Guid id, int quantity, WarehouseDbContext db, int minutesAgo = 0)
     {
         if (quantity <= 0) return ApiProblems.Validation("Quantity", "تعداد باید بیشتر از صفر باشد.");
+        if (minutesAgo < 0 || minutesAgo > MaxMinutesAgo) return ApiProblems.Validation("MinutesAgo", "زمان برداشت نامعتبر است.");
 
         var product = await db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id);
         if (product is null) return ApiProblems.NotFound();
         if (!product.IsActive) return ApiProblems.Validation("ProductId", "این قلم غیرفعال است.");
 
-        var today = BatchMapping.Today();
+        // «منقضی» نسبت به روز برداشت فیزیکی، مثل ثبت.
+        var today = LocalDay.Today(DateTime.UtcNow.AddMinutes(-minutesAgo));
         var batches = await db.Batches.AsNoTracking().Where(b => b.ProductId == id && b.OnHand > 0).ToListAsync();
         var paths = await PathsAsync(db);
         var byId = batches.ToDictionary(b => b.Id);
@@ -67,7 +70,7 @@ public static class WithdrawalEndpoints
     {
         if (audit.UserId is not { } userId) return ApiProblems.Forbidden("کاربر شناخته نشد.");
 
-        if (request.Lines.Count == 0) return ApiProblems.Validation("Lines", "حداقل یک بچ لازم است.");
+        if (request.Lines is null || request.Lines.Count == 0) return ApiProblems.Validation("Lines", "حداقل یک بچ لازم است.");
         if (request.Lines.Any(l => l.Quantity <= 0)) return ApiProblems.Validation("Quantity", "تعداد هر بچ باید بیشتر از صفر باشد.");
         if (request.Lines.Select(l => l.BatchId).Distinct().Count() != request.Lines.Count) return ApiProblems.Validation("Lines", "یک بچ فقط یک بار می‌آید.");
 
@@ -75,7 +78,9 @@ public static class WithdrawalEndpoints
         if (note is { Length: > ProductRules.MaxNote }) return ApiProblems.Validation("Note", $"یادداشت حداکثر {ProductRules.MaxNote} نویسه است.");
 
         var now = DateTime.UtcNow;
-        var time = WithdrawalRules.ResolveTime(request.OccurredAtUtc, now);
+        if (request.MinutesAgo is < 0 or > MaxMinutesAgo) return ApiProblems.Validation("MinutesAgo", "زمان برداشت نامعتبر است.");
+        var requestedTime = request.MinutesAgo is { } minutes ? now.AddMinutes(-minutes) : request.OccurredAtUtc;
+        var time = WithdrawalRules.ResolveTime(requestedTime, now);
         if (time.Error is { } timeError) return ApiProblems.Validation("OccurredAtUtc", timeError);
 
         var product = await db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == request.ProductId);

@@ -12,8 +12,8 @@ public sealed class WithdrawalsClient
         _http = http;
     }
 
-    public Task<ApiResult<AllocationResponse>> AllocationAsync(Guid productId, int quantity) =>
-        ApiSender.SendAsync<AllocationResponse>(ct => _http.GetAsync(ApiRoutes.ProductAllocation(productId, quantity), ct));
+    public Task<ApiResult<AllocationResponse>> AllocationAsync(Guid productId, int quantity, int minutesAgo = 0) =>
+        ApiSender.SendAsync<AllocationResponse>(ct => _http.GetAsync(ApiRoutes.ProductAllocation(productId, quantity, minutesAgo), ct));
 
     // ۴۰۹: موجودی/Version عوض شده، بچ منقضی، یا موجودی بچ کم است؛ پیام فارسی در ErrorMessage.
     public Task<ApiResult<WithdrawalItem>> CreateAsync(WithdrawalRequest request) =>

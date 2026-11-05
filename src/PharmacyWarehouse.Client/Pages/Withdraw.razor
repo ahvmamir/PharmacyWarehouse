@@ -48,7 +48,8 @@
         }
     </section>
 
-    @if (_loading)
+    @* فقط بارگذاری اول؛ در بارگذاری مجدد محتوا نباید جابه‌جا شود، وگرنه لمس دکمه‌ی «ثبت» (که فیلد تعداد را blur می‌کند) گم می‌شود. *@
+    @if (_loading && _allocation is null)
     {
         <div class="loading-line">در حال بارگذاری…</div>
     }
@@ -132,14 +133,14 @@
             <div class="form-grid mt-3">
                 <div class="form-field">
                     <label for="withdraw-when">زمان برداشت</label>
-                    <select id="withdraw-when" class="form-select" @bind="_whenMinutes">
+                    <select id="withdraw-when" class="form-select" value="@_whenMinutes" @onchange="OnWhenChangedAsync">
                         @foreach (var (minutes, label) in WhenOptions)
                         {
                             <option value="@minutes">@label</option>
                         }
                     </select>
                     <FieldError Field="OccurredAtUtc" Errors="_errors" />
-                    @if (_whenMinutes != "0")
+                    @if (MinutesAgo > (int)WithdrawalRules.LateAfter.TotalMinutes)
                     {
                         <div class="form-hint">ثبت دیرهنگام؛ برای انباردار علامت می‌خورد.</div>
                     }
@@ -166,11 +167,11 @@
 </RequirePermission>
 
 @code {
-    // مقدار = دقیقه‌ی قبل. حداکثر ۶ روز (نه ۷)، تا اختلاف ساعت گوشی و سرور مرز ۷ روزه‌ی سرور را رد نکند.
+    // مقدار = دقیقه‌ی قبل؛ سرور «اکنون منهای این» را حساب می‌کند، پس ساعت گوشی دخیل نیست.
     private static readonly (string Minutes, string Label)[] WhenOptions =
     [
         ("0", "اکنون"), ("60", "۱ ساعت پیش"), ("180", "۳ ساعت پیش"), ("360", "۶ ساعت پیش"), ("720", "۱۲ ساعت پیش"),
-        ("1440", "۱ روز پیش"), ("2880", "۲ روز پیش"), ("4320", "۳ روز پیش"), ("7200", "۵ روز پیش"), ("8640", "۶ روز پیش")
+        ("1440", "۱ روز پیش"), ("2880", "۲ روز پیش"), ("4320", "۳ روز پیش"), ("7200", "۵ روز پیش"), ("10080", "۷ روز پیش")
     ];
 
     private ScanInput? _scan;
@@ -188,6 +189,8 @@
     private string _whenMinutes = "0";
     private string _note = "";
 
+    private int MinutesAgo => int.TryParse(_whenMinutes, out var m) && m > 0 ? m : 0;
+
     private int ManualTotal => _manualLines.Values.Sum();
     private int ManualQuantity(Guid id) => _manualLines.GetValueOrDefault(id);
 
@@ -198,9 +201,10 @@
     private bool SelectedHasExpired =>
         _allocation is { } a && SelectedLines.Any(s => a.Available.FirstOrDefault(b => b.BatchId == s.BatchId)?.IsExpired == true);
 
-    private bool CanSubmit => _allocation is { } a && (_manual
+    // جمع خطوط باید با تعداد نمایش‌داده‌شده برابر باشد (تقسیم کهنه یا تعداد نامعتبر ثبت نشود).
+    private bool CanSubmit => _allocation is { } a && !_errors.ContainsKey("Quantity") && (_manual
         ? ManualTotal > 0
-        : a.Shortfall == 0 && a.Lines.Count > 0);
+        : a.Shortfall == 0 && a.Lines.Count > 0 && a.Lines.Sum(l => l.Quantity) == _quantity);
 
     private async Task OnScanAsync(string text)
     {
@@ -249,10 +253,18 @@
         await LoadAllocationAsync(productId, _quantity);
     }
 
-    private async Task LoadAllocationAsync(Guid productId, int quantity)
+    // آخرین بارگذاری؛ «ثبت» پیش از ارسال منتظر آن می‌ماند تا تقسیم کهنه ثبت نشود.
+    private Task _loadTask = Task.CompletedTask;
+    private int _loadSeq;
+
+    private Task LoadAllocationAsync(Guid productId, int quantity) => _loadTask = LoadCoreAsync(productId, quantity);
+
+    private async Task LoadCoreAsync(Guid productId, int quantity)
     {
+        var seq = ++_loadSeq;
         _loading = true;
-        var result = await WithdrawalsApi.AllocationAsync(productId, quantity);
+        var result = await WithdrawalsApi.AllocationAsync(productId, quantity, MinutesAgo);
+        if (seq != _loadSeq) return; // درخواست جدیدتری فرستاده شده؛ پاسخ قدیمی‌تر جایش را نمی‌گیرد.
         _loading = false;
 
         if (!result.IsSuccess)
@@ -263,6 +275,14 @@
         }
 
         _allocation = result.Value!;
+    }
+
+    private async Task OnWhenChangedAsync(ChangeEventArgs e)
+    {
+        _whenMinutes = e.Value?.ToString() ?? "0";
+        _manual = false;
+        _manualLines.Clear();
+        if (_allocation is { } a) await LoadAllocationAsync(a.ProductId, _quantity);
     }
 
     private async Task ChangeQuantityAsync(int quantity)
@@ -305,6 +325,9 @@
     {
         var text = TextNormalizer.ToAsciiDigits(e.Value?.ToString() ?? "");
         var value = int.TryParse(text, out var parsed) ? Math.Clamp(parsed, 0, onHand) : 0;
+        _errors = int.TryParse(text, out var typed) && typed > onHand
+            ? new() { ["Lines"] = [$"موجودی این بچ {JalaliDate.ToPersianDigits(onHand.ToString())} جعبه است؛ مقدار به همان کاهش یافت."] }
+            : [];
         _manualLines[batchId] = value;
         _quantity = Math.Max(1, ManualTotal);
     }
@@ -323,6 +346,9 @@
 
     private async Task SubmitAsync()
     {
+        // لمس «ثبت» فیلد تعداد را blur می‌کند و تقسیم دوباره گرفته می‌شود؛ منتظر همان می‌مانیم.
+        if (_busy) return;
+        await _loadTask;
         if (_allocation is not { } allocation || !CanSubmit) return;
 
         _errors = [];
@@ -339,7 +365,7 @@
                 BatchVersion = allocation.Available.First(b => b.BatchId == s.BatchId).Version
             }).ToList()
         };
-        if (int.TryParse(_whenMinutes, out var minutes) && minutes > 0) request.OccurredAtUtc = DateTime.UtcNow.AddMinutes(-minutes);
+        if (MinutesAgo > 0) request.MinutesAgo = MinutesAgo;
 
         _busy = true;
         var result = await WithdrawalsApi.CreateAsync(request);
@@ -358,7 +384,7 @@
         _errors = result.Problem?.Errors ?? [];
         _formError = result.ErrorMessage;
 
-        if (result.Outcome == ApiOutcome.Conflict)
+        if (result.Outcome == ApiOutcome.Conflict && _allocation is not null)
         {
             // موجودی یا Version عوض شده: تقسیم تازه گرفته می‌شود و هیچ‌چیز بی‌صدا ثبت نمی‌شود.
             _manual = false;

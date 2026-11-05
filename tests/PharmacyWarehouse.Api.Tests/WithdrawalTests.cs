@@ -298,4 +298,98 @@ public class WithdrawalTests : ApiTestBase
         var item = Assert.Single(list!);
         Assert.Equal(JalaliDate.ToPersianDigits("04/1450"), item.NearestExpiryText);
     }
+
+    [Fact]
+    public async Task Allocation_WithMinutesAgo_JudgesExpiryByPhysicalDay()
+    {
+        var product = await App.AddProductRawAsync("TEST-DRUG-W9", null);
+        var yesterdayExpired = await App.AddBatchRawAsync(product, "LOT-EDGE", null, onHand: 5, expiry: Today.AddDays(-1));
+
+        var now = await AllocationAsync(Staff, product, 2);
+        Assert.Empty(now.Lines);
+
+        var response = await Staff.GetAsync(ApiRoutes.ProductAllocation(product, 2, minutesAgo: 3 * 24 * 60));
+        var threeDaysAgo = (await response.Content.ReadFromJsonAsync<AllocationResponse>())!;
+        Assert.Equal(yesterdayExpired, Assert.Single(threeDaysAgo.Lines).BatchId);
+        Assert.False(threeDaysAgo.Available[0].IsExpired);
+    }
+
+    [Fact]
+    public async Task Create_MinutesAgo_ServerComputesTime_FullSevenDays_AndRejectsMore()
+    {
+        var (product, _, _) = await TwoBatchesAsync();
+        var line = (await AllocationAsync(Staff, product, 1)).Lines[0];
+
+        var sevenDays = Req(product, (line, 1));
+        sevenDays.MinutesAgo = 7 * 24 * 60;
+        var ok = await Staff.PostAsJsonAsync(ApiRoutes.Withdrawals, sevenDays);
+        Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+        var item = (await ok.Content.ReadFromJsonAsync<WithdrawalItem>())!;
+        Assert.True(item.IsLate);
+        Assert.InRange((item.AtUtc - item.OccurredAtUtc).TotalDays, 6.99, 7.01);
+
+        line = (await AllocationAsync(Staff, product, 1)).Lines[0];
+        var tooOld = Req(product, (line, 1));
+        tooOld.MinutesAgo = 7 * 24 * 60 + 1;
+        Assert.Equal(HttpStatusCode.BadRequest, (await Staff.PostAsJsonAsync(ApiRoutes.Withdrawals, tooOld)).StatusCode);
+
+        var negative = Req(product, (line, 1));
+        negative.MinutesAgo = -5;
+        Assert.Equal(HttpStatusCode.BadRequest, (await Staff.PostAsJsonAsync(ApiRoutes.Withdrawals, negative)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Create_MinutesAgo_OneHour_IsNotLate()
+    {
+        var (product, _, _) = await TwoBatchesAsync();
+        var line = (await AllocationAsync(Staff, product, 1)).Lines[0];
+        var request = Req(product, (line, 1));
+        request.MinutesAgo = 60;
+
+        var item = (await (await Staff.PostAsJsonAsync(ApiRoutes.Withdrawals, request)).Content.ReadFromJsonAsync<WithdrawalItem>())!;
+
+        Assert.False(item.IsLate);
+    }
+
+    [Fact]
+    public async Task Create_LateEntry_BatchAlreadyExpiredOnPhysicalDay_Returns409()
+    {
+        var product = await App.AddProductRawAsync("TEST-DRUG-W10", null);
+        await App.AddBatchRawAsync(product, "LOT-DEAD", null, onHand: 5, expiry: Today.AddDays(-5));
+        var line = (await AllocationAsync(Staff, product, 1)).Available.Single();
+        var request = Req(product, (line, 1));
+        request.MinutesAgo = 3 * 24 * 60;
+
+        var response = await Staff.PostAsJsonAsync(ApiRoutes.Withdrawals, request);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("منقضی", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Create_Rejected_LeavesNoWithdrawalOrAuditRows()
+    {
+        var (product, _, _) = await TwoBatchesAsync();
+        var allocation = await AllocationAsync(Staff, product, 1);
+        // خط اول معتبر، خط دوم بیش از موجودی؛ هیچ‌چیز نباید ذخیره شود.
+        var request = Req(product, (allocation.Available[0], 1), (allocation.Available[1], 999));
+
+        Assert.Equal(HttpStatusCode.Conflict, (await Staff.PostAsJsonAsync(ApiRoutes.Withdrawals, request)).StatusCode);
+
+        using var scope = App.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<WarehouseDbContext>();
+        Assert.Equal(0, await db.Withdrawals.CountAsync());
+        Assert.Equal(0, await db.AuditEntries.CountAsync(a => a.EntityType == "Withdrawal"));
+        Assert.DoesNotContain(await db.StockMovements.ToListAsync(), m => m.Kind == StockMovementKind.Withdrawal);
+        await App.AssertLedgerConsistentAsync();
+    }
+
+    [Fact]
+    public async Task Create_NullLines_Returns400NotServerError()
+    {
+        var (product, _, _) = await TwoBatchesAsync();
+        var body = new StringContent($"{{\"productId\":\"{product}\",\"lines\":null}}", System.Text.Encoding.UTF8, "application/json");
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await Staff.PostAsync(ApiRoutes.Withdrawals, body)).StatusCode);
+    }
 }

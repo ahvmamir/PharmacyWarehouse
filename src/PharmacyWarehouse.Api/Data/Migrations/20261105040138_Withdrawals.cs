@@ -71,19 +71,7 @@ namespace PharmacyWarehouse.Api.Data.Migrations
         }
 
         /// <inheritdoc />
-        protected override void Down(MigrationBuilder migrationBuilder)
-        {
-            migrationBuilder.DropForeignKey(
-                name: "FK_StockMovements_Withdrawals_WithdrawalId",
-                table: "StockMovements");
-
-            migrationBuilder.DropTable(
-                name: "Withdrawals");
-
-            migrationBuilder.DropIndex(
-                name: "IX_StockMovements_WithdrawalId",
-                table: "StockMovements");
-
-        }
+        protected override void Down(MigrationBuilder migrationBuilder) =>
+            throw new NotSupportedException("برگشت این migration پشتیبانی نمی‌شود: با داده‌ی برداشت روی کلید خارجی خطا می‌دهد و triggerهای StockMovements از بین می‌روند؛ از پشتیبان استفاده شود.");
     }
 }

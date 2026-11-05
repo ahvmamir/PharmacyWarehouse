@@ -21,10 +21,7 @@ namespace PharmacyWarehouse.Api.Data.Migrations
         }
 
         /// <inheritdoc />
-        protected override void Down(MigrationBuilder migrationBuilder)
-        {
-            migrationBuilder.Sql("DROP TRIGGER IF EXISTS StockMovements_NoUpdate;");
-            migrationBuilder.Sql("DROP TRIGGER IF EXISTS StockMovements_NoDelete;");
-        }
+        protected override void Down(MigrationBuilder migrationBuilder) =>
+            throw new NotSupportedException("برگشت این migration پشتیبانی نمی‌شود (triggerهای StockMovements از بین می‌رفتند)؛ از پشتیبان استفاده شود.");
     }
 }
