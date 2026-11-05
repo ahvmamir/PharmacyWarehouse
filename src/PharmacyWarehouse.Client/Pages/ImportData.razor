@@ -1,0 +1,236 @@
+@page "/admin/import"
+@attribute [Authorize]
+@using PharmacyWarehouse.Domain.Import
+@inject ImportClient ImportApi
+@inject ApiAuthenticationStateProvider Session
+@inject ToastService Toasts
+@inject IJSRuntime JS
+
+<PageTitle>ورود و خروج Excel | انبار داروخانه</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1>ورود و خروج Excel</h1>
+        <p>فایل را بارگذاری کنید، خطاها را در جدول اصلاح کنید، دوباره بررسی کنید و ثبت کنید. ورود Excel موجودی بچ‌های موجود را جایگزین نمی‌کند.</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        @if (Session.Can(Permissions.DataImport))
+        {
+            <button type="button" class="btn btn-quiet" disabled="@_busy" @onclick="() => DownloadAsync(ImportApi.TemplateAsync)"><AppIcon Name="download" /> قالب خالی</button>
+        }
+        @if (Session.Can(Permissions.DataExport))
+        {
+            <button type="button" class="btn btn-quiet" disabled="@_busy" @onclick="() => DownloadAsync(ImportApi.ExportAsync)"><AppIcon Name="download" /> خروجی Excel</button>
+        }
+    </div>
+</div>
+
+<RequirePermission Permission="@Permissions.DataImport">
+    <section class="card-emu">
+        <div class="card-emu-body">
+            <label for="import-file" class="form-hint">فایل Excel (xlsx، حداکثر ۱۰ مگابایت)</label>
+            <InputFile id="import-file" class="form-control" accept=".xlsx" OnChange="OnFileAsync" disabled="@_busy" />
+            @if (_error is not null)
+            {
+                <div class="form-alert mt-3 mb-0" role="alert"><AppIcon Name="warning" /> <span>@_error</span></div>
+            }
+        </div>
+    </section>
+
+    @if (_loading)
+    {
+        <div class="loading-line">در حال پردازش…</div>
+    }
+
+    @if (_preview is { } preview && _rows is not null)
+    {
+        var summary = preview.Summary;
+        <section class="card-emu">
+            <div class="card-emu-body">
+                <div class="import-summary">
+                    <span><strong>@Num(summary.NewProducts)</strong> قلم تازه</span>
+                    <span><strong>@Num(summary.ExistingProducts)</strong> قلم موجود</span>
+                    <span><strong>@Num(summary.NewBatches)</strong> بچ تازه</span>
+                    <span><strong>@Num(summary.ZeroQuantityProducts)</strong> قلم با تعداد ۰ (فقط تعریف)</span>
+                    <span><strong>@Num(preview.IgnoredRows)</strong> ردیف خالی/قالب نادیده</span>
+                    <span class="@(summary.ErrorRows > 0 ? "import-bad" : "")"><strong>@Num(summary.ErrorRows)</strong> ردیف با خطا</span>
+                    <span><strong>@Num(summary.WarningRows)</strong> ردیف با هشدار</span>
+                </div>
+                @if (summary.NewLocations.Count > 0)
+                {
+                    <div class="form-hint mt-2">محل‌های تازه که ساخته می‌شوند: <bdi>@string.Join("، ", summary.NewLocations)</bdi></div>
+                }
+            </div>
+        </section>
+
+        <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+            <label class="d-flex align-items-center gap-2">
+                <input type="checkbox" class="form-check-input" checked="@_onlyProblems" @onchange="e => { _onlyProblems = (bool)e.Value!; _shown = PageSize; }" /> فقط ردیف‌های دارای خطا یا هشدار
+            </label>
+            <button type="button" class="btn btn-quiet" disabled="@(_busy || !_dirty)" @onclick="RevalidateAsync">بررسی دوباره</button>
+            <button type="button" class="btn btn-primary" disabled="@(_busy || _dirty || !preview.CanCommit)" @onclick="CommitAsync">
+                ثبت @Num(summary.NewProducts + summary.ExistingProducts) قلم و @Num(summary.NewBatches) بچ
+            </button>
+            @if (_dirty)
+            {
+                <span class="form-hint">ردیف‌ها را تغییر داده‌اید؛ اول «بررسی دوباره».</span>
+            }
+        </div>
+
+        @if (Visible.Count == 0)
+        {
+            <div class="table-card"><div class="empty-state"><AppIcon Name="check" Size="40" /><h2>@(_onlyProblems ? "ردیف دارای خطا یا هشداری نیست" : "ردیفی نیست")</h2></div></div>
+        }
+        else
+        {
+            <div class="table-card" style="overflow-x:auto;">
+                <table class="table-emu import-table">
+                    <thead>
+                        <tr>
+                            <th>شیت / ردیف</th><th>نام دارو و دوز</th><th>نام تجاری</th><th>تعداد</th><th>در بسته</th><th>بچ نامبر</th><th>انقضا</th><th>انقضا لازم نیست</th><th>وضعیت</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var i in Visible.Take(_shown))
+                        {
+                            var row = _rows[i];
+                            var status = _statuses[i];
+                            <tr @key="i" class="import-row-@status.Severity.ToString().ToLowerInvariant()">
+                                <td><bdi>@row.Sheet</bdi> <span class="cell-sub">@Num(row.RowNumber)</span></td>
+                                <td><input class="form-control" value="@row.Name" aria-label="نام" @onchange="e => Edit(row, r => r.Name = Val(e))" /></td>
+                                <td><input class="form-control" value="@row.Brand" aria-label="برند" @onchange="e => Edit(row, r => r.Brand = Val(e))" /></td>
+                                <td><input class="form-control import-narrow" dir="ltr" value="@row.Quantity" aria-label="تعداد" @onchange="e => Edit(row, r => r.Quantity = Val(e))" /></td>
+                                <td><input class="form-control import-narrow" dir="ltr" value="@row.UnitsPerPack" aria-label="در بسته" @onchange="e => Edit(row, r => r.UnitsPerPack = Val(e))" /></td>
+                                <td><input class="form-control" dir="ltr" value="@row.BatchNumber" aria-label="بچ" @onchange="e => Edit(row, r => r.BatchNumber = Val(e))" /></td>
+                                <td><input class="form-control" dir="ltr" value="@row.Expiry" aria-label="انقضا" @onchange="e => Edit(row, r => r.Expiry = Val(e))" /></td>
+                                <td><input type="checkbox" class="form-check-input" checked="@row.ExpiryNotRequired" aria-label="انقضا لازم نیست" @onchange="e => Edit(row, r => r.ExpiryNotRequired = (bool)e.Value!)" /></td>
+                                <td>
+                                    @if (status.Severity == ImportSeverity.Error) { <span class="status-badge status-expired">خطا</span> }
+                                    else if (status.Severity == ImportSeverity.Warning) { <span class="status-badge status-pending">هشدار</span> }
+                                    else { <span class="status-badge status-active">درست</span> }
+                                    @foreach (var message in status.Messages) { <div class="cell-sub">@message</div> }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            @if (Visible.Count > _shown)
+            {
+                <button type="button" class="btn btn-quiet mt-2" @onclick="() => _shown += PageSize">نمایش @Num(Math.Min(PageSize, Visible.Count - _shown)) ردیف بعدی (از @Num(Visible.Count - _shown) ردیف مانده)</button>
+            }
+        }
+    }
+</RequirePermission>
+
+@code {
+    private const int PageSize = 100;
+    private const long MaxFileBytes = 10 * 1024 * 1024;
+
+    private ImportPreview? _preview;
+    private List<ImportRowInput>? _rows;
+    private IReadOnlyList<ImportRowStatus> _statuses = [];
+    private string? _error;
+    private bool _busy;
+    private bool _loading;
+    private bool _dirty;
+    private bool _onlyProblems = true;
+    private int _shown = PageSize;
+
+    private static string Num(int value) => JalaliDate.ToPersianDigits(value.ToString());
+    private static string? Val(ChangeEventArgs e) => e.Value?.ToString();
+
+    private List<int> Visible => Enumerable.Range(0, _rows?.Count ?? 0)
+        .Where(i => _statuses[i].Severity != ImportSeverity.Ignored && (!_onlyProblems || _statuses[i].Severity is ImportSeverity.Error or ImportSeverity.Warning))
+        .ToList();
+
+    private void Edit(ImportRowInput row, Action<ImportRowInput> change)
+    {
+        change(row);
+        _dirty = true;
+    }
+
+    private void Show(ImportPreview preview)
+    {
+        _preview = preview;
+        _rows = preview.Rows.ToList();
+        _statuses = preview.Statuses;
+        _dirty = false;
+        _shown = PageSize;
+        _onlyProblems = preview.Summary.ErrorRows + preview.Summary.WarningRows > 0;
+    }
+
+    private async Task OnFileAsync(InputFileChangeEventArgs e)
+    {
+        _error = null;
+        _preview = null;
+        _rows = null;
+        if (e.FileCount == 0) return;
+
+        var file = e.File;
+        if (file.Size > MaxFileBytes) { _error = "فایل بیش از ۱۰ مگابایت است."; return; }
+
+        _loading = true;
+        _busy = true;
+        try
+        {
+            using var memory = new MemoryStream();
+            await file.OpenReadStream(MaxFileBytes).CopyToAsync(memory);
+            var result = await ImportApi.ParseAsync(memory.ToArray(), file.Name);
+            if (result.IsSuccess) Show(result.Value!);
+            else _error = result.ErrorMessage;
+        }
+        finally
+        {
+            _loading = false;
+            _busy = false;
+        }
+    }
+
+    private async Task RevalidateAsync()
+    {
+        if (_rows is null) return;
+
+        _busy = true;
+        var result = await ImportApi.ValidateAsync(_rows);
+        _busy = false;
+        if (result.IsSuccess) Show(result.Value! with { IgnoredRows = _preview?.IgnoredRows ?? 0 });
+        else Toasts.Show(result.ErrorMessage, isWarning: true);
+    }
+
+    private async Task CommitAsync()
+    {
+        if (_rows is null || _busy) return;
+
+        _busy = true;
+        var result = await ImportApi.CommitAsync(_rows);
+        _busy = false;
+
+        if (!result.IsSuccess)
+        {
+            Toasts.Show(result.ErrorMessage, isWarning: true);
+            if (result.Outcome == ApiOutcome.Conflict) await RevalidateAsync(); // سیستم عوض شده؛ پیش‌نمایش تازه
+            return;
+        }
+
+        var r = result.Value!;
+        Toasts.Show($"ثبت شد: {Num(r.ProductsCreated)} قلم تازه، {Num(r.BatchesCreated)} بچ" + (r.LocationsCreated > 0 ? $"، {Num(r.LocationsCreated)} محل تازه" : "") + ".");
+        _preview = null;
+        _rows = null;
+    }
+
+    private async Task DownloadAsync(Func<Task<ApiResult<DownloadedFile>>> fetch)
+    {
+        _busy = true;
+        try
+        {
+            var file = await fetch();
+            if (file.IsSuccess) await FileSaver.SaveAsync(JS, file.Value!);
+            else Toasts.Show(file.ErrorMessage, isWarning: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

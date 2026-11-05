@@ -5,6 +5,8 @@ using System.Xml.Linq;
 
 namespace PharmacyWarehouse.Api.DataTools;
 
+public sealed record XlsxSheetData(string Name, List<string?[]> Rows);
+
 public sealed record XlsxSheet(string Name, IReadOnlyList<string> Columns, IEnumerable<string?[]> Rows, ISet<int>? NumericColumns = null);
 
 // xlsx یک ZIP از چند فایل XML است. همین‌قدر که لازم داریم را خودمان می‌نویسیم و می‌خوانیم،
@@ -222,6 +224,13 @@ public static class XlsxReader
     // ردیف‌های برگه‌ی اول، با حفظ جای ستون‌ها. فایل نامعتبر InvalidDataException می‌دهد.
     public static List<string?[]> ReadFirstSheet(Stream stream)
     {
+        var sheets = ReadAllSheets(stream);
+        return sheets.Count > 0 ? sheets[0].Rows : throw new InvalidDataException("Worksheet not found.");
+    }
+
+    // همه‌ی شیت‌های دیده‌شونده با نامشان (ترتیب فایل). سلول تاریخ (عدد سریال با سبک تاریخ) به «dd/MM/yyyy» میلادی تبدیل می‌شود.
+    public static List<XlsxSheetData> ReadAllSheets(Stream stream)
+    {
         try
         {
             using var zip = new ZipArchive(stream, ZipArchiveMode.Read);
@@ -231,51 +240,94 @@ public static class XlsxReader
                     .Select(si => string.Concat(si.Descendants(Main + "t").Select(t => t.Value)))
                     .ToList()
                 : [];
+            var dateStyles = DateStyles(zip);
 
-            var sheetPath = FirstSheetPath(zip);
-            var entry = zip.GetEntry(sheetPath) ?? throw new InvalidDataException("Worksheet not found.");
+            var workbook = Load(zip.GetEntry("xl/workbook.xml") ?? throw new InvalidDataException("Workbook not found."));
+            var rels = Load(zip.GetEntry("xl/_rels/workbook.xml.rels") ?? throw new InvalidDataException("Relations not found."));
+            var targets = rels.Descendants(PackageRel + "Relationship")
+                .ToDictionary(r => r.Attribute("Id")!.Value, r => r.Attribute("Target")!.Value);
 
-            var rows = new List<string?[]>();
-            foreach (var row in Load(entry).Descendants(Main + "row"))
+            var result = new List<XlsxSheetData>();
+            foreach (var sheet in workbook.Descendants(Main + "sheet"))
             {
-                var cells = new List<string?>();
-                var position = 0;
+                if (sheet.Attribute("state")?.Value is "hidden" or "veryHidden") continue;
 
-                foreach (var cell in row.Elements(Main + "c"))
-                {
-                    var reference = cell.Attribute("r")?.Value;
-                    if (reference is not null) position = ColumnIndex(reference);
-
-                    while (cells.Count < position) cells.Add(null);
-                    cells.Add(ReadCell(cell, shared));
-                    position++;
-                }
-
-                // جای ردیف را هم نگه می‌داریم تا شماره‌ی سطر در خطاها با Excel یکی باشد.
-                var rowNumber = int.TryParse(row.Attribute("r")?.Value, out var parsed) ? parsed : rows.Count + 1;
-                while (rows.Count < rowNumber - 1) rows.Add([]);
-                rows.Add(cells.ToArray());
+                var target = targets[sheet.Attribute(Rel + "id")!.Value];
+                var path = target.StartsWith('/') ? target.TrimStart('/') : "xl/" + target;
+                var entry = zip.GetEntry(path) ?? throw new InvalidDataException("Worksheet not found.");
+                result.Add(new XlsxSheetData(sheet.Attribute("name")?.Value ?? "", ReadRows(Load(entry), shared, dateStyles)));
             }
 
-            return rows;
+            return result;
         }
         // فایل غیر ZIP یا دستکاری‌شده بسته به محتوا هر کدام از این‌ها را می‌دهد؛ برای کاربر همه «فایل نامعتبر» است.
-        catch (Exception ex) when (ex is XmlException or InvalidOperationException or NullReferenceException or ArgumentException)
+        catch (Exception ex) when (ex is XmlException or InvalidOperationException or NullReferenceException or ArgumentException or KeyNotFoundException)
         {
             throw new InvalidDataException("Not a readable xlsx file.", ex);
         }
     }
 
-    private static string FirstSheetPath(ZipArchive zip)
+    private static List<string?[]> ReadRows(XDocument sheet, List<string> shared, HashSet<int> dateStyles)
     {
-        var workbook = Load(zip.GetEntry("xl/workbook.xml") ?? throw new InvalidDataException("Workbook not found."));
-        var relationId = workbook.Descendants(Main + "sheet").First().Attribute(Rel + "id")!.Value;
+        var rows = new List<string?[]>();
+        foreach (var row in sheet.Descendants(Main + "row"))
+        {
+            var cells = new List<string?>();
+            var position = 0;
 
-        var rels = Load(zip.GetEntry("xl/_rels/workbook.xml.rels") ?? throw new InvalidDataException("Relations not found."));
-        var target = rels.Descendants(PackageRel + "Relationship").First(r => r.Attribute("Id")?.Value == relationId)
-            .Attribute("Target")!.Value;
+            foreach (var cell in row.Elements(Main + "c"))
+            {
+                var reference = cell.Attribute("r")?.Value;
+                if (reference is not null) position = ColumnIndex(reference);
 
-        return target.StartsWith('/') ? target.TrimStart('/') : "xl/" + target;
+                while (cells.Count < position) cells.Add(null);
+                cells.Add(ReadCell(cell, shared, dateStyles));
+                position++;
+            }
+
+            // جای ردیف را هم نگه می‌داریم تا شماره‌ی سطر در خطاها با Excel یکی باشد.
+            var rowNumber = int.TryParse(row.Attribute("r")?.Value, out var parsed) ? parsed : rows.Count + 1;
+            while (rows.Count < rowNumber - 1) rows.Add([]);
+            rows.Add(cells.ToArray());
+        }
+
+        return rows;
+    }
+
+    // اندیس سبک‌هایی (cellXfs) که قالب تاریخ دارند: قالب‌های داخلی تاریخ یا قالب سفارشی با y/d/m بیرون از نقل‌قول.
+    private static HashSet<int> DateStyles(ZipArchive zip)
+    {
+        var result = new HashSet<int>();
+        if (zip.GetEntry("xl/styles.xml") is not { } entry) return result;
+
+        var styles = Load(entry).Root!;
+        var custom = styles.Element(Main + "numFmts")?.Elements(Main + "numFmt")
+            .Where(n => n.Attribute("numFmtId") is not null && n.Attribute("formatCode") is not null)
+            .ToDictionary(n => int.Parse(n.Attribute("numFmtId")!.Value), n => n.Attribute("formatCode")!.Value) ?? [];
+
+        var index = 0;
+        foreach (var xf in styles.Element(Main + "cellXfs")?.Elements(Main + "xf") ?? [])
+        {
+            var id = int.TryParse(xf.Attribute("numFmtId")?.Value, out var parsed) ? parsed : 0;
+            if (IsBuiltInDate(id) || (custom.TryGetValue(id, out var code) && IsDateFormat(code))) result.Add(index);
+            index++;
+        }
+
+        return result;
+    }
+
+    private static bool IsBuiltInDate(int id) => id is >= 14 and <= 22 or >= 27 and <= 36 or >= 45 and <= 47 or >= 50 and <= 58;
+
+    private static bool IsDateFormat(string code)
+    {
+        var inQuotes = false;
+        foreach (var c in code)
+        {
+            if (c == '"') inQuotes = !inQuotes;
+            else if (!inQuotes && char.ToLowerInvariant(c) is 'y' or 'd') return true;
+        }
+
+        return false;
     }
 
     private static XDocument Load(ZipArchiveEntry entry)
@@ -289,7 +341,7 @@ public static class XlsxReader
         return XDocument.Load(reader);
     }
 
-    private static string? ReadCell(XElement cell, List<string> shared)
+    private static string? ReadCell(XElement cell, List<string> shared, HashSet<int> dateStyles)
     {
         var type = cell.Attribute("t")?.Value;
 
@@ -297,6 +349,15 @@ public static class XlsxReader
 
         var value = cell.Element(Main + "v")?.Value;
         if (value is null) return null;
+
+        // عدد سریال تاریخ Excel (مبدأ ۱۸۹۹-۱۲-۳۰) ← میلادی روزانه. سلول فقط‌ساعت (کمتر از ۱) تاریخ نیست.
+        if ((type is null or "n") && int.TryParse(cell.Attribute("s")?.Value, out var style) && dateStyles.Contains(style)
+            && double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var serial)
+            && serial >= 1 && serial < 2958466)
+        {
+            var date = new DateTime(1899, 12, 30).AddDays(Math.Floor(serial));
+            return date.ToString("dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture);
+        }
 
         return type == "s" && int.TryParse(value, out var index) && index >= 0 && index < shared.Count
             ? shared[index]

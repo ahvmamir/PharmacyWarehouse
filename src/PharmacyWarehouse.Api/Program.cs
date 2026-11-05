@@ -235,6 +235,7 @@ app.MapWithdrawalReviewEndpoints();
 app.MapUserEndpoints();
 app.MapRoleEndpoints();
 app.MapBackupEndpoints();
+app.MapImportEndpoints();
 app.MapAlertEndpoints();
 
 // مسیر ناشناخته‌ی زیر /api باید ۴۰۴ بماند، نه صفحه‌ی Client؛ بقیه‌ی مسیرها را Router کلاینت می‌فهمد.

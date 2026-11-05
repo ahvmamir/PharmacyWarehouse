@@ -1493,3 +1493,12 @@ details > summary.import-subhead { cursor: pointer; }
 .withdraw-line-qty { max-width: 84px; text-align: center; min-height: 44px; }
 .withdraw-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .withdraw-actions .btn-primary { flex: 1; min-height: 48px; font-size: 1.05rem; }
+
+
+/* ورود Excel */
+.import-summary { display: flex; flex-wrap: wrap; gap: 8px 22px; }
+.import-bad { color: var(--danger); }
+.import-table input.form-control { min-width: 110px; }
+.import-table input.import-narrow { min-width: 64px; max-width: 90px; }
+.import-row-error { background: var(--danger-tint); }
+.import-row-warning { background: var(--warning-tint); }

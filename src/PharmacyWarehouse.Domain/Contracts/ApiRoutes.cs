@@ -17,6 +17,11 @@ public static class ApiRoutes
     public const string Users = "/api/users";
     public const string Roles = "/api/roles";
     public const string DataBackup = "/api/data/backup";
+    public const string DataExport = "/api/data/export";
+    public const string ImportParse = "/api/import/parse";
+    public const string ImportValidate = "/api/import/validate";
+    public const string ImportCommit = "/api/import/commit";
+    public const string ImportTemplate = "/api/import/template";
     public const string Alerts = "/api/alerts";
     public const string AppInfo = "/api/app-info";
 

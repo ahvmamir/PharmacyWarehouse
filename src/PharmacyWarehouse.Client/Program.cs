@@ -38,6 +38,7 @@ builder.Services.AddScoped<LocationsClient>();
 builder.Services.AddScoped<ProductsClient>();
 builder.Services.AddScoped<WithdrawalsClient>();
 builder.Services.AddScoped<BackupClient>();
+builder.Services.AddScoped<ImportClient>();
 builder.Services.AddScoped<UsersClient>();
 builder.Services.AddScoped<AlertsClient>();
 builder.Services.AddScoped<AppInfoState>();
