@@ -134,6 +134,7 @@
 - رد: یادداشت اجباری؛ برای هر حرکت برداشت یک حرکت `Reversal` با `ReversesId`. `OnHand` برمی‌گردد.
 - برداشت ردشده یا تأییدشده دوباره بررسی نمی‌شود (۴۰۹).
 - [تصمیم] انباردار برداشت خودش را می‌تواند تأیید کند؛ `SelfReviewed = true` و در داشبورد دیده می‌شود.
+- [تصمیم ۲۰۲۶-۱۱-۰۵] فهرست بررسی endpoint جدا (`/review`) با `withdrawal.review` است، نه شاخه‌ی شرطی روی «برداشت‌های من». بررسی‌نشده‌ها قدیمی‌ترین اول (نوبت)، بقیه تازه‌ترین اول. تأیید گروهی نتیجه‌ی جزئی دارد: هر برداشت با `Version` خودش جدا ذخیره می‌شود. یادداشت رد در `Reason` تاریخچه‌ی همان برداشت هم ثبت می‌شود. `AfterStocktake` در برش ۶ پر می‌شود (صفحه آماده نشان می‌دهد).
 
 ### ۷.۳ ورود جنس
 
@@ -308,7 +309,8 @@
 | `POST/PUT/DELETE /api/products`، `POST/DELETE /api/products/{id}/barcodes` | `products.manage` |
 | `GET /api/products/{id}/allocation?quantity=` | `withdrawal.create` |
 | `POST /api/withdrawals` | `withdrawal.create` |
-| `GET /api/withdrawals?status=&mine=` | `withdrawal.create` (فقط خود) یا `withdrawal.review` |
+| `GET /api/withdrawals` (فقط برداشت‌های خود کاربر) | `withdrawal.create` |
+| `GET /api/withdrawals/review?status=` (`Pending` پیش‌فرض، `Approved`، `Rejected`، `all`) | `withdrawal.review` |
 | `POST /api/withdrawals/{id}/approve`، `/reject`، `POST /api/withdrawals/approve` (گروهی) | `withdrawal.review` |
 | `POST /api/receipts` | `stock.receive` |
 | `POST /api/batches/{id}/adjust`، `/dispose` | `stock.adjust` |

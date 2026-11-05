@@ -1,0 +1,257 @@
+@page "/review"
+@attribute [Authorize]
+@using PharmacyWarehouse.Domain.Stock
+@inject WithdrawalsClient WithdrawalsApi
+@inject ToastService Toasts
+
+<PageTitle>بررسی برداشت‌ها | انبار داروخانه</PageTitle>
+
+<RequirePermission Permission="@Permissions.WithdrawalReview">
+<div class="page-head">
+    <div>
+        <h1>بررسی برداشت‌ها</h1>
+        <p>برداشت‌های ثبت‌شده را تأیید کنید یا با یادداشت رد کنید. رد کردن موجودی را برمی‌گرداند.</p>
+    </div>
+    <button type="button" class="btn btn-quiet" disabled="@_loading" @onclick="LoadAsync"><AppIcon Name="history" /> تازه‌سازی</button>
+</div>
+
+<div class="d-flex gap-2 mb-3 flex-wrap" role="tablist" aria-label="وضعیت">
+    @foreach (var (value, label) in Tabs)
+    {
+        <button type="button" role="tab" class="btn @(_status == value ? "btn-primary" : "btn-quiet")" aria-selected="@(_status == value)" @onclick="() => SwitchAsync(value)">@label</button>
+    }
+</div>
+
+@if (_error is not null)
+{
+    <div class="form-alert" role="alert"><AppIcon Name="warning" /> <span>@_error</span></div>
+}
+
+@if (_items is null)
+{
+    <div class="loading-line">در حال بارگذاری…</div>
+}
+else if (_items.Count == 0)
+{
+    <div class="table-card"><div class="empty-state"><AppIcon Name="check" Size="40" /><h2>موردی نیست</h2></div></div>
+}
+else
+{
+    @if (_status == "Pending")
+    {
+        <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+            <label class="d-flex align-items-center gap-2">
+                <input type="checkbox" class="form-check-input" checked="@AllSelected" @onchange="ToggleAll" /> انتخاب همه
+            </label>
+            <button type="button" class="btn btn-primary" disabled="@(_busy || _selected.Count == 0)" @onclick="BulkApproveAsync">
+                تأیید @JalaliDate.ToPersianDigits(_selected.Count.ToString()) مورد انتخاب‌شده
+            </button>
+        </div>
+    }
+
+    @foreach (var item in _items)
+    {
+        <section class="card-emu" @key="item.Id">
+            <div class="d-flex align-items-center gap-2">
+                @if (_status == "Pending")
+                {
+                    <input type="checkbox" class="form-check-input" aria-label="انتخاب" checked="@_selected.Contains(item.Id)" @onchange="() => ToggleOne(item.Id)" />
+                }
+                <strong style="flex:1;">@item.ProductName</strong>
+                <span class="status-badge @StatusClass(item.Status)">@StatusText(item.Status)</span>
+            </div>
+            <div class="form-hint">
+                @string.Join(" · ", new[] { item.Brand, item.PackDescription }.Where(s => !string.IsNullOrEmpty(s)))
+                — <strong>@JalaliDate.ToPersianDigits(item.TotalQuantity.ToString())</strong> جعبه
+                — <bdi>@item.UserName</bdi>
+                — <bdi>@JalaliDate.Format(item.OccurredAtUtc)</bdi>
+            </div>
+            <div class="mb-1">
+                @if (item.IsLate) { <span class="status-badge status-pending" title="ثبت با تأخیر بیش از ۲ ساعت">دیرهنگام</span> }
+                @if (item.ContainsExpired) { <span class="status-badge status-expired">منقضی</span> }
+                @if (item.AfterStocktake) { <span class="status-badge status-pending" title="احتمالاً در انبارگردانی به‌عنوان کسری اصلاح شده؛ بررسی کنید">پس از انبارگردانی</span> }
+                @if (item.SelfReviewed) { <span class="status-badge" title="ثبت‌کننده خودش بررسی کرده است">بررسی توسط خود ثبت‌کننده</span> }
+            </div>
+            @foreach (var line in item.Lines)
+            {
+                <div class="cell-sub">
+                    <bdi>@line.BatchNumber</bdi> — انقضا: @(line.ExpiryText ?? "—") — @JalaliDate.ToPersianDigits(line.Quantity.ToString()) جعبه
+                    @if (line.IsExpired) { <span class="status-badge status-expired">منقضی</span> }
+                </div>
+            }
+            @if (!string.IsNullOrEmpty(item.Note))
+            {
+                <div class="cell-sub">یادداشت ثبت‌کننده: @item.Note</div>
+            }
+            @if (item.Status != WithdrawalStatus.Pending)
+            {
+                <div class="cell-sub">
+                    بررسی: <bdi>@item.ReviewedByName</bdi>@(item.ReviewedAtUtc is { } at ? " — " + JalaliDate.Format(at) : "")
+                    @if (!string.IsNullOrEmpty(item.ReviewNote)) { <span> — @item.ReviewNote</span> }
+                </div>
+            }
+            else
+            {
+                <div class="mt-2 d-flex gap-2">
+                    <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="() => ApproveAsync(item)">تأیید</button>
+                    <button type="button" class="btn btn-quiet" disabled="@_busy" @onclick="() => StartReject(item)">رد…</button>
+                </div>
+            }
+        </section>
+    }
+}
+
+@if (_rejecting is { } target)
+{
+    <ModalDialog Title="رد برداشت" OnClose="CancelReject">
+        <p><strong>@target.ProductName</strong> — @JalaliDate.ToPersianDigits(target.TotalQuantity.ToString()) جعبه؛ موجودی به بچ‌ها برمی‌گردد.</p>
+        <div class="form-field">
+            <label for="reject-note">یادداشت (اجباری) <span class="required">*</span></label>
+            <input id="reject-note" class="form-control" autocomplete="off" @bind="_rejectNote" @bind:event="oninput" />
+            <FieldError Field="Note" Errors="_errors" />
+        </div>
+        @if (_formError is not null)
+        {
+            <div class="form-alert mt-2" role="alert">@_formError</div>
+        }
+        <div class="mt-3 d-flex gap-2">
+            <button type="button" class="btn btn-primary" disabled="@(_busy || string.IsNullOrWhiteSpace(_rejectNote))" @onclick="RejectAsync">رد و برگرداندن موجودی</button>
+            <button type="button" class="btn btn-quiet" disabled="@_busy" @onclick="CancelReject">انصراف</button>
+        </div>
+    </ModalDialog>
+}
+</RequirePermission>
+
+@code {
+    private static readonly (string Value, string Label)[] Tabs =
+        [("Pending", "در انتظار"), ("Approved", "تأییدشده"), ("Rejected", "ردشده")];
+
+    private List<WithdrawalItem>? _items;
+    private readonly HashSet<Guid> _selected = [];
+    private string _status = "Pending";
+    private string? _error;
+    private string? _formError;
+    private bool _busy;
+    private bool _loading;
+    private WithdrawalItem? _rejecting;
+    private string _rejectNote = "";
+    private Dictionary<string, string[]> _errors = [];
+
+    private bool AllSelected => _items is { Count: > 0 } && _items.All(i => _selected.Contains(i.Id));
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        var result = await WithdrawalsApi.ReviewListAsync(_status);
+        _loading = false;
+        if (!result.IsSuccess)
+        {
+            _error = result.ErrorMessage;
+            _items ??= [];
+            return;
+        }
+
+        _error = null;
+        _items = result.Value!;
+        _selected.IntersectWith(_items.Select(i => i.Id));
+    }
+
+    private async Task SwitchAsync(string status)
+    {
+        if (_status == status) return;
+        _status = status;
+        _items = null;
+        _selected.Clear();
+        await LoadAsync();
+    }
+
+    private void ToggleOne(Guid id)
+    {
+        if (!_selected.Remove(id)) _selected.Add(id);
+    }
+
+    private void ToggleAll()
+    {
+        if (_items is null) return;
+        if (AllSelected) _selected.Clear();
+        else foreach (var i in _items) _selected.Add(i.Id);
+    }
+
+    private async Task ApproveAsync(WithdrawalItem item)
+    {
+        _busy = true;
+        var result = await WithdrawalsApi.ApproveAsync(item);
+        _busy = false;
+        if (result.IsSuccess) Toasts.Show("تأیید شد.");
+        else Toasts.Show(result.ErrorMessage, isWarning: true);
+        await LoadAsync(); // ۴۰۹ هم یعنی وضعیت عوض شده؛ فهرست تازه می‌شود
+    }
+
+    private async Task BulkApproveAsync()
+    {
+        if (_items is null || _selected.Count == 0) return;
+
+        _busy = true;
+        var result = await WithdrawalsApi.BulkApproveAsync(_items.Where(i => _selected.Contains(i.Id)));
+        _busy = false;
+
+        if (!result.IsSuccess)
+        {
+            Toasts.Show(result.ErrorMessage, isWarning: true);
+            return;
+        }
+
+        var failed = result.Value!.Failed.Count;
+        Toasts.Show($"{JalaliDate.ToPersianDigits(result.Value.Approved.Count.ToString())} مورد تأیید شد"
+            + (failed > 0 ? $"؛ {JalaliDate.ToPersianDigits(failed.ToString())} مورد انجام نشد: {result.Value.Failed[0].Message}" : "."), isWarning: failed > 0);
+        _selected.Clear();
+        await LoadAsync();
+    }
+
+    private void StartReject(WithdrawalItem item)
+    {
+        _rejecting = item;
+        _rejectNote = "";
+        _formError = null;
+        _errors = [];
+    }
+
+    private void CancelReject() => _rejecting = null;
+
+    private async Task RejectAsync()
+    {
+        if (_rejecting is not { } item) return;
+
+        _busy = true;
+        var result = await WithdrawalsApi.RejectAsync(item, _rejectNote);
+        _busy = false;
+
+        if (result.IsSuccess)
+        {
+            _rejecting = null;
+            Toasts.Show("رد شد و موجودی برگشت.");
+            await LoadAsync();
+            return;
+        }
+
+        _errors = result.Problem?.Errors ?? [];
+        _formError = result.ErrorMessage;
+        if (result.Outcome == ApiOutcome.Conflict) await LoadAsync();
+    }
+
+    private static string StatusText(WithdrawalStatus status) => status switch
+    {
+        WithdrawalStatus.Pending => "تأییدنشده",
+        WithdrawalStatus.Approved => "تأییدشده",
+        _ => "ردشده"
+    };
+
+    private static string StatusClass(WithdrawalStatus status) => status switch
+    {
+        WithdrawalStatus.Approved => "status-active",
+        WithdrawalStatus.Rejected => "status-expired",
+        _ => "status-pending"
+    };
+}

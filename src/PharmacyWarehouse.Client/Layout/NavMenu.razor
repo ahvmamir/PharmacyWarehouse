@@ -37,6 +37,12 @@
                         <AppIcon Name="history" /> برداشت‌های من
                     </NavLink>
                 }
+                @if (Session.Can(Permissions.WithdrawalReview))
+                {
+                    <NavLink class="sidebar-link" href="review">
+                        <AppIcon Name="check" /> بررسی برداشت‌ها
+                    </NavLink>
+                }
                 @if (Session.Can(Permissions.StockView))
                 {
                     <NavLink class="sidebar-link" href="" Match="NavLinkMatch.All">

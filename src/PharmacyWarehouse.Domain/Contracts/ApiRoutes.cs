@@ -28,6 +28,10 @@ public static class ApiRoutes
     public static string ProductByCode(string code) => $"{Products}/by-code/{Uri.EscapeDataString(code)}";
     public static string ProductBarcodes(Guid id) => $"{Products}/{id}/barcodes";
     public static string ProductBarcode(Guid id, Guid barcodeId) => $"{Products}/{id}/barcodes/{barcodeId}";
+    public const string WithdrawalReviewList = "/api/withdrawals/review";
+    public const string WithdrawalBulkApprove = "/api/withdrawals/approve";
+    public static string WithdrawalApprove(Guid id) => $"{Withdrawals}/{id}/approve";
+    public static string WithdrawalReject(Guid id) => $"{Withdrawals}/{id}/reject";
     public static string ProductAllocation(Guid id, int quantity, int minutesAgo = 0) => $"{Products}/{id}/allocation?quantity={quantity}&minutesAgo={minutesAgo}";
     public static string ProductHistory(Guid id) => $"{Products}/{id}/history";
     public static string UserResetPassword(Guid id) => $"{Users}/{id}/reset-password";

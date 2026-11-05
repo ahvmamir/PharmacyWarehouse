@@ -231,6 +231,7 @@ app.MapStorageLocationEndpoints();
 app.MapProductEndpoints();
 app.MapReceiptEndpoints();
 app.MapWithdrawalEndpoints();
+app.MapWithdrawalReviewEndpoints();
 app.MapUserEndpoints();
 app.MapRoleEndpoints();
 app.MapBackupEndpoints();

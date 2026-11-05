@@ -39,3 +39,26 @@ public sealed record WithdrawalItem(
     DateTime AtUtc, DateTime OccurredAtUtc, bool IsLate, bool AfterStocktake, bool ContainsExpired,
     WithdrawalStatus Status, string UserName, string? Note, string? ReviewNote, string? ReviewedByName, DateTime? ReviewedAtUtc,
     bool SelfReviewed, IReadOnlyList<WithdrawalLineItem> Lines, int Version);
+
+// تأیید: Note نادیده گرفته می‌شود. رد: Note اجباری (بخش ۷.۲ spec).
+public sealed class ReviewRequest
+{
+    public int Version { get; set; }
+    public string? Note { get; set; }
+}
+
+public sealed class ReviewTarget
+{
+    public Guid Id { get; set; }
+    public int Version { get; set; }
+}
+
+public sealed class BulkApproveRequest
+{
+    public List<ReviewTarget> Items { get; set; } = [];
+}
+
+public sealed record BulkFailure(Guid Id, string Message);
+
+// تأیید گروهی نتیجه‌ی جزئی دارد: هر برداشت با Version خودش جدا ذخیره می‌شود و شکست یکی بقیه را خراب نمی‌کند.
+public sealed record BulkApproveResult(IReadOnlyList<Guid> Approved, IReadOnlyList<BulkFailure> Failed);
