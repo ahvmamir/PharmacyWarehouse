@@ -33,7 +33,9 @@
 **۲۰۲۶-۱۱-۰۴:**
 - **برش ۰ تمام شد:** کپی زیرساخت Emu، تغییر نام، حذف دامنه‌ی تجهیزات، محل‌های درختی با تاریخچه، نقش‌ها و مجوزهای تازه، migration اولیه‌ی تازه، نام‌های استقرار، نشست ۳۰ روزه، `CLAUDE.md`، `docs\deploy.md` (آزموده‌نشده روی سرور داروخانه؛ برش ۷).
 - **اصلاح‌های بازبینی برش ۰ انجام شد:** ترتیب درختی (`LocationTree.Ordered`)، `IsUsable` برای شاخه‌های غیرفعال، `StorageLocation.KeyOf`، رهگیر ستون‌های `*Key` را ثبت نمی‌کند. الگوهای حذف‌شده: `git show 241d144:src/PharmacyWarehouse.Api/DataTools/DataEndpoints.cs`، `...:src/PharmacyWarehouse.Api/Reports/ReportEndpoints.cs`، `...:src/PharmacyWarehouse.Client/Components/HistoryTimeline.razor`.
-- **برش ۱ بعدی است** (قلم، بارکد، بچ، ورود جنس).
+- **برش ۱ تمام شد، جز تأیید مرورگر:** قلم، بارکد قلم، بچ، ورود جنس (`/receive`، با `ExpiryFields` دو فیلد میلادی و شمسی)، فیلد اسکن، `ExpiryDate`، `ScanKey`. دکمه‌ی «ورود جنس» در جزئیات قلم به `receive?productId=` می‌رود.
+- **برش ۲ بعدی است** (برداشت، `BatchAllocator`، صفحه‌ی گوشی، برداشت‌های من).
+- **تأیید مرورگر برش ۱ مانده:** ورود، تعریف قلم، افزودن بارکد، ورود جنس با تاریخ شمسی `04/1408` و پر شدن خودکار فیلد میلادی (`21/07/2029`)، جزئیات قلم و حرکت. [نامطمئن] `PersianCalendar` در WebAssembly هنوز در مرورگر دیده نشده؛ اگر کار نکرد، تبدیل به سرور می‌رود (`GET /api/expiry/parse?text=`، بخش ۶ `docs\spec.md`).
 - **پیش‌نیاز برش ۱:** خروجی بارکدخوان در Notepad و نوع بارکد روی جعبه‌ها هنوز در دست نیست. برش ۱ طبق بخش ۹.۱ `docs\spec.md` با فرض بارکد یک‌بعدی پیش می‌رود و پس از آزمایش اصلاح می‌شود.
-- **روی هر دو سیستم (خانه و کار):** دیتابیس توسعه‌ی قدیمی با schema Emu باید حذف شود (فایل `.db` در پوشه‌ی `src\PharmacyWarehouse.Api`)، سپس `dotnet ef database update --project src\PharmacyWarehouse.Api` و `create-admin <username>`.
+- **روی هر دو سیستم (خانه و کار):** migrationهای `Initial` و `Products` وجود دارند. اگر دیتابیس توسعه از پیش از برش ۰ است (schema Emu)، فایل `.db` در پوشه‌ی `src\PharmacyWarehouse.Api` را حذف کن. بعد `git pull`، `dotnet ef database update --project src\PharmacyWarehouse.Api` و در صورت نبود کاربر `dotnet run --project src\PharmacyWarehouse.Api -- create-admin <username>`.
 - **آزموده نشده:** تست مرورگر برش ۰ با امیر روی ویندوز؛ اسکریپت‌های `deploy\*.ps1` و `publish-package.bat` پس از تغییر نام اجرا نشده‌اند.

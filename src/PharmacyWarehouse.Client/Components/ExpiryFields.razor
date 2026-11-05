@@ -1,0 +1,121 @@
+@using PharmacyWarehouse.Domain.Stock
+@* تاریخ انقضا با دو فیلد هم‌گام (میلادی و شمسی). Value همان متنی است که کاربر در آخرین فیلد تایپ کرده؛
+   تبدیل فقط برای نمایش فیلد دیگر است و سرور دقت و تقویم را از همان متن ثبت می‌کند. *@
+<div class="expiry-fields">
+    <div class="form-grid">
+        <div class="form-field">
+            <label for="@(IdPrefix)-greg">انقضا (میلادی)@if (Required) {<span class="required"> *</span>}</label>
+            <input id="@(IdPrefix)-greg" class="form-control" dir="ltr" autocomplete="off" placeholder="dd/MM/yyyy یا MM/yyyy"
+                   value="@_gregorian" @onchange="OnGregorianChanged" />
+        </div>
+        <div class="form-field">
+            <label for="@(IdPrefix)-jalali">انقضا (شمسی)</label>
+            <input id="@(IdPrefix)-jalali" class="form-control" dir="ltr" autocomplete="off" placeholder="روز/ماه/سال یا ماه/سال"
+                   value="@_jalali" @onchange="OnJalaliChanged" />
+        </div>
+    </div>
+    @if (_error is not null)
+    {
+        <div class="field-error" role="alert">@_error</div>
+    }
+    @foreach (var note in _notes)
+    {
+        <div class="form-hint">@note</div>
+    }
+</div>
+
+@code {
+    private static readonly string[] JalaliMonths =
+        ["فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور", "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"];
+
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+    [Parameter] public bool Required { get; set; }
+    [Parameter] public string IdPrefix { get; set; } = "expiry";
+
+    private string _gregorian = "";
+    private string _jalali = "";
+    private string? _error;
+    private List<string> _notes = [];
+    private string? _emitted;
+
+    // والد مقدار را از بیرون عوض کرد (مثلاً پاک کردن بعد از ثبت): فیلدها از نو پر می‌شوند.
+    protected override void OnParametersSet()
+    {
+        if (Value == _emitted) return;
+
+        _emitted = Value;
+        _error = null;
+        _notes = [];
+        if (string.IsNullOrWhiteSpace(Value))
+        {
+            _gregorian = "";
+            _jalali = "";
+            return;
+        }
+
+        Apply(Value, fromJalali: false);
+    }
+
+    private Task OnGregorianChanged(ChangeEventArgs e) => EditedAsync(e.Value?.ToString() ?? "", fromJalali: false);
+
+    private Task OnJalaliChanged(ChangeEventArgs e) => EditedAsync(e.Value?.ToString() ?? "", fromJalali: true);
+
+    private async Task EditedAsync(string text, bool fromJalali)
+    {
+        Apply(text, fromJalali);
+        _emitted = string.IsNullOrWhiteSpace(text) ? null : text.Trim();
+        await ValueChanged.InvokeAsync(_emitted);
+    }
+
+    private void Apply(string text, bool fromJalali)
+    {
+        _error = null;
+        _notes = [];
+
+        var parse = ExpiryDate.Parse(text);
+        if (parse.Error is not null)
+        {
+            // متن خطادار همان‌جا که تایپ شده می‌ماند؛ فیلد دیگر پاک می‌شود تا ناسازگار نماند.
+            if (fromJalali) { _jalali = text; _gregorian = ""; }
+            else { _gregorian = text; _jalali = ""; }
+            _error = parse.Error;
+            return;
+        }
+
+        if (parse.Value is not { } value)
+        {
+            _gregorian = "";
+            _jalali = "";
+            return;
+        }
+
+        if (fromJalali) _jalali = text.Trim(); else _gregorian = text.Trim();
+        if (fromJalali) _gregorian = ExpiryDate.Gregorian(value);
+        else _jalali = ExpiryDate.Jalali(value);
+
+        foreach (var warning in parse.Warnings)
+        {
+            _notes.Add(warning switch
+            {
+                ExpiryWarning.ConvertedFromJalali => "تاریخ شمسی به میلادی تبدیل شد.",
+                ExpiryWarning.DayClampedToMonthEnd => "روز از طول ماه بیشتر بود؛ آخر ماه گرفته شد.",
+                ExpiryWarning.MonthOnly => MonthNote(value),
+                _ => ""
+            });
+        }
+    }
+
+    private static string MonthNote(ExpiryValue value)
+    {
+        if (value.Calendar == CalendarKind.Jalali)
+        {
+            // آخر ماهِ شمسی؛ نام ماه از تاریخ تبدیل‌شده خوانده می‌شود.
+            var jalali = ExpiryDate.Jalali(value).Split('/');
+            var month = int.Parse(TextNormalizer.ToAsciiDigits(jalali[1]));
+            return $"دقت: ماه — آخر {JalaliMonths[month - 1]} {jalali[2]}";
+        }
+
+        return $"دقت: ماه — آخر ماه {JalaliDate.ToPersianDigits($"{value.Date.Month:00}/{value.Date.Year:0000}")} میلادی";
+    }
+}

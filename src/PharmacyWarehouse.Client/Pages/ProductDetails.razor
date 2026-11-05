@@ -40,14 +40,18 @@ else
             </h1>
             <p>@string.Join(" · ", new[] { summary.Brand, summary.PackDescription }.Where(s => !string.IsNullOrEmpty(s)))</p>
         </div>
-        @if (CanManage)
-        {
-            <div class="device-actions">
+        <div class="device-actions">
+            @if (Session.Can(Permissions.StockReceive))
+            {
+                <a class="btn btn-primary" href="receive?productId=@summary.Id"><AppIcon Name="plus" Size="15" /> ورود جنس</a>
+            }
+            @if (CanManage)
+            {
                 <a class="btn btn-primary" href="products/@summary.Id/edit"><AppIcon Name="edit" Size="15" /> ویرایش</a>
                 <button type="button" class="btn btn-quiet" disabled="@_busy" @onclick="ToggleActiveAsync">@(summary.IsActive ? "غیرفعال کن" : "فعال کن")</button>
                 <button type="button" class="btn btn-danger-quiet" @onclick="() => _showDelete = true"><AppIcon Name="trash" Size="15" /> حذف</button>
-            </div>
-        }
+            }
+        </div>
     </div>
 
     <section class="card-emu">

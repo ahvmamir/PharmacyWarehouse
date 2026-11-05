@@ -57,4 +57,8 @@ public sealed class ProductsClient
 
     public Task<ApiResult<DependencyList>> DeleteAsync(Guid id) =>
         ApiSender.SendAsync<DependencyList>(ct => _http.DeleteAsync(ApiRoutes.ById(ApiRoutes.Products, id), ct));
+
+    // ورود جنس: ۴۰۹ هم برای ناسازگاری Version (ProblemTypes.VersionConflict) و هم «یک بچ دو تاریخ» می‌آید.
+    public Task<ApiResult<ReceiptResult>> ReceiveAsync(ReceiptRequest request) =>
+        ApiSender.SendAsync<ReceiptResult>(ct => _http.PostAsJsonAsync(ApiRoutes.Receipts, request, ct));
 }
