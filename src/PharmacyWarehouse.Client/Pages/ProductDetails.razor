@@ -196,27 +196,7 @@ else
         }
         else
         {
-            <div class="table-card">
-                <table class="data-table">
-                    <thead>
-                        <tr><th>زمان</th><th>کاربر</th><th>مورد</th><th>کار</th><th>فیلد</th><th>از</th><th>به</th></tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var change in _history.Changes)
-                        {
-                            <tr @key="change.Id">
-                                <td>@JalaliDate.Format(change.AtUtc)</td>
-                                <td>@change.UserName</td>
-                                <td>@(change.EntityLabel ?? change.EntityType)</td>
-                                <td>@change.Action</td>
-                                <td>@change.Field</td>
-                                <td><bdi>@(change.OldText ?? change.OldValue)</bdi></td>
-                                <td><bdi>@(change.NewText ?? change.NewValue)</bdi></td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
+            <ChangeList Changes="_history.Changes" />
         }
     </section>
 

@@ -1,0 +1,85 @@
+@using System.Text.Json
+@using PharmacyWarehouse.Domain.Stock
+
+@* جدول تغییرات یک قلم. ردیف «ثبت» و «حذف» JSON کامل رکورد را دارد و اینجا به خط‌های «برچسب: مقدار» باز می‌شود. *@
+<div class="table-card">
+    <table class="data-table change-table">
+        <thead>
+            <tr><th>زمان</th><th>کاربر</th><th>مورد</th><th>کار</th><th>فیلد</th><th>از</th><th>به</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var change in Changes)
+            {
+                <tr @key="change.Id">
+                    <td>@JalaliDate.Format(change.AtUtc)</td>
+                    <td><bdi>@change.UserName</bdi></td>
+                    <td>@AuditLabels.Entity(change.EntityType)</td>
+                    <td>@AuditLabels.Action(change.Action)</td>
+                    @if (change.Action == "Updated")
+                    {
+                        <td>@AuditLabels.Field(change.Field)</td>
+                        <td><bdi>@(change.OldText ?? AuditLabels.Value(change.Field, change.OldValue))</bdi></td>
+                        <td><bdi>@(change.NewText ?? AuditLabels.Value(change.Field, change.NewValue))</bdi></td>
+                    }
+                    else
+                    {
+                        <td colspan="3">
+                            @foreach (var line in Lines(change.Action == "Created" ? change.NewValue : change.OldValue))
+                            {
+                                <div><span class="cell-sub">@line.Label:</span> <bdi>@line.Value</bdi></div>
+                            }
+                        </td>
+                    }
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<AuditEntryItem> Changes { get; set; } = [];
+
+    private readonly record struct Line(string Label, string Value);
+
+    // مشتق‌ها و کلیدها خبر نیستند. OnHand در ردیف‌های قدیمی هست؛ تاریخچه‌ی موجودی همان جدول حرکت‌هاست.
+    private static bool Skip(string name) =>
+        name is "Id" or "Version" or "SearchText" or "CreatedAtUtc" or "UpdatedAtUtc" or "OnHand"
+        || name.EndsWith("Key", StringComparison.Ordinal);
+
+    private static List<Line> Lines(string? json)
+    {
+        var lines = new List<Line>();
+        if (string.IsNullOrEmpty(json)) return lines;
+
+        Dictionary<string, string?>? values;
+        try
+        {
+            values = JsonSerializer.Deserialize<Dictionary<string, string?>>(json);
+        }
+        catch (JsonException)
+        {
+            lines.Add(new Line("مقدار", json));
+            return lines;
+        }
+
+        if (values is null) return lines;
+
+        foreach (var (name, raw) in values)
+        {
+            if (Skip(name)) continue;
+
+            // تاریخ انقضا با دقت و تقویم ورودی یک خط می‌شود.
+            if (name is "ExpiryPrecision" or "ExpiryCalendar") continue;
+            if (name == "ExpiryDate")
+            {
+                lines.Add(new Line(AuditLabels.Field(name),
+                    AuditLabels.Expiry(raw, values.GetValueOrDefault("ExpiryPrecision"), values.GetValueOrDefault("ExpiryCalendar"))));
+                continue;
+            }
+
+            lines.Add(new Line(AuditLabels.Field(name), AuditLabels.Value(name, raw)));
+        }
+
+        return lines;
+    }
+}

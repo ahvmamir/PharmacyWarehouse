@@ -135,6 +135,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     {
         null => null,
         DateTime date => date.ToString("O", CultureInfo.InvariantCulture),
+        DateOnly date => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), // قالب پیش‌فرض «ماه/روز/سال» مبهم است
         _ => Convert.ToString(value, CultureInfo.InvariantCulture)
     };
 

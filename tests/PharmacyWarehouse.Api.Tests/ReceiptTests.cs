@@ -145,6 +145,17 @@ public class ReceiptTests : ApiTestBase
     }
 
     [Fact]
+    public async Task CreatedBatchRow_StoresExpiryAsIsoDate()
+    {
+        var product = await ProductAsync();
+        var result = await ReceiveOkAsync(Req(product));
+
+        var row = Assert.Single(await App.AuditRowsAsync(result.Batch.Id));
+
+        Assert.Contains("\"ExpiryDate\":\"2030-03-15\"", row.NewValue);
+    }
+
+    [Fact]
     public async Task ExistingBatch_ExpiryGivenButBatchHasNone_Returns409()
     {
         var product = await ProductAsync(requiresExpiry: false);
