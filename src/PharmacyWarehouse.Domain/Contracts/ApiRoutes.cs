@@ -32,6 +32,8 @@ public static class ApiRoutes
     public static string Deactivate(string collection, Guid id) => $"{collection}/{id}/deactivate";
     public static string Activate(string collection, Guid id) => $"{collection}/{id}/activate";
     public static string Dependencies(string collection, Guid id) => $"{collection}/{id}/dependencies";
+    public const string ReceiptsBulk = "/api/receipts/bulk";
+    public static string ProductSearch(string query) => $"{Products}/search?q={Uri.EscapeDataString(query)}";
     public static string ProductByCode(string code) => $"{Products}/by-code/{Uri.EscapeDataString(code)}";
     public static string ProductBarcodes(Guid id) => $"{Products}/{id}/barcodes";
     public static string ProductBarcode(Guid id, Guid barcodeId) => $"{Products}/{id}/barcodes/{barcodeId}";

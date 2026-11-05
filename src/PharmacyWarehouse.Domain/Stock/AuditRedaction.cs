@@ -26,4 +26,26 @@ public static class AuditRedaction
         if (values is null || !values.Remove(key)) return json;
         return JsonSerializer.Serialize(values, Readable);
     }
+
+    // ردیف‌های قدیمی «ثبت» و «حذف» شناسه‌ی خام دارند و AuditEntries فقط اضافه‌شونده است؛ پس هنگام خواندن
+    // شناسه به شکل «guid|نام» درمی‌آید. مقداری که از قبل نام دارد یا Guid نیست دست نمی‌خورد.
+    public static string? WithResolvedId(string? json, string key, Func<Guid, string> nameOf)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return json;
+
+        Dictionary<string, string?>? values;
+        try
+        {
+            values = JsonSerializer.Deserialize<Dictionary<string, string?>>(json);
+        }
+        catch (JsonException)
+        {
+            return json;
+        }
+
+        if (values is null || !values.TryGetValue(key, out var raw) || !Guid.TryParse(raw, out var id)) return json;
+
+        values[key] = $"{id}|{nameOf(id)}";
+        return JsonSerializer.Serialize(values, Readable);
+    }
 }

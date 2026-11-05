@@ -55,6 +55,11 @@
             link.click();
             URL.revokeObjectURL(url);
         };
+        window.pwScrollIntoView = (id) => document.getElementById(id)?.scrollIntoView({ block: "nearest" });
+        // Blazor نمی‌تواند preventDefault را بر اساس کلید تصمیم بگیرد؛ پس اینجا: Enter در combobox فرم را نمی‌فرستد.
+        document.addEventListener("keydown", (e) => {
+            if (e.target?.matches?.("[data-combobox]") && ["Enter", "ArrowUp", "ArrowDown"].includes(e.key)) e.preventDefault();
+        }, true);
     </script>
     <script src="_framework/blazor.webassembly.js"></script>
 </body>

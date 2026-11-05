@@ -25,6 +25,10 @@ public sealed record ProductListItem(
     Guid Id, string Name, string? Brand, string? PackDescription, string? LocationPath,
     int OnHand, int UsableOnHand, int? MinStock, DateOnly? NearestExpiry, string? NearestExpiryText, bool IsActive, int Version);
 
+// نتیجه‌ی combobox قلم. ExactBarcodeId فقط وقتی پر است که متن دقیقاً بارکد یک قلم باشد؛ آن قلم اول فهرست است
+// و حتی اگر غیرفعال باشد می‌آید تا کلاینت پیام درست بدهد. بقیه‌ی نتیجه‌ها فقط پیشنهادند و خودکار انتخاب نمی‌شوند.
+public sealed record ProductSearchResponse(Guid? ExactBarcodeId, IReadOnlyList<ProductListItem> Items);
+
 public sealed record BatchItem(
     Guid Id, string BatchNumber, DateOnly? ExpiryDate, ExpiryPrecision Precision, CalendarKind Calendar,
     string? ExpiryText, string? LocationPath, int OnHand, bool IsExpired, int Version);

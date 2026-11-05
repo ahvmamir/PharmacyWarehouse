@@ -1,7 +1,7 @@
 @page "/dashboard"
 @attribute [Authorize]
-@using PharmacyWarehouse.Domain.Stock
 @inject DashboardClient DashboardApi
+@inject ApiAuthenticationStateProvider Session
 
 <PageTitle>داشبورد | انبار داروخانه</PageTitle>
 
@@ -9,6 +9,7 @@
 <div class="page-head">
     <div>
         <h1>داشبورد</h1>
+        <p>خلاصه‌ی وضعیت؛ روی هر کارت بزنید تا جزئیات را ببینید.</p>
     </div>
     <button type="button" class="btn btn-quiet" disabled="@_loading" @onclick="LoadAsync"><AppIcon Name="history" /> تازه‌سازی</button>
 </div>
@@ -20,86 +21,77 @@
 
 @if (_data is { } data)
 {
-    <section class="card-emu">
-        <h2>انقضا</h2>
-        @ExpiryTable("منقضی‌شده", data.Expiry.Expired)
-        @ExpiryTable($"تا {Num(data.Expiry.NearMonths)} ماه", data.Expiry.Near)
-        @ExpiryTable($"تا {Num(data.Expiry.FarMonths)} ماه", data.Expiry.Far)
-    </section>
+    var expiry = data.Expiry;
+    var consumed7 = data.Consumption7Days.ByUser.Sum(u => u.Quantity);
+    var corrections = data.Corrections30Days.Count;
+    var maxBucket = Math.Max(1, new[] { expiry.Expired.Total, expiry.Near.Total, expiry.Far.Total }.Max());
+    var top = data.Consumption7Days.TopProducts.Take(MaxListItems).ToList();
+    var maxTop = Math.Max(1, top.Select(t => t.Quantity).DefaultIfEmpty(0).Max());
+    var soonest = expiry.Near.Items.Take(MaxListItems).ToList();
 
-    <section class="card-emu">
-        <h2>کمتر از حداقل</h2>
-        @if (data.BelowMinimum.Count == 0)
-        {
-            <p class="form-hint">موردی نیست.</p>
-        }
-        else
-        {
-            <div style="overflow-x:auto;">
-                <table class="table-emu">
-                    <thead><tr><th>قلم</th><th>موجودی منقضی‌نشده</th><th>حداقل</th></tr></thead>
-                    <tbody>
-                        @foreach (var item in data.BelowMinimum)
-                        {
-                            <tr @key="item.ProductId">
-                                <td><a href="products/@item.ProductId">@item.ProductName</a> <span class="cell-sub">@item.Brand</span></td>
-                                <td>@Num(item.UnexpiredOnHand)</td>
-                                <td>@Num(item.MinStock)</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-        }
-    </section>
+    <div class="dash-cards">
+        @Card("منقضی‌شده", expiry.Expired.Total, "dashboard/expiry?bucket=expired", "alert-danger-soft")
+        @Card($"انقضا تا {Num(expiry.NearMonths)} ماه", expiry.Near.Total, "dashboard/expiry?bucket=near", "alert-warning-soft")
+        @Card("کمتر از حداقل", data.BelowMinimum.Count, "dashboard/below-min", "alert-warning-soft")
+        @Card("تأییدنشده", data.Unreviewed.PendingCount, Session.Can(Permissions.WithdrawalReview) ? "review" : "dashboard/unreviewed", "alert-warning-soft")
+        @Card("مصرف ۷ روز", consumed7, "dashboard/consumption", null)
+        @Card("اصلاح ۳۰ روز", corrections, "dashboard/corrections", null)
+    </div>
 
-    <section class="card-emu">
-        <h2>مصرف خالص</h2>
-        <p class="form-hint">برداشت منهای برگشت، بر پایه‌ی زمان خود برداشت.</p>
-        @ConsumptionTable("۷ روز اخیر", data.Consumption7Days)
-        @ConsumptionTable("۳۰ روز اخیر", data.Consumption30Days)
-    </section>
+    <div class="dash-grid">
+        <section class="card-emu">
+            <h2>وضعیت انقضا</h2>
+            <a class="bar-row" href="dashboard/expiry?bucket=expired">
+                <span class="bar-label">منقضی‌شده</span>
+                <span class="bar-track"><span class="bar-fill danger" style="width:@Percent(expiry.Expired.Total, maxBucket)"></span></span>
+                <span class="bar-value">@Num(expiry.Expired.Total)</span>
+            </a>
+            <a class="bar-row" href="dashboard/expiry?bucket=near">
+                <span class="bar-label">تا @Num(expiry.NearMonths) ماه</span>
+                <span class="bar-track"><span class="bar-fill warning" style="width:@Percent(expiry.Near.Total, maxBucket)"></span></span>
+                <span class="bar-value">@Num(expiry.Near.Total)</span>
+            </a>
+            <a class="bar-row" href="dashboard/expiry?bucket=far">
+                <span class="bar-label">تا @Num(expiry.FarMonths) ماه</span>
+                <span class="bar-track"><span class="bar-fill" style="width:@Percent(expiry.Far.Total, maxBucket)"></span></span>
+                <span class="bar-value">@Num(expiry.Far.Total)</span>
+            </a>
+        </section>
 
-    <section class="card-emu">
-        <h2>تأییدنشده‌ها</h2>
-        <ul>
-            <li>در انتظار بررسی: <strong>@Num(data.Unreviewed.PendingCount)</strong></li>
-            <li>قدیمی‌ترین: <bdi>@(data.Unreviewed.OldestPendingAtUtc is { } oldest ? JalaliDate.Format(oldest) : "—")</bdi></li>
-            <li>تأیید توسط خود ثبت‌کننده در ۳۰ روز: <strong>@Num(data.Unreviewed.SelfReviewed30Days)</strong></li>
-            <li>ثبت دیرهنگام در ۳۰ روز: <strong>@Num(data.Unreviewed.Late30Days)</strong></li>
-            <li>پس از انبارگردانی در ۳۰ روز: <strong>@Num(data.Unreviewed.AfterStocktake30Days)</strong></li>
-        </ul>
-    </section>
+        <section class="card-emu">
+            <h2>پرمصرف‌ترین‌ها در ۷ روز</h2>
+            @if (top.Count == 0)
+            {
+                <p class="form-hint">مصرفی ثبت نشده است.</p>
+            }
+            @foreach (var item in top)
+            {
+                <a class="bar-row" href="products/@item.Id" @key="item.Id">
+                    <span class="bar-label" title="@item.Name">@item.Name</span>
+                    <span class="bar-track"><span class="bar-fill" style="width:@Percent(item.Quantity, maxTop)"></span></span>
+                    <span class="bar-value">@Num(item.Quantity)</span>
+                </a>
+            }
+            <a class="dash-more" href="dashboard/consumption">همه‌ی مصرف‌ها</a>
+        </section>
 
-    <section class="card-emu">
-        <h2>اصلاح و اسقاط در ۳۰ روز اخیر</h2>
-        @if (data.Corrections30Days.Count == 0)
-        {
-            <p class="form-hint">موردی نیست.</p>
-        }
-        else
-        {
-            <div style="overflow-x:auto;">
-                <table class="table-emu">
-                    <thead><tr><th>نوع</th><th>زمان</th><th>قلم</th><th>بچ</th><th>مقدار</th><th>کاربر</th><th>یادداشت</th></tr></thead>
-                    <tbody>
-                        @foreach (var item in data.Corrections30Days)
-                        {
-                            <tr @key="item.MovementId">
-                                <td>@(item.Kind == StockMovementKind.Disposal ? "اسقاط" : "اصلاح")</td>
-                                <td><bdi>@JalaliDate.Format(item.AtUtc)</bdi></td>
-                                <td>@item.ProductName</td>
-                                <td><bdi>@item.BatchNumber</bdi></td>
-                                <td><bdi>@JalaliDate.ToPersianDigits(item.Quantity.ToString())</bdi></td>
-                                <td><bdi>@item.UserName</bdi></td>
-                                <td>@item.Note</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-        }
-    </section>
+        <section class="card-emu">
+            <h2>نزدیک‌ترین انقضاها</h2>
+            @if (soonest.Count == 0)
+            {
+                <p class="form-hint">موردی نیست.</p>
+            }
+            @foreach (var item in soonest)
+            {
+                <a class="bar-row" href="products/@item.ProductId" @key="item.BatchId">
+                    <span class="bar-label" title="@item.ProductName">@item.ProductName</span>
+                    <span class="cell-sub d-inline"><bdi>@item.ExpiryText</bdi></span>
+                    <span class="bar-value">@Num(item.OnHand)</span>
+                </a>
+            }
+            <a class="dash-more" href="dashboard/expiry?bucket=near">همه</a>
+        </section>
+    </div>
 }
 else if (_error is null)
 {
@@ -108,6 +100,8 @@ else if (_error is null)
 </RequirePermission>
 
 @code {
+    private const int MaxListItems = 5;
+
     private DashboardResponse? _data;
     private string? _error;
     private bool _loading;
@@ -132,72 +126,14 @@ else if (_error is null)
 
     private static string Num(int value) => JalaliDate.ToPersianDigits(value.ToString());
 
-    private RenderFragment ExpiryTable(string title, DashboardExpiryBucket bucket) => __builder =>
-    {
-        <h3 class="mt-3">@title (@Num(bucket.Total))</h3>
-        @if (bucket.Total == 0)
-        {
-            <p class="form-hint">موردی نیست.</p>
-        }
-        else
-        {
-            <div style="overflow-x:auto;">
-                <table class="table-emu">
-                    <thead><tr><th>قلم</th><th>بچ</th><th>انقضا</th><th>موجودی</th><th>محل</th></tr></thead>
-                    <tbody>
-                        @foreach (var item in bucket.Items)
-                        {
-                            <tr @key="item.BatchId">
-                                <td><a href="products/@item.ProductId">@item.ProductName</a> <span class="cell-sub">@item.Brand</span></td>
-                                <td><bdi>@item.BatchNumber</bdi></td>
-                                <td><bdi>@item.ExpiryText</bdi></td>
-                                <td>@Num(item.OnHand)</td>
-                                <td><bdi>@item.LocationPath</bdi></td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-            @if (bucket.Total > bucket.Items.Count)
-            {
-                <p class="form-hint">فقط @Num(bucket.Items.Count) مورد زودتر منقضی‌شونده نمایش داده شد.</p>
-            }
-        }
-    };
+    private static string Percent(int value, int max) => FormattableString.Invariant($"{value * 100.0 / max:0.#}%");
 
-    private RenderFragment ConsumptionTable(string title, DashboardConsumption consumption) => __builder =>
+    // رنگ هشدار فقط وقتی عدد صفر نیست؛ کارت آرام یعنی چیزی برای نگرانی نیست.
+    private static RenderFragment Card(string title, int value, string href, string? alertClass) => __builder =>
     {
-        <h3 class="mt-3">@title</h3>
-        @if (consumption.TopProducts.Count == 0)
-        {
-            <p class="form-hint">مصرفی ثبت نشده است.</p>
-        }
-        else
-        {
-            <div class="d-flex gap-3 flex-wrap">
-                <div style="flex:1; min-width:16rem;">
-                    <strong>پرمصرف‌ترین اقلام</strong>
-                    <table class="table-emu">
-                        <tbody>
-                            @foreach (var item in consumption.TopProducts)
-                            {
-                                <tr @key="item.Id"><td>@item.Name</td><td>@Num(item.Quantity)</td></tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-                <div style="flex:1; min-width:16rem;">
-                    <strong>به تفکیک فرد</strong>
-                    <table class="table-emu">
-                        <tbody>
-                            @foreach (var item in consumption.ByUser)
-                            {
-                                <tr @key="item.Id"><td><bdi>@item.Name</bdi></td><td>@Num(item.Quantity)</td></tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        }
+        <a class="dash-card @(value > 0 ? alertClass : null)" href="@href">
+            <strong>@Num(value)</strong>
+            <span>@title</span>
+        </a>
     };
 }

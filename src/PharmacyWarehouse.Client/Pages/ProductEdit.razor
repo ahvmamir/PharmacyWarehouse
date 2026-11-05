@@ -32,7 +32,7 @@ else
             <div class="form-grid">
                 <div class="form-field">
                     <label for="product-name">نام و دوز <span class="required">*</span></label>
-                    <input id="product-name" class="form-control" @bind="_request.Name" maxlength="@ProductRules.MaxName" />
+                    <input id="product-name" class="form-control" @ref="_nameInput" @bind="_request.Name" maxlength="@ProductRules.MaxName" />
                     <FieldError Field="Name" Errors="_errors" />
                 </div>
                 <div class="form-field">
@@ -48,13 +48,7 @@ else
                 </div>
                 <div class="form-field">
                     <label for="product-location">محل</label>
-                    <select id="product-location" class="form-select" @bind="_locationText">
-                        <option value="">— بدون محل —</option>
-                        @foreach (var location in LocationOptions())
-                        {
-                            <option value="@location.Id">@location.Path</option>
-                        }
-                    </select>
+                    <LocationPicker InputId="product-location" Items="LocationOptions()" @bind-Value="_locationId" />
                     <FieldError Field="LocationId" Errors="_errors" />
                 </div>
                 <div class="form-field">
@@ -89,6 +83,10 @@ else
 
             <div class="modal-actions">
                 <button type="submit" class="btn btn-primary" disabled="@_busy">@(_busy ? "در حال ذخیره…" : "ذخیره")</button>
+                @if (IsNew)
+                {
+                    <button type="button" class="btn btn-quiet" disabled="@_busy" @onclick="SaveAndNextAsync">ثبت و قلم بعدی</button>
+                }
                 <a class="btn btn-quiet" href="@(IsNew ? "" : $"products/{Id}")">انصراف</a>
             </div>
         </section>
@@ -103,7 +101,9 @@ else
     private Dictionary<string, string[]> _errors = [];
     private List<StorageLocationItem> _locations = [];
     private Guid? _originalLocation;
-    private string _locationText = "";
+    private Guid? _locationId;
+    private ElementReference _nameInput;
+    private bool _focusName;
     private string? _loadError;
     private string? _formError;
     private bool _ready;
@@ -154,7 +154,15 @@ else
         _request.AllowExpiredWithdrawal = detail.AllowExpiredWithdrawal;
         _request.Version = detail.Summary.Version;
         _originalLocation = detail.LocationId;
-        _locationText = detail.LocationId?.ToString() ?? "";
+        _locationId = detail.LocationId;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusName) return;
+
+        _focusName = false;
+        await _nameInput.FocusAsync();
     }
 
     // فقط محل‌های قابل‌استفاده، به‌اضافه‌ی محل فعلیِ قلم؛ فهرست از سرور به ترتیب درخت می‌آید.
@@ -163,11 +171,38 @@ else
 
     private async Task SaveAsync()
     {
+        var saved = await SaveCoreAsync();
+        if (saved is null) return;
+
+        Toasts.Show($"ذخیره شد: {saved.Summary.Name}");
+        Navigation.NavigateTo($"products/{saved.Summary.Id}");
+    }
+
+    // محل و بسته‌بندی برای ورود پشت‌سرهم می‌ماند. تیک‌ها عمداً به پیش‌فرض برمی‌گردند،
+    // تا «برداشت از بچ منقضی مجاز است» از یک قلم به قلم بعدی نرود.
+    private async Task SaveAndNextAsync()
+    {
+        var saved = await SaveCoreAsync();
+        if (saved is null) return;
+
+        Toasts.Show($"ذخیره شد: {saved.Summary.Name}");
+        _request.Name = "";
+        _request.Brand = null;
+        _request.MinStock = null;
+        _request.RequiresExpiry = true;
+        _request.AllowExpiredWithdrawal = false;
+        _focusName = true;
+    }
+
+    private async Task<ProductDetail?> SaveCoreAsync()
+    {
+        if (_busy) return null;
+
         _busy = true;
         _errors = [];
         _formError = null;
 
-        _request.LocationId = Guid.TryParse(_locationText, out var location) ? location : null;
+        _request.LocationId = _locationId;
         var result = await ProductsApi.SaveAsync(Id, _request);
         _busy = false;
 
@@ -182,16 +217,15 @@ else
                 {
                     Fill(fresh.Value!);
                     _formError = "این قلم در این فاصله تغییر کرد؛ مقدارهای تازه بارگذاری شد. تغییرتان را دوباره اعمال کنید.";
-                    return;
+                    return null;
                 }
             }
 
             if (result.Problem is { Errors.Count: > 0 } problem) _errors = problem.Errors;
             if (_errors.Count == 0) _formError = result.ErrorMessage;
-            return;
+            return null;
         }
 
-        Toasts.Show($"ذخیره شد: {result.Value!.Summary.Name}");
-        Navigation.NavigateTo($"products/{result.Value.Summary.Id}");
+        return result.Value!;
     }
 }

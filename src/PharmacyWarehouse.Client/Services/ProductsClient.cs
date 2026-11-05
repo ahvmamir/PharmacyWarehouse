@@ -25,6 +25,9 @@ public sealed class ProductsClient
         return ApiSender.SendAsync<List<ProductListItem>>(ct => _http.GetAsync(url, ct));
     }
 
+    public Task<ApiResult<ProductSearchResponse>> SearchAsync(string text) =>
+        ApiSender.SendAsync<ProductSearchResponse>(ct => _http.GetAsync(ApiRoutes.ProductSearch(text), ct));
+
     public Task<ApiResult<ProductDetail>> GetAsync(Guid id) =>
         ApiSender.SendAsync<ProductDetail>(ct => _http.GetAsync(ApiRoutes.ById(ApiRoutes.Products, id), ct));
 
@@ -58,7 +61,7 @@ public sealed class ProductsClient
     public Task<ApiResult<DependencyList>> DeleteAsync(Guid id) =>
         ApiSender.SendAsync<DependencyList>(ct => _http.DeleteAsync(ApiRoutes.ById(ApiRoutes.Products, id), ct));
 
-    // ورود جنس: ۴۰۹ هم برای ناسازگاری Version (ProblemTypes.VersionConflict) و هم «یک بچ دو تاریخ» می‌آید.
-    public Task<ApiResult<ReceiptResult>> ReceiveAsync(ReceiptRequest request) =>
-        ApiSender.SendAsync<ReceiptResult>(ct => _http.PostAsJsonAsync(ApiRoutes.Receipts, request, ct));
+    // ورود جنس گروهی: همه یا هیچ. خطاها با کلید BulkReceiptErrors به ردیف‌ها برمی‌گردند.
+    public Task<ApiResult<BulkReceiptResult>> ReceiveBulkAsync(BulkReceiptRequest request) =>
+        ApiSender.SendAsync<BulkReceiptResult>(ct => _http.PostAsJsonAsync(ApiRoutes.ReceiptsBulk, request, ct), TimeSpan.FromSeconds(60));
 }

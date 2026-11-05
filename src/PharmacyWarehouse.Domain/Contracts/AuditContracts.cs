@@ -8,6 +8,7 @@ public sealed class AuditEntryItem
     public DateTime AtUtc { get; init; }
     public string UserName { get; init; } = "";
     public string EntityType { get; init; } = "";
+    public Guid EntityId { get; init; }
     public string? EntityLabel { get; init; }
     public string Action { get; init; } = "";
     public string? Field { get; init; }

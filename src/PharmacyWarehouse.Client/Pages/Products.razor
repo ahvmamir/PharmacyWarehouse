@@ -35,13 +35,7 @@
     </div>
     <div>
         <label for="product-location">محل</label>
-        <select id="product-location" class="form-select" @bind="_locationText" @bind:after="LoadAsync">
-            <option value="">— همه‌ی محل‌ها —</option>
-            @foreach (var location in _locations)
-            {
-                <option value="@location.Id">@location.Path</option>
-            }
-        </select>
+        <LocationPicker InputId="product-location" Items="_locations" EmptyLabel="— همه‌ی محل‌ها —" Value="_locationId" ValueChanged="OnLocationChangedAsync" />
     </div>
     <div>
         <label for="product-filter">وضعیت موجودی</label>
@@ -99,9 +93,9 @@ else
             <tbody>
                 @foreach (var item in _items)
                 {
-                    <tr @key="item.Id">
+                    <tr class="row-link" @key="item.Id">
                         <td>
-                            <a href="products/@item.Id">@item.Name</a>
+                            <a class="row-link-main" href="products/@item.Id">@item.Name</a>
                             @if (!item.IsActive)
                             {
                                 <span class="status-badge status-retired">غیرفعال</span>
@@ -193,7 +187,7 @@ else
     private string? _error;
 
     private string _query = "";
-    private string _locationText = "";
+    private Guid? _locationId;
     private string _filter = "";
     private bool _includeInactive;
 
@@ -209,7 +203,7 @@ else
 
     private bool CanManage => Session.Can(Permissions.ProductsManage);
 
-    private bool HasCriteria => !string.IsNullOrWhiteSpace(_query) || _locationText != "" || _filter != "";
+    private bool HasCriteria => !string.IsNullOrWhiteSpace(_query) || _locationId is not null || _filter != "";
 
     private static DateOnly Today() => LocalDay.Today(DateTime.UtcNow);
 
@@ -222,12 +216,17 @@ else
 
     private Task SearchAsync() => LoadAsync();
 
+    private Task OnLocationChangedAsync(Guid? id)
+    {
+        _locationId = id;
+        return LoadAsync();
+    }
+
     private async Task LoadAsync()
     {
         _error = null;
         var result = await ProductsApi.ListAsync(
-            _query, Guid.TryParse(_locationText, out var location) ? location : null,
-            _filter, CanManage && _includeInactive);
+            _query, _locationId, _filter, CanManage && _includeInactive);
         if (!result.IsSuccess)
         {
             _error = result.ErrorMessage;

@@ -66,6 +66,14 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         var now = DateTime.UtcNow;
         var rows = new List<AuditEntry>();
 
+        // نام رکوردهای این ذخیره یک بار خوانده می‌شود؛ ChangeTracker.Entries هر بار DetectChanges می‌زند و در ورود گروهی کند است.
+        var names = new Dictionary<Guid, string?>();
+        foreach (var tracked in db.ChangeTracker.Entries())
+        {
+            if (tracked.Entity is StorageLocation location) names[location.Id] = location.Name;
+            else if (tracked.Entity is Product product) names[product.Id] = product.Name;
+        }
+
         foreach (var entry in entries)
         {
             AuditEntry Row(string action, string? field, string? oldValue, string? newValue) => new()
@@ -88,11 +96,11 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             switch (entry.State)
             {
                 case EntityState.Added:
-                    rows.Add(Row(AuditActions.Created, null, null, ToJson(entry, useOriginal: false)));
+                    rows.Add(Row(AuditActions.Created, null, null, await ToJsonAsync(db, entry, names, useOriginal: false, ct)));
                     break;
 
                 case EntityState.Deleted:
-                    rows.Add(Row(AuditActions.Deleted, null, ToJson(entry, useOriginal: true), null));
+                    rows.Add(Row(AuditActions.Deleted, null, await ToJsonAsync(db, entry, names, useOriginal: true, ct), null));
                     break;
 
                 case EntityState.Modified:
@@ -104,8 +112,8 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
                         rows.Add(Row(
                             AuditActions.Updated,
                             name,
-                            await DescribeAsync(db, entry.Entity, name, property.OriginalValue, ct),
-                            await DescribeAsync(db, entry.Entity, name, property.CurrentValue, ct)));
+                            await DescribeAsync(db, entry.Entity, name, property.OriginalValue, names, ct),
+                            await DescribeAsync(db, entry.Entity, name, property.CurrentValue, names, ct)));
                     }
 
                     // endpoint مقدار OriginalValue را از Version دیده‌شده‌ی Client پر کرده است.
@@ -118,13 +126,15 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         db.AuditEntries.AddRange(rows);
     }
 
-    private static string ToJson(EntityEntry<IAudited> entry, bool useOriginal)
+    private static async Task<string> ToJsonAsync(WarehouseDbContext db, EntityEntry<IAudited> entry, Dictionary<Guid, string?> names, bool useOriginal, CancellationToken ct)
     {
         var values = new Dictionary<string, string?>();
         foreach (var property in entry.Properties)
         {
             if (IsDerived(property.Metadata.Name)) continue;
-            values[property.Metadata.Name] = Format(useOriginal ? property.OriginalValue : property.CurrentValue);
+
+            var value = useOriginal ? property.OriginalValue : property.CurrentValue;
+            values[property.Metadata.Name] = await DescribeAsync(db, entry.Entity, property.Metadata.Name, value, names, ct);
         }
 
         // نویسه‌های فارسی escape نشوند تا ردیف‌ها خوانا ذخیره شوند. خروجی را Blazor موقع نمایش encode می‌کند.
@@ -141,23 +151,25 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
 
     // شناسه‌ها به شکل id|name: تغییر نام بعدی یک واحد، تاریخچه را گمراه نمی‌کند.
     // ParentId در چند موجودیت هست؛ معنی‌اش به نوع موجودیت بستگی دارد.
-    private static async Task<string?> DescribeAsync(WarehouseDbContext db, IAudited entity, string field, object? value, CancellationToken ct)
+    private static async Task<string?> DescribeAsync(WarehouseDbContext db, IAudited entity, string field, object? value, Dictionary<Guid, string?> names, CancellationToken ct)
     {
         if (value is not Guid id) return Format(value);
 
-        var name = (entity, field) switch
+        var kind = (entity, field) switch
         {
-            (StorageLocation, "ParentId") =>
-                db.ChangeTracker.Entries<StorageLocation>().FirstOrDefault(e => e.Entity.Id == id)?.Entity.Name
-                ?? await db.StorageLocations.AsNoTracking().Where(l => l.Id == id).Select(l => l.Name).FirstOrDefaultAsync(ct),
-            (Product or Batch, "LocationId") =>
-                db.ChangeTracker.Entries<StorageLocation>().FirstOrDefault(e => e.Entity.Id == id)?.Entity.Name
-                ?? await db.StorageLocations.AsNoTracking().Where(l => l.Id == id).Select(l => l.Name).FirstOrDefaultAsync(ct),
-            (Batch or ProductBarcode, "ProductId") =>
-                db.ChangeTracker.Entries<Product>().FirstOrDefault(e => e.Entity.Id == id)?.Entity.Name
-                ?? await db.Products.AsNoTracking().Where(p => p.Id == id).Select(p => p.Name).FirstOrDefaultAsync(ct),
+            (StorageLocation, "ParentId") or (Product or Batch, "LocationId") => typeof(StorageLocation),
+            (Batch or ProductBarcode, "ProductId") => typeof(Product),
             _ => null
         };
+        if (kind is null) return id.ToString();
+
+        if (!names.TryGetValue(id, out var name))
+        {
+            name = kind == typeof(StorageLocation)
+                ? await db.StorageLocations.AsNoTracking().Where(l => l.Id == id).Select(l => l.Name).FirstOrDefaultAsync(ct)
+                : await db.Products.AsNoTracking().Where(p => p.Id == id).Select(p => p.Name).FirstOrDefaultAsync(ct);
+            names[id] = name;
+        }
 
         return name is null ? id.ToString() : $"{id}|{name}";
     }

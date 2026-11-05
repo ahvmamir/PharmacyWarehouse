@@ -47,7 +47,7 @@ else
             }
             @if (CanManage)
             {
-                <a class="btn btn-primary" href="products/@summary.Id/edit"><AppIcon Name="edit" Size="15" /> ویرایش</a>
+                <a class="btn btn-quiet" href="products/@summary.Id/edit"><AppIcon Name="edit" Size="15" /> ویرایش</a>
                 <button type="button" class="btn btn-quiet" disabled="@_busy" @onclick="ToggleActiveAsync">@(summary.IsActive ? "غیرفعال کن" : "فعال کن")</button>
                 <button type="button" class="btn btn-danger-quiet" @onclick="() => _showDelete = true"><AppIcon Name="trash" Size="15" /> حذف</button>
             }

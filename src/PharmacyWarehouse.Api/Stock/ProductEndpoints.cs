@@ -16,11 +16,13 @@ public static class ProductEndpoints
 {
     private const string DuplicateProduct = "قلمی با همین نام، برند و بسته‌بندی وجود دارد.";
     private const int ExpiringDays = 180; // برش ۵ با تنظیمات جایگزین می‌شود
+    private const int MaxSearchResults = 20;
 
     public static void MapProductEndpoints(this WebApplication app)
     {
         var read = app.MapGroup(ApiRoutes.Products).RequireAuthorization(Permissions.StockView);
         read.MapGet("", ListAsync);
+        read.MapGet("search", SearchAsync);
         read.MapGet("by-code/{code}", ByCodeAsync);
         read.MapGet("{id:guid}", GetAsync);
         read.MapGet("{id:guid}/history", HistoryAsync);
@@ -127,6 +129,35 @@ public static class ProductEndpoints
         return Results.Ok(items);
     }
 
+    // ترتیب: بارکد دقیق، شروع نام، شامل همه‌ی کلمات، مشابه املایی (Domain). فقط روی ستون‌های کلید.
+    private static async Task<IResult> SearchAsync(WarehouseDbContext db, string? q)
+    {
+        if (TextNormalizer.SearchKey(q) is null) return Results.Ok(new ProductSearchResponse(null, []));
+
+        Guid? exact = null;
+        if (TextNormalizer.ScanKey(q) is { } scanKey)
+        {
+            exact = await db.ProductBarcodes.AsNoTracking().Where(b => b.CodeKey == scanKey).Select(b => (Guid?)b.ProductId).FirstOrDefaultAsync();
+        }
+
+        var candidates = await db.Products.AsNoTracking().Where(p => p.IsActive)
+            .Select(p => new { p.Id, p.Name, p.SearchText }).ToListAsync();
+        var ranked = ProductSearch.Rank(q, candidates.Select(c => new SearchCandidate(c.Id, TextNormalizer.SearchKey(c.Name)!, c.SearchText)), MaxSearchResults)
+            .Select(c => c.Id).Where(id => id != exact).ToList();
+        if (exact is { } exactId) ranked.Insert(0, exactId);
+        if (ranked.Count > MaxSearchResults) ranked.RemoveAt(ranked.Count - 1);
+
+        var products = await db.Products.AsNoTracking().Where(p => ranked.Contains(p.Id)).ToDictionaryAsync(p => p.Id);
+        var batches = (await db.Batches.AsNoTracking().Where(b => ranked.Contains(b.ProductId)).ToListAsync()).ToLookup(b => b.ProductId);
+        var locations = await LoadLocationsAsync(db);
+        var today = Today();
+
+        return Results.Ok(new ProductSearchResponse(exact, ranked
+            .Where(products.ContainsKey)
+            .Select(id => ToListItem(products[id], batches[id].ToList(), locations, today))
+            .ToList()));
+    }
+
     private static async Task<IResult> ByCodeAsync(string code, WarehouseDbContext db)
     {
         var key = TextNormalizer.ScanKey(code);
@@ -160,6 +191,15 @@ public static class ProductEndpoints
 
         var entries = await db.AuditEntries.AsNoTracking().Where(a => a.SubjectId == id).ToListAsync();
 
+        // ردیف‌های «ثبت» و «حذف» قدیمی شناسه‌ی خام محل دارند. این ردیف‌ها AsNoTracking‌اند و ذخیره نمی‌شوند؛ فقط پاسخ عوض می‌شود.
+        var locationNames = await db.StorageLocations.AsNoTracking().ToDictionaryAsync(l => l.Id, l => l.Name);
+        foreach (var entry in entries.Where(a => a.Action is AuditActions.Created or AuditActions.Deleted))
+        {
+            string NameOf(Guid location) => locationNames.GetValueOrDefault(location, "محل حذف‌شده");
+            entry.OldValue = AuditRedaction.WithResolvedId(entry.OldValue, nameof(Product.LocationId), NameOf);
+            entry.NewValue = AuditRedaction.WithResolvedId(entry.NewValue, nameof(Product.LocationId), NameOf);
+        }
+
         // [تصمیم ۲۰۲۶-۱۱-۰۵] قیمت خرید فقط برای دارندگان reports.view دیده می‌شود. هم ردیف ویرایش قیمت حذف می‌شود
         // و هم کلید قیمت از JSON ردیف‌های «ثبت» و «حذف» بچ.
         if (!await permissions.HasAsync(audit.UserId, Permissions.ReportsView))
@@ -186,7 +226,7 @@ public static class ProductEndpoints
                 .Select(a => new AuditEntryItem
                 {
                     Id = a.Id, ChangeSetId = a.ChangeSetId, AtUtc = a.AtUtc, UserName = a.UserName, EntityType = a.EntityType,
-                    EntityLabel = a.EntityLabel, Action = a.Action, Field = a.Field, OldValue = a.OldValue, NewValue = a.NewValue,
+                    EntityId = a.EntityId, EntityLabel = a.EntityLabel, Action = a.Action, Field = a.Field, OldValue = a.OldValue, NewValue = a.NewValue,
                     Reason = a.Reason
                 })
                 .ToList()

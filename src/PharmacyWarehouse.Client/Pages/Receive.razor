@@ -1,10 +1,12 @@
 @page "/receive"
 @attribute [Authorize]
+@using System.Text.Json
 @using PharmacyWarehouse.Domain.Stock
 @inject ProductsClient ProductsApi
 @inject LocationsClient LocationsApi
 @inject ToastService Toasts
 @inject ApiAuthenticationStateProvider Session
+@inject IJSRuntime JS
 
 <PageTitle>ورود جنس | انبار داروخانه</PageTitle>
 
@@ -12,59 +14,104 @@
 <div class="page-head">
     <div>
         <h1>ورود جنس</h1>
-        <p>بارکد قلم را اسکن کنید یا نام آن را بنویسید و Enter بزنید. تعداد به «جعبه» است.</p>
+        <p>قلم‌ها را اسکن یا جست‌وجو کنید تا به فهرست اضافه شوند؛ روی هر ردیف بزنید و بچ، تاریخ، تعداد و محل را کامل کنید. تعداد به «جعبه» است.</p>
     </div>
 </div>
 
 <section class="card-emu">
-    <div style="max-width:520px;">
-        <div class="form-hint">قلم</div>
-        <ScanInput @ref="_scan" OnScan="OnScanAsync" Placeholder="اسکن بارکد (یا نام قلم و Enter)" />
+    <div class="receive-search">
+        <label for="receive-search" class="form-hint">قلم</label>
+        <ProductCombobox @ref="_search" InputId="receive-search" OnPick="OnPickAsync">
+            <EmptyContent>
+                <span>قلمی پیدا نشد.</span>
+                @if (Session.Can(Permissions.ProductsManage))
+                {
+                    <a class="btn btn-sm btn-quiet ms-2" href="products/new"><AppIcon Name="plus" Size="15" /> قلم جدید</a>
+                }
+            </EmptyContent>
+        </ProductCombobox>
     </div>
-
     @if (_scanError is not null)
     {
         <div class="form-alert mt-3 mb-0" role="alert">@_scanError</div>
     }
+</section>
 
-    @if (Session.Can(Permissions.ProductsManage) && (_scanError is not null || _results is { Count: 0 }))
-    {
-        <div class="mt-2"><a class="btn btn-quiet" href="products/new"><AppIcon Name="plus" /> قلم جدید</a></div>
-    }
-
-    @if (_results is not null)
-    {
-        @if (_results.Count == 0)
+@if (_rows.Count == 0)
+{
+    <div class="empty-state">
+        <AppIcon Name="box" Size="36" />
+        <p>هنوز قلمی به فهرست اضافه نشده.</p>
+    </div>
+}
+else
+{
+    <section class="card-emu receive-list">
+        <h2>فهرست ورود (@JalaliDate.ToPersianDigits(_rows.Count.ToString()) ردیف)</h2>
+        @foreach (var row in _rows)
         {
-            <div class="form-hint mt-2">قلمی پیدا نشد.</div>
-        }
-        else
-        {
-            <div class="mt-2" style="max-height:260px;overflow:auto;">
-                @foreach (var item in _results)
-                {
-                    <button type="button" class="linked-item" style="width:100%;text-align:start;background:none;border-inline:0;border-top:0;" @key="item.Id" @onclick="() => PickAsync(item.Id)">
-                        <span style="flex:1;">
-                            <strong>@item.Name</strong>
-                            <small class="cell-sub">@string.Join(" · ", new[] { item.Brand, item.PackDescription }.Where(s => !string.IsNullOrEmpty(s)))</small>
+            var isOpen = _openKey == row.Key;
+            <div class="receive-row @(isOpen ? "open" : "") @(row.HasError ? "has-error" : "")" @key="row.Key">
+                <div class="receive-row-head">
+                    <button type="button" class="receive-row-toggle" aria-expanded="@(isOpen ? "true" : "false")" @onclick="() => Toggle(row)">
+                        <AppIcon Name="chevron" Size="16" Class="fold-chevron" />
+                        <span class="combo-main">
+                            <strong>@row.ProductName</strong>
+                            <small class="cell-sub">@Summary(row)</small>
                         </span>
+                        @if (row.HasError)
+                        {
+                            <span class="status-badge status-expired">خطا</span>
+                        }
+                        else if (!row.IsComplete)
+                        {
+                            <span class="status-badge status-pending">ناقص</span>
+                        }
+                        <strong class="receive-row-qty">@JalaliDate.ToPersianDigits(row.Quantity.ToString()) جعبه</strong>
                     </button>
+                    <button type="button" class="icon-button danger" title="حذف ردیف" aria-label="حذف ردیف @row.ProductName" disabled="@_busy" @onclick="() => Remove(row)"><AppIcon Name="trash" Size="16" /></button>
+                </div>
+
+                @if (row.RowError is not null)
+                {
+                    <div class="form-alert mt-2 mb-0" role="alert"><AppIcon Name="warning" /> <span>@row.RowError</span></div>
+                }
+                @if (!isOpen)
+                {
+                    @foreach (var message in row.Errors.Values.SelectMany(m => m))
+                    {
+                        <div class="field-error">@message</div>
+                    }
+                }
+
+                @if (isOpen && row.Detail is { } product)
+                {
+                    <div class="receive-row-body">@RowForm(row, product)</div>
                 }
             </div>
         }
-    }
-</section>
 
-@if (_loadingProduct)
-{
-    <div class="loading-line">در حال بارگذاری…</div>
+        @if (_formError is not null)
+        {
+            <div class="form-alert mt-3" role="alert"><AppIcon Name="warning" /> <span>@_formError</span></div>
+        }
+
+        <div class="mt-3 d-flex gap-2 flex-wrap">
+            <button type="button" class="btn btn-primary" disabled="@(_busy || _rows.Count == 0)" @onclick="SubmitAsync">@(_busy ? "در حال ثبت…" : "ثبت نهایی")</button>
+            <button type="button" class="btn btn-quiet" disabled="@_busy" @onclick="ClearAll">خالی کردن فهرست</button>
+        </div>
+        <div class="form-hint mt-2">«ثبت نهایی» همه‌ی ردیف‌ها را با هم ثبت می‌کند؛ اگر یک ردیف خطا داشته باشد هیچ‌کدام ثبت نمی‌شود. این فهرست تا پیش از ثبت در همین مرورگر می‌ماند.</div>
+    </section>
 }
+</RequirePermission>
 
-@if (_product is { } product)
-{
-    var summary = product.Summary;
-    <section class="card-emu">
-        <h2>@summary.Name</h2>
+@code {
+    private RenderFragment RowForm(ReceiveRow row, ProductDetail product) => __builder =>
+    {
+        var summary = product.Summary;
+        var prefix = "row-" + row.Key.ToString("N");
+        var radio = "batch-" + prefix;
+
         <p class="form-hint">
             @string.Join(" · ", new[] { summary.Brand, summary.PackDescription }.Where(s => !string.IsNullOrEmpty(s)))
             — موجودی فعلی: @JalaliDate.ToPersianDigits(summary.OnHand.ToString()) جعبه
@@ -79,7 +126,7 @@
         @foreach (var batch in product.Batches)
         {
             <label class="linked-item" @key="batch.Id">
-                <input type="radio" name="receive-batch" class="form-check-input" checked="@(_batchId == batch.Id)" @onchange="() => SelectBatch(batch.Id)" />
+                <input type="radio" name="@radio" class="form-check-input" checked="@(row.BatchId == batch.Id)" @onchange="() => SelectBatch(row, batch.Id)" />
                 <span style="flex:1;">
                     <bdi>@batch.BatchNumber</bdi>
                     — انقضا: @(batch.ExpiryText ?? "—")
@@ -92,40 +139,29 @@
             </label>
         }
         <label class="linked-item">
-            <input type="radio" name="receive-batch" class="form-check-input" checked="@(_batchId is null)" @onchange="() => SelectBatch(null)" />
+            <input type="radio" name="@radio" class="form-check-input" checked="@(row.BatchId is null)" @onchange="() => SelectBatch(row, null)" />
             <span style="flex:1;">بچ تازه</span>
         </label>
 
         <div class="mt-3">
-            @if (_batchId is null)
+            @if (row.BatchId is null)
             {
                 <div class="form-grid">
                     <div class="form-field">
-                        <label for="receive-batch-number">شماره‌ی بچ <span class="required">*</span></label>
-                        <input id="receive-batch-number" class="form-control" dir="ltr" autocomplete="off" @bind="_batchNumber" />
-                        <FieldError Field="BatchNumber" Errors="_errors" />
+                        <label for="@(prefix)-number">شماره‌ی بچ <span class="required">*</span></label>
+                        <input id="@(prefix)-number" class="form-control" dir="ltr" autocomplete="off" @bind="row.BatchNumber" />
+                        <FieldError Field="BatchNumber" Errors="row.Errors" />
                     </div>
                     <div class="form-field">
-                        <label for="receive-location">محل</label>
-                        <select id="receive-location" class="form-select" @bind="_locationText">
-                            <option value="">@(summary.LocationPath is null ? "— بدون محل —" : $"— محل قلم: {summary.LocationPath} —")</option>
-                            @foreach (var location in _locations)
-                            {
-                                <option value="@location.Id">@location.Path</option>
-                            }
-                        </select>
-                        <FieldError Field="LocationId" Errors="_errors" />
-                    </div>
-                    <div class="form-field">
-                        <label for="receive-cost">قیمت واحد</label>
-                        <input id="receive-cost" class="form-control" dir="ltr" inputmode="numeric" autocomplete="off" @bind="_costText" />
-                        <FieldError Field="UnitCost" Errors="_errors" />
+                        <label for="@(prefix)-cost">قیمت واحد</label>
+                        <input id="@(prefix)-cost" class="form-control" dir="ltr" inputmode="numeric" autocomplete="off" @bind="row.CostText" />
+                        <FieldError Field="UnitCost" Errors="row.Errors" />
                     </div>
                 </div>
                 <div class="mt-3">
-                    <ExpiryFields @bind-Value="_expiry" Required="@product.RequiresExpiry" />
-                    <FieldError Field="Expiry" Errors="_errors" />
-                    @if (PastExpiryWarning is { } pastWarning)
+                    <ExpiryFields IdPrefix="@prefix" @bind-Value="row.Expiry" Required="@product.RequiresExpiry" />
+                    <FieldError Field="Expiry" Errors="row.Errors" />
+                    @if (PastExpiryWarning(row) is { } pastWarning)
                     {
                         <div class="form-alert mt-2 mb-0" role="alert"><AppIcon Name="warning" /> <span>@pastWarning</span></div>
                     }
@@ -134,8 +170,25 @@
                         <div class="form-hint">این قلم تاریخ انقضا لازم ندارد.</div>
                     }
                 </div>
+                <div class="form-field mt-3">
+                    <label for="@(prefix)-location">محل</label>
+                    @if (row.ChangingLocation)
+                    {
+                        <LocationPicker InputId="@(prefix + "-location")" Items="_locations" @bind-Value="row.LocationId"
+                                        EmptyLabel="@(summary.LocationPath is null ? "— بدون محل —" : $"— محل قلم: {summary.LocationPath} —")" />
+                        <div class="form-hint">فقط محل همین بچ عوض می‌شود؛ محل پیش‌فرض قلم همان می‌ماند.</div>
+                    }
+                    else
+                    {
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <bdi id="@(prefix)-location">@(summary.LocationPath ?? "— بدون محل —")</bdi>
+                            <button type="button" class="btn btn-sm btn-quiet" @onclick="() => row.ChangingLocation = true"><AppIcon Name="location" Size="15" /> تغییر محل</button>
+                        </div>
+                    }
+                    <FieldError Field="LocationId" Errors="row.Errors" />
+                </div>
             }
-            else if (SelectedBatch is { } selected)
+            else if (row.SelectedBatch is { } selected)
             {
                 <dl class="spec-list">
                     <div><dt>شماره‌ی بچ</dt><dd><bdi>@selected.BatchNumber</bdi></dd></div>
@@ -143,273 +196,355 @@
                     <div><dt>محل</dt><dd><bdi>@(selected.LocationPath ?? "—")</bdi></dd></div>
                 </dl>
                 <div class="form-hint">برای بچ موجود فقط تعداد اضافه می‌شود.</div>
-                <FieldError Field="BatchVersion" Errors="_errors" />
+                <FieldError Field="BatchVersion" Errors="row.Errors" />
+                <FieldError Field="BatchNumber" Errors="row.Errors" />
+                <FieldError Field="Expiry" Errors="row.Errors" />
             }
         </div>
 
         <div class="form-grid mt-3">
             <div class="form-field">
-                <label for="receive-qty">تعداد (جعبه) <span class="required">*</span></label>
+                <label for="@(prefix)-qty">تعداد (جعبه) <span class="required">*</span></label>
                 <div class="d-flex align-items-center gap-2">
-                    <button type="button" class="btn btn-quiet" aria-label="کم کن" disabled="@(_quantity <= 1)" @onclick="() => _quantity = Math.Max(1, _quantity - 1)">−</button>
-                    <input id="receive-qty" type="number" min="1" step="1" class="form-control" dir="ltr" style="max-width:110px;text-align:center;" @bind="_quantity" />
-                    <button type="button" class="btn btn-quiet" aria-label="زیاد کن" @onclick="() => _quantity++">+</button>
+                    <button type="button" class="btn btn-quiet" aria-label="کم کن" disabled="@(row.Quantity <= 1)" @onclick="() => row.Quantity = Math.Max(1, row.Quantity - 1)">−</button>
+                    <input id="@(prefix)-qty" type="number" min="1" step="1" class="form-control" dir="ltr" style="max-width:110px;text-align:center;" @bind="row.Quantity" />
+                    <button type="button" class="btn btn-quiet" aria-label="زیاد کن" @onclick="() => row.Quantity++">+</button>
                 </div>
-                <FieldError Field="Quantity" Errors="_errors" />
+                <FieldError Field="Quantity" Errors="row.Errors" />
             </div>
             <div class="form-field">
-                <label for="receive-note">یادداشت</label>
-                <input id="receive-note" class="form-control" autocomplete="off" @bind="_note" />
-                <FieldError Field="Note" Errors="_errors" />
+                <label for="@(prefix)-note">یادداشت</label>
+                <input id="@(prefix)-note" class="form-control" autocomplete="off" @bind="row.Note" />
+                <FieldError Field="Note" Errors="row.Errors" />
             </div>
         </div>
-
-        @if (_formError is not null)
-        {
-            <div class="form-alert mt-3" role="alert"><AppIcon Name="warning" /> <span>@_formError</span></div>
-        }
+        <FieldError Field="ProductId" Errors="row.Errors" />
 
         <div class="mt-3">
-            <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="SubmitAsync">@(_busy ? "در حال ثبت…" : "ثبت ورود")</button>
-            <button type="button" class="btn btn-quiet" disabled="@_busy" @onclick="ResetAsync">انصراف</button>
+            <button type="button" class="btn btn-sm btn-quiet" @onclick="() => AddSiblingBatch(row)"><AppIcon Name="plus" Size="15" /> بچ دیگر از همین قلم</button>
         </div>
-    </section>
-}
-</RequirePermission>
+    };
 
-@code {
     [SupplyParameterFromQuery(Name = "productId")] public Guid? ProductId { get; set; }
 
-    private ScanInput? _scan;
-    private ProductDetail? _product;
-    private List<ProductListItem>? _results;
-    private List<StorageLocationItem> _locations = [];
-    private Dictionary<string, string[]> _errors = [];
+    private static readonly JsonSerializerOptions DraftJson = new();
 
+    private ProductCombobox? _search;
+    private readonly List<ReceiveRow> _rows = [];
+    private List<StorageLocationItem> _locations = [];
+    private Guid? _openKey;
+    private Guid? _loadedProductId;
     private string? _scanError;
     private string? _formError;
     private bool _busy;
-    private bool _loadingProduct;
-    private Guid? _loadedProductId;
+    private bool _draftLoaded;
+    private string? _savedDraft;
 
-    // _batchId == null یعنی «بچ تازه»
-    private Guid? _batchId;
-    private string _batchNumber = "";
-    private string? _expiry;
-    private string _locationText = "";
-    private string _costText = "";
-    private int _quantity = 1;
-    private string _note = "";
+    private string DraftKey => $"pw-receive-draft-{Session.CurrentUser?.Id}";
 
     // تاریخ انقضای گذشته خطا نیست (ممکن است داده‌ی قدیمی را ثبت کنند) ولی بی‌صدا هم نمی‌ماند.
-    private string? PastExpiryWarning =>
-        ExpiryDate.Parse(_expiry) is { Value: { } value } && ExpiryDate.IsExpired(value.Date, LocalDay.Today(DateTime.UtcNow))
+    private static string? PastExpiryWarning(ReceiveRow row) =>
+        ExpiryDate.Parse(row.Expiry) is { Value: { } value } && ExpiryDate.IsExpired(value.Date, LocalDay.Today(DateTime.UtcNow))
             ? "تاریخ انقضا گذشته است؛ این بچ منقضی ثبت می‌شود و فقط با اسقاط خارج می‌شود."
             : null;
 
-    private BatchItem? SelectedBatch => _product?.Batches.FirstOrDefault(b => b.Id == _batchId);
+    private static string Summary(ReceiveRow row)
+    {
+        if (row.Detail is null) return "در حال بارگذاری…";
+
+        if (row.SelectedBatch is { } batch)
+        {
+            return string.Join(" · ", new[] { batch.BatchNumber, batch.ExpiryText, batch.LocationPath }.Where(s => !string.IsNullOrEmpty(s)));
+        }
+
+        var batchText = string.IsNullOrWhiteSpace(row.BatchNumber) ? "بچ وارد نشده" : row.BatchNumber;
+        var expiry = ExpiryDate.Parse(row.Expiry) is { Value: { } value } ? ExpiryDate.Display(value) : row.Detail.RequiresExpiry ? "بدون تاریخ" : null;
+        return string.Join(" · ", new[] { batchText, expiry, row.Detail.Summary.LocationPath }.Where(s => !string.IsNullOrEmpty(s)));
+    }
 
     protected override async Task OnInitializedAsync()
     {
         var locations = await LocationsApi.ListAsync();
         if (locations.IsSuccess) _locations = locations.Value!.Where(l => l.IsActive && l.IsUsable).ToList();
+        await LoadDraftAsync();
     }
 
     protected override async Task OnParametersSetAsync()
     {
-        if (ProductId is { } id && id != _loadedProductId) await PickAsync(id);
-    }
+        if (ProductId is not { } id || id == _loadedProductId) return;
 
-    private async Task OnScanAsync(string text)
-    {
-        _scanError = null;
-        _results = null;
-
-        // اول بارکد (حتی اگر متن حرف فارسی دارد)، بعد جست‌وجوی نام.
-        var lookup = await ProductLookup.ByCodeAsync(ProductsApi, text);
-        if (lookup.Kind == LookupKind.Found)
-        {
-            StartProduct(lookup.Product!);
-            return;
-        }
-
-        if (lookup.Kind == LookupKind.Error)
-        {
-            _scanError = lookup.Error;
-            return;
-        }
-
-        var list = await ProductsApi.ListAsync(text);
-        if (!list.IsSuccess)
-        {
-            _scanError = list.ErrorMessage;
-            return;
-        }
-
-        _results = list.Value!;
-        if (_results.Count == 0 && !ProductLookup.LooksLikeName(text)) _scanError = "بارکد ناشناخته؛ قلم را با نام جست‌وجو کنید.";
-    }
-
-    private async Task PickAsync(Guid id)
-    {
-        _loadingProduct = true;
-        _scanError = null;
-        var result = await ProductsApi.GetAsync(id);
-        _loadingProduct = false;
+        // آمدن از جزئیات قلم: ردیف موجود باز می‌شود و تعدادش زیاد نمی‌شود.
         _loadedProductId = id;
+        if (_rows.FirstOrDefault(r => r.ProductId == id) is { } existing)
+        {
+            _openKey = existing.Key;
+            return;
+        }
 
+        var result = await ProductsApi.GetAsync(id);
         if (!result.IsSuccess)
         {
             _scanError = result.Outcome == ApiOutcome.NotFound ? "این قلم پیدا نشد." : result.ErrorMessage;
             return;
         }
 
-        _results = null;
-        StartProduct(result.Value!);
+        _openKey = AddRow(result.Value!).Key;
     }
 
-    private void StartProduct(ProductDetail detail)
+    // فهرست هر بار که عوض شود ذخیره می‌شود؛ مقایسه‌ی متن جلوی نوشتن بی‌دلیل را می‌گیرد.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        _product = detail;
-        _loadedProductId = detail.Summary.Id;
-        ClearForm();
-        // اگر قلم بچ دارد، پیش‌فرض بچ تازه می‌ماند تا انتخاب ناخواسته‌ی بچ قدیمی پیش نیاید.
-    }
+        if (!_draftLoaded) return;
 
-    private void ClearForm()
-    {
-        _batchId = null;
-        _batchNumber = "";
-        _expiry = null;
-        _locationText = "";
-        _costText = "";
-        _quantity = 1;
-        _note = "";
-        _errors = [];
-        _formError = null;
-    }
+        var json = JsonSerializer.Serialize(_rows, DraftJson);
+        if (json == _savedDraft) return;
 
-    private void SelectBatch(Guid? id)
-    {
-        _batchId = id;
-        _errors = [];
-        _formError = null;
-    }
-
-    private async Task ResetAsync()
-    {
-        _product = null;
-        _loadedProductId = null;
-        _results = null;
-        ClearForm();
-        if (_scan is not null) await _scan.FocusAsync();
-    }
-
-    private async Task SubmitAsync()
-    {
-        if (_product is not { } product) return;
-
-        _errors = [];
-        _formError = null;
-
-        if (_quantity < 1)
+        _savedDraft = json;
+        try
         {
-            _errors = new() { ["Quantity"] = ["تعداد باید حداقل ۱ باشد."] };
+            if (_rows.Count == 0) await JS.InvokeVoidAsync("localStorage.removeItem", DraftKey);
+            else await JS.InvokeVoidAsync("localStorage.setItem", DraftKey, json);
+        }
+        catch (JSException ex)
+        {
+            // localStorage پر یا بسته: کار ادامه دارد، فقط پیش‌نویس نمی‌ماند.
+            Console.WriteLine(ex.Message);
+        }
+    }
+
+    private async Task LoadDraftAsync()
+    {
+        try
+        {
+            var json = await JS.InvokeAsync<string?>("localStorage.getItem", DraftKey);
+            if (!string.IsNullOrEmpty(json))
+            {
+                _rows.AddRange(JsonSerializer.Deserialize<List<ReceiveRow>>(json, DraftJson) ?? []);
+                _savedDraft = json;
+            }
+        }
+        catch (Exception ex) when (ex is JSException or JsonException)
+        {
+            Console.WriteLine(ex.Message);
+        }
+
+        foreach (var row in _rows) await RefreshRowAsync(row);
+        _draftLoaded = true;
+    }
+
+    // Version و موجودی بچ‌ها همیشه از سرور تازه می‌شود؛ پیش‌نویس فقط ورودی کاربر را نگه می‌دارد.
+    private async Task RefreshRowAsync(ReceiveRow row)
+    {
+        var result = await ProductsApi.GetAsync(row.ProductId);
+        if (!result.IsSuccess)
+        {
+            row.RowError = result.Outcome == ApiOutcome.NotFound ? "این قلم دیگر وجود ندارد؛ ردیف را حذف کنید." : result.ErrorMessage;
             return;
         }
 
-        var request = new ReceiptRequest
+        row.Detail = result.Value!;
+        row.ProductName = row.Detail.Summary.Name;
+        if (row.BatchId is { } id && row.Detail.Batches.All(b => b.Id != id)) row.BatchId = null;
+    }
+
+    private async Task OnPickAsync(ProductListItem item)
+    {
+        _scanError = null;
+        _formError = null;
+
+        if (!item.IsActive)
         {
-            ProductId = product.Summary.Id,
-            Quantity = _quantity,
-            Note = string.IsNullOrWhiteSpace(_note) ? null : _note
+            _scanError = $"«{item.Name}» غیرفعال است و ورود جنس ندارد.";
+            return;
+        }
+
+        // اسکن پشت‌سرهم یک جعبه: تعداد ردیف همان قلم زیاد می‌شود. بچ دوم با «بچ دیگر» از داخل ردیف.
+        if (_rows.LastOrDefault(r => r.ProductId == item.Id) is { } existing)
+        {
+            existing.Quantity++;
+            Toasts.Show($"{item.Name}: تعداد {JalaliDate.ToPersianDigits(existing.Quantity.ToString())} جعبه شد.");
+            return;
+        }
+
+        var result = await ProductsApi.GetAsync(item.Id);
+        if (!result.IsSuccess)
+        {
+            _scanError = result.Outcome == ApiOutcome.NotFound ? "این قلم پیدا نشد." : result.ErrorMessage;
+            return;
+        }
+
+        // میان این انتظار ممکن است اسکن دیگری همین قلم را اضافه کرده باشد.
+        if (_rows.LastOrDefault(r => r.ProductId == item.Id) is { } added)
+        {
+            added.Quantity++;
+            return;
+        }
+
+        AddRow(result.Value!);
+    }
+
+    private ReceiveRow AddRow(ProductDetail detail)
+    {
+        var row = new ReceiveRow { ProductId = detail.Summary.Id, ProductName = detail.Summary.Name, Detail = detail };
+        _rows.Add(row);
+        return row;
+    }
+
+    private void AddSiblingBatch(ReceiveRow source)
+    {
+        var row = new ReceiveRow { ProductId = source.ProductId, ProductName = source.ProductName, Detail = source.Detail };
+        _rows.Insert(_rows.IndexOf(source) + 1, row);
+        _openKey = row.Key;
+    }
+
+    private void Toggle(ReceiveRow row) => _openKey = _openKey == row.Key ? null : row.Key;
+
+    private void SelectBatch(ReceiveRow row, Guid? id)
+    {
+        row.BatchId = id;
+        row.ClearErrors();
+    }
+
+    private void Remove(ReceiveRow row)
+    {
+        _rows.Remove(row);
+        if (_openKey == row.Key) _openKey = null;
+    }
+
+    private void ClearAll()
+    {
+        _rows.Clear();
+        _openKey = null;
+        _formError = null;
+    }
+
+    // خطای قابل‌تشخیص پیش از ارسال: تعداد، قیمت و شماره‌ی بچی که قبلاً هست. false یعنی ارسال نشود.
+    private static bool PrepareLine(ReceiveRow row, out ReceiptRequest request)
+    {
+        request = new ReceiptRequest
+        {
+            ProductId = row.ProductId,
+            Quantity = row.Quantity,
+            Note = string.IsNullOrWhiteSpace(row.Note) ? null : row.Note
         };
 
-        if (SelectedBatch is { } existing)
+        if (row.Detail is null)
+        {
+            row.RowError ??= "این ردیف بارگذاری نشده است.";
+            return false;
+        }
+
+        if (row.Quantity < 1)
+        {
+            row.Errors["Quantity"] = ["تعداد باید حداقل ۱ باشد."];
+            return false;
+        }
+
+        if (row.SelectedBatch is { } existing)
         {
             // بچ موجود: تاریخ، محل و قیمت نمی‌رود؛ سرور هم نادیده می‌گیرد.
             request.BatchNumber = existing.BatchNumber;
             request.BatchVersion = existing.Version;
+            return true;
         }
-        else
+
+        // شماره‌ی بچ موجود در حالت «بچ تازه»: فقط اگر تاریخ خالی یا برابر باشد به بچ موجود می‌رویم، بدون ثبت خودکار
+        // تا کاربر تأیید کند؛ تاریخ متفاوت هرگز بی‌صدا دور ریخته نمی‌شود (ReceiptBatchMatcher در Domain).
+        var match = ReceiptBatchMatcher.Resolve(row.BatchNumber, row.Expiry, row.Detail.Batches);
+        switch (match.Kind)
         {
-            // شماره‌ی بچ موجود در حالت «بچ تازه»: سرور آن را بچ موجود می‌بیند و بدون Version ۴۰۹ می‌دهد.
-            // تصمیم در ReceiptBatchMatcher (Domain، با تست) است: فقط اگر تاریخ خالی یا برابر باشد به بچ موجود می‌رویم
-            // (بدون ثبت خودکار تا کاربر تأیید کند)؛ تاریخ متفاوت هرگز بی‌صدا دور ریخته نمی‌شود.
-            var match = ReceiptBatchMatcher.Resolve(_batchNumber, _expiry, product.Batches);
-            switch (match.Kind)
+            case BatchMatchKind.UseExisting:
+                row.BatchId = match.Batch!.Id;
+                row.BatchNumber = "";
+                row.Expiry = null;
+                row.RowError = "این بچ قبلاً ثبت شده؛ فقط تعداد به آن اضافه می‌شود. بررسی کنید و دوباره ثبت کنید.";
+                return false;
+            case BatchMatchKind.DateMismatch:
+                row.RowError = match.Message;
+                return false;
+            case BatchMatchKind.InvalidExpiry:
+                row.Errors["Expiry"] = [match.Message!];
+                return false;
+        }
+
+        request.BatchNumber = row.BatchNumber;
+        request.Expiry = row.Expiry;
+        request.LocationId = row.LocationId;
+
+        var cost = TextNormalizer.ToAsciiDigits(row.CostText).Replace(",", "").Replace("٬", "").Trim();
+        if (cost.Length > 0)
+        {
+            if (!long.TryParse(cost, out var parsed) || parsed < 0)
             {
-                case BatchMatchKind.UseExisting:
-                    _batchId = match.Batch!.Id;
-                    _batchNumber = "";
-                    _expiry = null;
-                    _formError = "این بچ قبلاً ثبت شده؛ فقط تعداد به آن اضافه می‌شود.";
-                    return;
-                case BatchMatchKind.DateMismatch:
-                    _formError = match.Message;
-                    return;
-                case BatchMatchKind.InvalidExpiry:
-                    _errors = new() { ["Expiry"] = [match.Message!] };
-                    return;
+                row.Errors["UnitCost"] = ["قیمت باید عدد باشد."];
+                return false;
             }
 
-            request.BatchNumber = _batchNumber;
-            request.Expiry = _expiry;
-            if (Guid.TryParse(_locationText, out var location)) request.LocationId = location;
+            request.UnitCost = parsed;
+        }
 
-            var cost = TextNormalizer.ToAsciiDigits(_costText).Replace(",", "").Replace("٬", "").Trim();
-            if (cost.Length > 0)
-            {
-                if (!long.TryParse(cost, out var parsed) || parsed < 0)
-                {
-                    _errors = new() { ["UnitCost"] = ["قیمت باید عدد باشد."] };
-                    return;
-                }
+        return true;
+    }
 
-                request.UnitCost = parsed;
-            }
+    private async Task SubmitAsync()
+    {
+        if (_busy || _rows.Count == 0) return;
+
+        _formError = null;
+        foreach (var row in _rows) row.ClearErrors();
+
+        var lines = new List<ReceiptRequest>(_rows.Count);
+        foreach (var row in _rows)
+        {
+            if (PrepareLine(row, out var line)) lines.Add(line);
+        }
+
+        if (lines.Count != _rows.Count)
+        {
+            _openKey = _rows.First(r => r.HasError).Key;
+            _formError = "ردیف‌های مشخص‌شده را اصلاح کنید؛ چیزی ثبت نشد.";
+            return;
         }
 
         _busy = true;
-        var result = await ProductsApi.ReceiveAsync(request);
+        var result = await ProductsApi.ReceiveBulkAsync(new BulkReceiptRequest { Lines = lines });
         _busy = false;
 
         if (result.IsSuccess)
         {
-            var receipt = result.Value!;
-            var message = $"ثبت شد: {product.Summary.Name} — {JalaliDate.ToPersianDigits(request.Quantity.ToString())} جعبه";
-            if (receipt.Warnings.Count > 0) message += " — " + string.Join(" ", receipt.Warnings.Select(WarningText));
+            var saved = result.Value!.Lines;
+            var message = $"ثبت شد: {JalaliDate.ToPersianDigits(saved.Count.ToString())} ردیف، {JalaliDate.ToPersianDigits(lines.Sum(l => l.Quantity).ToString())} جعبه";
+            var warnings = saved.SelectMany(l => l.Warnings).Distinct().Select(WarningText).ToList();
+            if (warnings.Count > 0) message += " — " + string.Join(" ", warnings);
             Toasts.Show(message);
-            await ResetAsync();
-            return;
-        }
-
-        _errors = result.Problem?.Errors ?? [];
-
-        if (result.Outcome == ApiOutcome.Conflict && result.Problem?.Type == ProblemTypes.VersionConflict)
-        {
-            // بچ را کس دیگری عوض کرده: بچ‌ها از نو بارگذاری می‌شوند و فرم می‌ماند.
-            _formError = result.ErrorMessage;
-            await ReloadBatchesAsync();
+            ClearAll();
+            if (_search is not null) await _search.FocusAsync();
             return;
         }
 
         _formError = result.ErrorMessage;
-    }
+        ApplyErrors(result.Problem);
 
-    private async Task ReloadBatchesAsync()
-    {
-        if (_product is not { } product) return;
-
-        var fresh = await ProductsApi.GetAsync(product.Summary.Id);
-        if (!fresh.IsSuccess)
+        if (result.Problem?.Type == ProblemTypes.VersionConflict)
         {
-            _formError += " " + fresh.ErrorMessage;
-            return;
+            // بچ را کس دیگری عوض کرده: Version ها تازه می‌شوند و ورودی کاربر می‌ماند.
+            foreach (var row in _rows) await RefreshRowAsync(row);
         }
 
-        _product = fresh.Value!;
-        if (_batchId is { } id && _product.Batches.All(b => b.Id != id)) _batchId = null;
+        if (_rows.FirstOrDefault(r => r.HasError) is { } first) _openKey = first.Key;
+    }
+
+    private void ApplyErrors(ApiProblem? problem)
+    {
+        if (problem is null) return;
+
+        foreach (var (key, messages) in problem.Errors)
+        {
+            if (BulkReceiptErrors.TryParse(key, out var line, out var field) && line >= 0 && line < _rows.Count)
+            {
+                _rows[line].Errors[field] = messages;
+            }
+        }
     }
 
     private static string WarningText(ExpiryWarning warning) => warning switch

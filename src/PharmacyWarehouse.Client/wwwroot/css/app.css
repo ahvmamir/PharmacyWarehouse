@@ -378,16 +378,17 @@ h1:focus { outline: none; }
     --bs-btn-disabled-border-color: #8fb3a7;
 }
 
+/* رنگ معنایی ملایم: ثبت سبز (btn-primary)، خنثی خاکستری، حذف قرمز کم‌رنگ. */
 .btn-quiet {
-    background: var(--surface);
+    background: var(--surface-sunk);
     border: 1px solid var(--line-strong);
     color: var(--text);
 }
 
-.btn-quiet:hover { background: var(--surface-sunk); border-color: var(--ink-soft); color: var(--ink); }
+.btn-quiet:hover { background: var(--hover); border-color: var(--ink-soft); color: var(--ink); }
 
 .btn-danger-quiet {
-    background: var(--surface);
+    background: var(--danger-tint);
     border: 1px solid var(--danger-line);
     color: var(--danger);
 }
@@ -434,7 +435,13 @@ h1:focus { outline: none; }
     border-radius: var(--radius);
     box-shadow: var(--shadow);
     margin-bottom: 16px;
+    padding: 16px 18px;
 }
+
+/* کارتی که سر یا بدنه‌ی جدا دارد، فاصله‌اش را از همان‌ها می‌گیرد. */
+.card-emu:has(> .card-emu-head), .card-emu:has(> .card-emu-body), .card-emu.fold { padding: 0; }
+.card-emu > h2 { margin-bottom: 12px; }
+.card-emu > :last-child { margin-bottom: 0; }
 
 .card-emu-head {
     display: flex;
@@ -685,7 +692,15 @@ h1:focus { outline: none; }
 /* جدول تغییرات: متن بلند (JSON باز‌شده، نام محل) شکسته شود و جدول افقی سرریز نکند. */
 .change-table th, .change-table td { white-space: normal; overflow-wrap: anywhere; vertical-align: top; }
 
-.data-table tbody tr.row-link { cursor: pointer; }
+/* ردیف قابل‌کلیک: پیوند یا دکمه‌ی واقعی ستون اول با ::after روی کل ردیف کشیده می‌شود،
+   تا صفحه‌کلید، صفحه‌خوان و Ctrl+کلیک کار کند. کنترل‌های دیگر ردیف بالاتر از آن می‌مانند. */
+.data-table tbody tr.row-link { cursor: pointer; position: relative; }
+.row-link-main::after { content: ""; position: absolute; inset: 0; }
+.row-link a:not(.row-link-main), .row-link button:not(.row-link-main), .row-link input, .row-link [title] { position: relative; z-index: 1; }
+.change-toggle { background: none; border: 0; padding: 0; color: inherit; font: inherit; display: inline-flex; align-items: center; gap: 6px; }
+.change-chevron { color: var(--muted); transition: transform .12s; }
+.change-chevron.open { transform: rotate(-90deg); }
+.change-detail td { background: var(--surface-sunk); white-space: normal; }
 /* راه‌راه خیلی کم‌رنگ: چشم ردیف را تا انتهای خط دنبال می‌کند بی آن‌که جدول شلوغ شود. */
 .data-table tbody tr:nth-child(even) td { background: var(--zebra); }
 .data-table tbody tr:hover td { background: var(--hover); }
@@ -1502,3 +1517,68 @@ details > summary.import-subhead { cursor: pointer; }
 .import-table input.import-narrow { min-width: 64px; max-width: 90px; }
 .import-row-error { background: var(--danger-tint); }
 .import-row-warning { background: var(--warning-tint); }
+
+/* جست‌وجو و انتخاب (Combobox) */
+
+.combo { position: relative; flex: 1; min-width: 0; }
+.combo-with-clear { display: flex; align-items: center; gap: 4px; }
+.combo-list {
+    position: absolute;
+    inset-inline: 0;
+    top: 100%;
+    z-index: 30;
+    max-height: 300px;
+    overflow-y: auto;
+    margin: 3px 0 0;
+    padding: 4px;
+    list-style: none;
+    background: var(--surface);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-small);
+    box-shadow: var(--shadow-raised);
+}
+.combo-option { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--radius-small); cursor: pointer; }
+.combo-option:hover, .combo-option.active { background: var(--accent-tint); }
+.combo-empty { padding: 8px 10px; color: var(--muted); }
+.combo-main { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+/* فهرست ورود جنس */
+
+.receive-search { max-width: 560px; }
+.receive-row { border-top: 1px solid var(--line-soft); padding: 8px 0; }
+.receive-row.has-error { border-inline-start: 3px solid var(--danger); padding-inline-start: 8px; }
+.receive-row-head { display: flex; align-items: center; gap: 6px; }
+.receive-row-toggle { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 6px 4px; background: none; border: 0; color: inherit; font: inherit; text-align: start; border-radius: var(--radius-small); }
+.receive-row-toggle:hover { background: var(--hover); }
+.receive-row .fold-chevron { color: var(--muted); transition: transform .12s; }
+.receive-row.open .fold-chevron { transform: rotate(-90deg); }
+.receive-row-qty { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.receive-row-body { padding: 10px 4px 6px; }
+
+/* خلاصه‌ی برداشت؛ حداقل ارتفاع برای پایداری جای دکمه‌ی ثبت */
+
+.withdraw-summary { min-height: 3.4em; margin: 10px 0; }
+.withdraw-summary-line { display: block; }
+
+/* داشبورد */
+
+.dash-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.dash-card { display: block; text-decoration: none; color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
+.dash-card:hover { border-color: var(--line-strong); background: var(--surface-sunk); color: inherit; }
+.dash-card strong { display: block; font-size: 1.55rem; font-weight: 700; line-height: 1.3; color: var(--ink); font-variant-numeric: tabular-nums; }
+.dash-card span { color: var(--muted); font-size: .86rem; }
+.dash-card.alert-danger-soft { background: var(--danger-tint); border-color: var(--danger-line); }
+.dash-card.alert-danger-soft strong { color: var(--danger); }
+.dash-card.alert-warning-soft { background: var(--warning-tint); border-color: var(--warning-line); }
+.dash-card.alert-warning-soft strong { color: var(--warning); }
+.dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.dash-grid .card-emu { margin-bottom: 0; }
+.bar-row { display: grid; grid-template-columns: minmax(90px, 38%) 1fr auto; align-items: center; gap: 10px; padding: 5px 0; color: inherit; text-decoration: none; }
+a.bar-row:hover { background: var(--hover); color: inherit; }
+.bar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-track { height: 10px; background: var(--line-soft); border-radius: 3px; overflow: hidden; }
+.bar-fill { display: block; height: 100%; min-width: 2px; background: var(--line-strong); }
+.bar-fill.danger { background: var(--danger); }
+.bar-fill.warning { background: var(--warning); }
+.bar-value { font-variant-numeric: tabular-nums; font-weight: 600; }
+.dash-more { display: inline-block; margin-top: 8px; font-size: .88rem; }

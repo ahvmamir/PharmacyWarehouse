@@ -1,0 +1,50 @@
+@using PharmacyWarehouse.Domain.Stock
+
+@* انتخاب محل با جست‌وجو روی مسیر کامل، به‌جای select بلند. فهرست محلی است، پس درخواست سروری ندارد. *@
+<div class="combo-with-clear">
+    <Combobox @ref="_combo" TItem="StorageLocationItem" InputId="@InputId" Placeholder="@EmptyLabel" Disabled="@Disabled"
+              SelectedText="@SelectedPath" OpenOnFocus="true" Search="SearchAsync" OnPick="PickAsync">
+        <ItemTemplate Context="item">
+            <bdi>@item.Path</bdi>
+        </ItemTemplate>
+    </Combobox>
+    @if (Value is not null && !Disabled)
+    {
+        <button type="button" class="icon-button" title="پاک کردن" aria-label="پاک کردن محل" @onclick="ClearAsync"><AppIcon Name="close" Size="16" /></button>
+    }
+</div>
+
+@code {
+    private const int MaxOptions = 50;
+
+    [Parameter] public string? InputId { get; set; }
+    [Parameter] public string EmptyLabel { get; set; } = "— بدون محل —";
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter, EditorRequired] public IEnumerable<StorageLocationItem> Items { get; set; } = [];
+    [Parameter] public Guid? Value { get; set; }
+    [Parameter] public EventCallback<Guid?> ValueChanged { get; set; }
+
+    private Combobox<StorageLocationItem>? _combo;
+
+    private string? SelectedPath => Value is { } id ? Items.FirstOrDefault(l => l.Id == id)?.Path : null;
+
+    public ValueTask FocusAsync() => _combo?.FocusAsync() ?? ValueTask.CompletedTask;
+
+    private Task<ComboboxResult<StorageLocationItem>> SearchAsync(string text)
+    {
+        var items = Items.ToList();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            // فهرست خالی‌جست‌وجو همان ترتیب درخت سرور است.
+            return Task.FromResult(new ComboboxResult<StorageLocationItem>(items.Take(MaxOptions).ToList()));
+        }
+
+        var byId = items.ToDictionary(l => l.Id);
+        var ranked = ProductSearch.Rank(text, items.Select(l => new SearchCandidate(l.Id, TextNormalizer.SearchKey(l.Name) ?? "", TextNormalizer.SearchKey(l.Path) ?? "")), MaxOptions);
+        return Task.FromResult(new ComboboxResult<StorageLocationItem>(ranked.Select(c => byId[c.Id]).ToList()));
+    }
+
+    private Task PickAsync(StorageLocationItem item) => ValueChanged.InvokeAsync(item.Id);
+
+    private Task ClearAsync() => ValueChanged.InvokeAsync(null);
+}

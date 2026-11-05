@@ -1,0 +1,35 @@
+@inject ProductsClient ProductsApi
+
+@* جست‌وجوی قلم، مشترک ورود جنس و برداشت (بخش ۱۵.۱ spec). رتبه‌بندی با سرور است؛ بارکد دقیق هنگام Enter خودکار انتخاب می‌شود. *@
+<Combobox @ref="_combo" TItem="ProductListItem" InputId="@InputId" Placeholder="@Placeholder" AutoFocus="@AutoFocus"
+          ClearOnPick="true" DebounceMs="250" MinChars="2" Search="SearchAsync" OnPick="OnPick" EmptyContent="EmptyContent">
+    <ItemTemplate Context="item">
+        <span class="combo-main">
+            <strong>@item.Name</strong>
+            <small class="cell-sub">@string.Join(" · ", new[] { item.Brand, item.PackDescription }.Where(s => !string.IsNullOrEmpty(s)))</small>
+        </span>
+        <span class="cell-sub">موجودی: @JalaliDate.ToPersianDigits(item.UsableOnHand.ToString())</span>
+    </ItemTemplate>
+</Combobox>
+
+@code {
+    [Parameter] public string? InputId { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "نام قلم را بنویسید یا بارکد را اسکن کنید";
+    [Parameter] public bool AutoFocus { get; set; } = true;
+    [Parameter] public EventCallback<ProductListItem> OnPick { get; set; }
+    [Parameter] public RenderFragment? EmptyContent { get; set; }
+
+    private Combobox<ProductListItem>? _combo;
+
+    public ValueTask FocusAsync() => _combo?.FocusAsync() ?? ValueTask.CompletedTask;
+
+    private async Task<ComboboxResult<ProductListItem>> SearchAsync(string text)
+    {
+        var result = await ProductsApi.SearchAsync(text);
+        if (!result.IsSuccess) return new([], Error: result.ErrorMessage);
+
+        var response = result.Value!;
+        var exact = response.ExactBarcodeId is { } id ? response.Items.FirstOrDefault(i => i.Id == id) : null;
+        return new(response.Items, exact);
+    }
+}

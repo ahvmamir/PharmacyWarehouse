@@ -1,0 +1,221 @@
+@typeparam TItem where TItem : class
+@inject IJSRuntime JS
+
+@* فیلد جست‌وجو با فهرست پیشنهاد. انتخاب فقط با کلیک، جهت و Enter، یا انطباق قطعی (AutoPick هنگام Enter). data-combobox را اسکریپت index.html می‌شناسد تا Enter فرم را نفرستد. *@
+<div class="combo">
+    <input @ref="_input" id="@InputId" class="form-control @InputClass" type="text" dir="auto" autocomplete="off"
+           role="combobox" data-combobox aria-autocomplete="list" aria-label="@(InputId is null ? Placeholder : null)"
+           aria-expanded="@(_open ? "true" : "false")" aria-controls="@_listId"
+           aria-activedescendant="@(_open && _active >= 0 ? OptionId(_active) : null)"
+           placeholder="@Placeholder" disabled="@Disabled"
+           @bind="_text" @bind:event="oninput" @bind:after="OnTextChangedAsync"
+           @onkeydown="OnKeyDownAsync" @onfocus="OnFocusAsync" @onblur="OnBlur" />
+
+    @if (_open)
+    {
+        @* preventDefault روی mousedown: فوکوس از فیلد نمی‌رود، پس فهرست پیش از رسیدن کلیک بسته نمی‌شود. *@
+        <ul id="@_listId" class="combo-list" role="listbox" @onmousedown:preventDefault="true">
+            @if (_error is not null)
+            {
+                <li class="combo-empty" role="alert">@_error</li>
+            }
+            else if (_items.Count == 0)
+            {
+                <li class="combo-empty">
+                    @if (EmptyContent is not null)
+                    {
+                        @EmptyContent
+                    }
+                    else
+                    {
+                        <span>موردی پیدا نشد.</span>
+                    }
+                </li>
+            }
+            @for (var i = 0; i < _items.Count; i++)
+            {
+                var index = i;
+                var item = _items[i];
+                <li id="@OptionId(index)" class="combo-option @(index == _active ? "active" : "")" role="option"
+                    aria-selected="@(index == _active ? "true" : "false")" @onclick="() => PickAsync(item)">
+                    @ItemTemplate(item)
+                </li>
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    [Parameter] public string? InputId { get; set; }
+    [Parameter] public string? InputClass { get; set; }
+    [Parameter] public string? Placeholder { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public bool AutoFocus { get; set; }
+
+    // true: بعد از انتخاب فیلد خالی می‌شود (اسکن پشت‌سرهم). false: متن انتخاب‌شده می‌ماند (SelectedText).
+    [Parameter] public bool ClearOnPick { get; set; }
+    [Parameter] public string? SelectedText { get; set; }
+
+    // با فوکوس همه‌ی گزینه‌ها را نشان بده (فهرست محلی)، نه فقط پس از تایپ.
+    [Parameter] public bool OpenOnFocus { get; set; }
+    [Parameter] public int MinChars { get; set; } = 1;
+    [Parameter] public int DebounceMs { get; set; }
+
+    [Parameter, EditorRequired] public Func<string, Task<ComboboxResult<TItem>>> Search { get; set; } = null!;
+    [Parameter, EditorRequired] public RenderFragment<TItem> ItemTemplate { get; set; } = null!;
+    [Parameter] public EventCallback<TItem> OnPick { get; set; }
+    [Parameter] public RenderFragment? EmptyContent { get; set; }
+
+    private readonly string _listId = "combo-" + Guid.NewGuid().ToString("N");
+    private ElementReference _input;
+    private string _text = "";
+    private string? _shownSelected;
+    private List<TItem> _items = [];
+    private string? _error;
+    private int _active = -1;
+    private bool _open;
+    private bool _focused;
+    private bool _scrollActive;
+
+    // هر جست‌وجوی تازه این را جلو می‌برد؛ پاسخ کهنه‌تر جای پاسخ تازه‌تر را نمی‌گیرد.
+    private int _seq;
+
+    private string OptionId(int index) => $"{_listId}-{index}";
+
+    public ValueTask FocusAsync() => _input.FocusAsync();
+
+    protected override void OnParametersSet()
+    {
+        if (SelectedText == _shownSelected) return;
+
+        _shownSelected = SelectedText;
+        _text = SelectedText ?? "";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && AutoFocus) await _input.FocusAsync();
+
+        if (_scrollActive)
+        {
+            _scrollActive = false;
+            await JS.InvokeVoidAsync("pwScrollIntoView", OptionId(_active));
+        }
+    }
+
+    private async Task OnFocusAsync()
+    {
+        _focused = true;
+        if (OpenOnFocus) await ShowAsync("", ++_seq);
+    }
+
+    private void OnBlur()
+    {
+        _focused = false;
+        _open = false;
+        _seq++;
+
+        // متن نیمه‌تمام انتخاب نیست؛ فیلد به مقدار واقعی برمی‌گردد.
+        if (!ClearOnPick) _text = SelectedText ?? "";
+    }
+
+    private async Task OnTextChangedAsync()
+    {
+        _active = -1;
+        var seq = ++_seq;
+        var query = _text.Trim();
+
+        if (query.Length < MinChars && !OpenOnFocus)
+        {
+            _open = false;
+            _items = [];
+            return;
+        }
+
+        if (DebounceMs > 0)
+        {
+            await Task.Delay(DebounceMs);
+            if (seq != _seq) return;
+        }
+
+        await ShowAsync(query, seq);
+    }
+
+    private async Task ShowAsync(string query, int seq)
+    {
+        var result = await Search(query);
+        if (seq != _seq) return;
+
+        _error = result.Error;
+        _items = result.Items.ToList();
+        _active = -1;
+        _open = _focused;
+    }
+
+    private async Task OnKeyDownAsync(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "ArrowDown" when _items.Count > 0:
+                _open = true;
+                _active = (_active + 1) % _items.Count;
+                _scrollActive = true;
+                break;
+            case "ArrowUp" when _items.Count > 0:
+                _open = true;
+                _active = _active <= 0 ? _items.Count - 1 : _active - 1;
+                _scrollActive = true;
+                break;
+            case "Escape":
+                _open = false;
+                _active = -1;
+                break;
+            case "Enter":
+                await OnEnterAsync();
+                break;
+        }
+    }
+
+    private async Task OnEnterAsync()
+    {
+        if (_open && _active >= 0 && _active < _items.Count)
+        {
+            await PickAsync(_items[_active]);
+            return;
+        }
+
+        var text = _text.Trim();
+        if (text.Length == 0) return;
+
+        // اسکن بعدی ممکن است پیش از پاسخ این یکی برسد؛ فیلد همین‌جا خالی می‌شود تا دو بارکد به هم نچسبند.
+        var seq = ++_seq;
+        if (ClearOnPick) _text = "";
+
+        var result = await Search(text);
+        if (result.AutoPick is { } item)
+        {
+            if (seq == _seq) _open = false;
+            if (!ClearOnPick) _text = SelectedText ?? "";
+            await OnPick.InvokeAsync(item);
+            return;
+        }
+
+        if (seq != _seq) return;
+
+        if (ClearOnPick && _text.Length == 0) _text = text;
+        _error = result.Error;
+        _items = result.Items.ToList();
+        _active = -1;
+        _open = _focused;
+    }
+
+    private async Task PickAsync(TItem item)
+    {
+        _seq++;
+        _open = false;
+        _active = -1;
+        _items = [];
+        _text = ClearOnPick ? "" : SelectedText ?? "";
+        await OnPick.InvokeAsync(item);
+    }
+}

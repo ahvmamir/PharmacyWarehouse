@@ -1,49 +1,89 @@
 @using System.Text.Json
 @using PharmacyWarehouse.Domain.Stock
 
-@* جدول تغییرات یک قلم. ردیف «ثبت» و «حذف» JSON کامل رکورد را دارد و اینجا به خط‌های «برچسب: مقدار» باز می‌شود. *@
+@* تاریخچه‌ی یک قلم: هر کار یک خط خلاصه است و با کلیک جزئیاتش باز می‌شود. دکمه روی کل ردیف کشیده شده، پس صفحه‌کلید هم کار می‌کند. *@
 <div class="table-card">
     <table class="data-table change-table">
         <thead>
-            <tr><th>زمان</th><th>کاربر</th><th>مورد</th><th>کار</th><th>فیلد</th><th>از</th><th>به</th></tr>
+            <tr><th>زمان</th><th>کاربر</th><th>کار</th><th>مورد</th><th>خلاصه</th></tr>
         </thead>
         <tbody>
-            @foreach (var change in Changes)
+            @foreach (var group in Groups)
             {
-                <tr @key="change.Id">
-                    <td>@JalaliDate.Format(change.AtUtc)</td>
-                    <td><bdi>@change.UserName</bdi></td>
-                    <td>@AuditLabels.Entity(change.EntityType)</td>
-                    <td>@AuditLabels.Action(change.Action)</td>
-                    @if (change.Action == "Updated")
-                    {
-                        <td>@AuditLabels.Field(change.Field)</td>
-                        <td><bdi>@(change.OldText ?? AuditLabels.Value(change.Field, change.OldValue))</bdi></td>
-                        <td><bdi>@(change.NewText ?? AuditLabels.Value(change.Field, change.NewValue))</bdi></td>
-                    }
-                    else
-                    {
-                        <td colspan="3">
-                            @foreach (var line in Lines(change.Action == "Created" ? change.NewValue : change.OldValue))
+                var isOpen = _open.Contains(group.Key);
+                <tr class="row-link" @key="group.Key">
+                    <td class="nowrap">
+                        <button type="button" class="row-link-main change-toggle" aria-expanded="@(isOpen ? "true" : "false")" @onclick="() => Toggle(group.Key)">
+                            <AppIcon Name="chevron" Size="14" Class="@(isOpen ? "change-chevron open" : "change-chevron")" />
+                            @JalaliDate.Format(group.First.AtUtc)
+                        </button>
+                    </td>
+                    <td><bdi>@group.First.UserName</bdi></td>
+                    <td>@AuditLabels.Action(group.First.Action)</td>
+                    <td>@AuditLabels.Entity(group.First.EntityType)</td>
+                    <td><bdi>@group.Summary</bdi></td>
+                </tr>
+                @if (isOpen)
+                {
+                    <tr class="change-detail" @key="@($"{group.Key}:detail")">
+                        <td colspan="5">
+                            @if (group.First.Reason is { Length: > 0 } reason)
                             {
-                                <div><span class="cell-sub">@line.Label:</span> <bdi>@line.Value</bdi></div>
+                                <div><span class="cell-sub d-inline">دلیل:</span> @reason</div>
+                            }
+                            @foreach (var line in group.Lines)
+                            {
+                                <div><span class="cell-sub d-inline">@line.Label:</span> <bdi>@line.Value</bdi></div>
                             }
                         </td>
-                    }
-                </tr>
+                    </tr>
+                }
             }
         </tbody>
     </table>
 </div>
 
 @code {
+    private const int SummaryFields = 3;
+
     [Parameter, EditorRequired] public IReadOnlyList<AuditEntryItem> Changes { get; set; } = [];
+
+    private readonly HashSet<string> _open = [];
 
     private readonly record struct Line(string Label, string Value);
 
+    private sealed record ChangeGroup(string Key, AuditEntryItem First, string Summary, List<Line> Lines);
+
+    private void Toggle(string key)
+    {
+        if (!_open.Add(key)) _open.Remove(key);
+    }
+
+    // یک ذخیره روی یک رکورد یک خط است، هرچند چند فیلد عوض شده باشد.
+    private IEnumerable<ChangeGroup> Groups => Changes
+        .GroupBy(c => (c.ChangeSetId, c.EntityId, c.Action))
+        .Select(g =>
+        {
+            var first = g.First();
+            var key = $"{g.Key.ChangeSetId}:{g.Key.EntityId}:{g.Key.Action}";
+            if (first.Action == "Updated")
+            {
+                var lines = g.Select(c => new Line(AuditLabels.Field(c.Field),
+                    $"{c.OldText ?? AuditLabels.Value(c.Field, c.OldValue)} ← {c.NewText ?? AuditLabels.Value(c.Field, c.NewValue)}")).ToList();
+                var summary = lines.Count == 1
+                    ? $"{lines[0].Label}: {lines[0].Value}"
+                    : string.Join("، ", lines.Select(l => l.Label));
+                return new ChangeGroup(key, first, summary, lines);
+            }
+
+            var values = Lines(first.Action == "Created" ? first.NewValue : first.OldValue);
+            return new ChangeGroup(key, first, string.Join(" · ", values.Take(SummaryFields).Select(l => l.Value)), values);
+        });
+
     // مشتق‌ها و کلیدها خبر نیستند. OnHand در ردیف‌های قدیمی هست؛ تاریخچه‌ی موجودی همان جدول حرکت‌هاست.
+    // ProductId در تاریخچه‌ی خود قلم تکراری است.
     private static bool Skip(string name) =>
-        name is "Id" or "Version" or "SearchText" or "CreatedAtUtc" or "UpdatedAtUtc" or "OnHand"
+        name is "Id" or "Version" or "SearchText" or "CreatedAtUtc" or "UpdatedAtUtc" or "OnHand" or "ProductId"
         || name.EndsWith("Key", StringComparison.Ordinal);
 
     private static List<Line> Lines(string? json)

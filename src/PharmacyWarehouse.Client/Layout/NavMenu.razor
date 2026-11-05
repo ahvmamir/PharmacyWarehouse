@@ -28,19 +28,35 @@
         <nav class="sidebar-nav">
             @if (Session.CurrentUser is { MustChangePassword: false })
             {
-                @if (Session.Can(Permissions.DashboardView))
+                @* گروه بی‌مورد نشان داده نمی‌شود: عنوان فقط وقتی می‌آید که کاربر دست‌کم یکی از پیوندهایش را دارد. *@
+                @if (Session.Can(Permissions.WithdrawalCreate) || Session.Can(Permissions.StockReceive))
                 {
-                    <NavLink class="sidebar-link" href="dashboard">
-                        <AppIcon Name="info" /> داشبورد
-                    </NavLink>
+                    <div class="nav-section">کار روزانه</div>
                 }
                 @if (Session.Can(Permissions.WithdrawalCreate))
                 {
                     <NavLink class="sidebar-link" href="withdraw">
-                        <AppIcon Name="box" /> ثبت برداشت
+                        <AppIcon Name="upload" /> ثبت برداشت
                     </NavLink>
                     <NavLink class="sidebar-link" href="my-withdrawals">
                         <AppIcon Name="history" /> برداشت‌های من
+                    </NavLink>
+                }
+                @if (Session.Can(Permissions.StockReceive))
+                {
+                    <NavLink class="sidebar-link" href="receive">
+                        <AppIcon Name="download" /> ورود جنس
+                    </NavLink>
+                }
+
+                @if (Session.Can(Permissions.DashboardView) || Session.Can(Permissions.WithdrawalReview) || Session.Can(Permissions.StockView))
+                {
+                    <div class="nav-section">بررسی</div>
+                }
+                @if (Session.Can(Permissions.DashboardView))
+                {
+                    <NavLink class="sidebar-link" href="dashboard">
+                        <AppIcon Name="dashboard" /> داشبورد
                     </NavLink>
                 }
                 @if (Session.Can(Permissions.WithdrawalReview))
@@ -51,32 +67,25 @@
                 }
                 @if (Session.Can(Permissions.StockView))
                 {
+                    <NavLink class="sidebar-link" href="alerts">
+                        <AppIcon Name="bell" /> اعلان‌ها
+                    </NavLink>
+                }
+
+                @if (Session.Can(Permissions.StockView))
+                {
+                    <div class="nav-section">انبار</div>
                     <NavLink class="sidebar-link" href="" Match="NavLinkMatch.All">
                         <AppIcon Name="box" /> اقلام
                     </NavLink>
-                }
-                @if (Session.Can(Permissions.StockReceive))
-                {
-                    <NavLink class="sidebar-link" href="receive">
-                        <AppIcon Name="plus" /> ورود جنس
-                    </NavLink>
-                }
-                @if (Session.Can(Permissions.StockView))
-                {
                     <NavLink class="sidebar-link" href="locations">
-                        <AppIcon Name="storage" /> محل‌ها
+                        <AppIcon Name="location" /> محل‌ها
                     </NavLink>
                 }
 
                 @if (Session.Can(Permissions.UsersManage) || Session.Can(Permissions.RolesManage) || Session.Can(Permissions.BackupDownload) || Session.Can(Permissions.DataImport) || Session.Can(Permissions.DataExport) || Session.Can(Permissions.SettingsManage))
                 {
-                    <div class="nav-section">تنظیمات</div>
-                }
-                @if (Session.Can(Permissions.SettingsManage))
-                {
-                    <NavLink class="sidebar-link" href="admin/settings">
-                        <AppIcon Name="key" /> آستانه‌های انقضا
-                    </NavLink>
+                    <div class="nav-section">مدیریت</div>
                 }
                 @if (Session.Can(Permissions.UsersManage))
                 {
@@ -93,13 +102,19 @@
                 @if (Session.Can(Permissions.DataImport) || Session.Can(Permissions.DataExport))
                 {
                     <NavLink class="sidebar-link" href="admin/import">
-                        <AppIcon Name="download" /> ورود و خروج Excel
+                        <AppIcon Name="report" /> ورود و خروج Excel
                     </NavLink>
                 }
                 @if (Session.Can(Permissions.BackupDownload))
                 {
                     <NavLink class="sidebar-link" href="admin/data">
-                        <AppIcon Name="box" /> پشتیبان
+                        <AppIcon Name="storage" /> پشتیبان
+                    </NavLink>
+                }
+                @if (Session.Can(Permissions.SettingsManage))
+                {
+                    <NavLink class="sidebar-link" href="admin/settings">
+                        <AppIcon Name="filter" /> آستانه‌های انقضا
                     </NavLink>
                 }
             }

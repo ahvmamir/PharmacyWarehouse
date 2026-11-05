@@ -196,6 +196,12 @@ if (args.Length > 0 && args[0] == "backup")
     return;
 }
 
+if (args.Length > 0 && args[0] == "seed-test-data")
+{
+    Environment.ExitCode = await OperationCommands.SeedTestDataAsync(app);
+    return;
+}
+
 // ترتیب مهم است: no-store ← CORS ← فایل‌های Client ← هدر CSRF ← احراز هویت ← مجوز ← endpointها
 // no-store اول است تا پاسخ‌های ردشده در مراحل بعد هم آن را داشته باشند.
 app.UseMiddleware<NoStoreMiddleware>();

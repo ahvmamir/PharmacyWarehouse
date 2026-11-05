@@ -17,6 +17,14 @@ public static class ApiProblems
             errors.GroupBy(e => e.Field).ToDictionary(g => g.Key, g => g.Select(e => e.Message).ToArray()),
             title: "ورودی‌ها را بررسی کنید.");
 
+    // خطاهای چند ردیف با هم (کلیدها: BulkReceiptErrors). ۴۰۹ وقتی ناسازگاری با داده‌ی موجود هست، وگرنه ۴۰۰.
+    public static IResult LineErrors(IReadOnlyList<ValidationError> errors, bool conflict, bool versionConflict) =>
+        Results.ValidationProblem(
+            errors.GroupBy(e => e.Field).ToDictionary(g => g.Key, g => g.Select(e => e.Message).ToArray()),
+            title: "ردیف‌های مشخص‌شده را اصلاح کنید؛ هیچ ردیفی ثبت نشد.",
+            type: versionConflict ? ProblemTypes.VersionConflict : null,
+            statusCode: conflict || versionConflict ? StatusCodes.Status409Conflict : StatusCodes.Status400BadRequest);
+
     public static IResult NotFound() =>
         Results.Problem(title: "پیدا نشد.", statusCode: StatusCodes.Status404NotFound);
 

@@ -89,13 +89,7 @@ else
 
             <div class="form-field mt-3">
                 <label for="location-parent">زیرِ</label>
-                <select id="location-parent" class="form-select" @bind="_parentText">
-                    <option value="">— سطح اول —</option>
-                    @foreach (var option in ParentOptions())
-                    {
-                        <option value="@option.Id">@option.Path</option>
-                    }
-                </select>
+                <LocationPicker InputId="location-parent" Items="ParentOptions()" EmptyLabel="— سطح اول —" @bind-Value="_parentId" />
             </div>
 
             <div class="form-field mt-3">
@@ -130,7 +124,7 @@ else
     private bool _busy;
     private StorageLocationItem? _editing;
     private string _name = "";
-    private string _parentText = "";
+    private Guid? _parentId;
     private int _sortOrder;
     private bool _focusName;
     private ElementReference _nameInput;
@@ -183,7 +177,7 @@ else
     {
         _editing = null;
         _name = "";
-        _parentText = parent?.Id.ToString() ?? "";
+        _parentId = parent?.Id;
         _sortOrder = 0;
         _dialogError = null;
         _dialogTitle = parent is null ? "محل سطح اول" : $"زیرشاخه‌ی {parent.Name}";
@@ -194,7 +188,7 @@ else
     {
         _editing = item;
         _name = item.Name;
-        _parentText = item.ParentId?.ToString() ?? "";
+        _parentId = item.ParentId;
         _sortOrder = item.SortOrder;
         _dialogError = null;
         _dialogTitle = $"ویرایش {item.Name}";
@@ -215,7 +209,7 @@ else
         var request = new SaveStorageLocationRequest
         {
             Name = _name,
-            ParentId = Guid.TryParse(_parentText, out var parent) ? parent : null,
+            ParentId = _parentId,
             SortOrder = _sortOrder,
             Version = _editing?.Version ?? 0
         };

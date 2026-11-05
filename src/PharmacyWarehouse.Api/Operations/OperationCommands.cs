@@ -20,6 +20,31 @@ public static class OperationCommands
         return 0;
     }
 
+    // فقط در Development؛ روی دیتابیس واقعی هرگز داده‌ی ساختگی نمی‌نویسد.
+    public static async Task<int> SeedTestDataAsync(WebApplication app)
+    {
+        if (!app.Environment.IsDevelopment())
+        {
+            Console.Error.WriteLine("seed-test-data runs only in the Development environment.");
+            return 1;
+        }
+
+        using var scope = app.Services.CreateScope();
+        var result = await TestDataSeeder.SeedAsync(
+            scope.ServiceProvider.GetRequiredService<WarehouseDbContext>(),
+            scope.ServiceProvider.GetRequiredService<PharmacyWarehouse.Api.Stock.StockLedger>(),
+            DateTime.UtcNow);
+
+        if (result is null)
+        {
+            Console.Error.WriteLine("Test products already exist; nothing was changed.");
+            return 1;
+        }
+
+        Console.WriteLine($"Seeded {result.Products} test products and {result.Batches} batches.");
+        return 0;
+    }
+
     // VACUUM INTO نسخه‌ی سازگار می‌سازد؛ کپی ساده‌ی فایل در حال کار ممکن است خراب باشد.
     public static async Task<int> BackupAsync(WebApplication app, string[] args)
     {
