@@ -36,6 +36,7 @@ builder.Services.AddScoped<AuthenticationStateProvider>(
 builder.Services.AddScoped<AccountClient>();
 builder.Services.AddScoped<LocationsClient>();
 builder.Services.AddScoped<ProductsClient>();
+builder.Services.AddScoped<WithdrawalsClient>();
 builder.Services.AddScoped<BackupClient>();
 builder.Services.AddScoped<UsersClient>();
 builder.Services.AddScoped<AlertsClient>();

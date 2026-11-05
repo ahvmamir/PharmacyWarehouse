@@ -4,6 +4,7 @@
 @inject ProductsClient ProductsApi
 @inject LocationsClient LocationsApi
 @inject ToastService Toasts
+@inject ApiAuthenticationStateProvider Session
 
 <PageTitle>ورود جنس | انبار داروخانه</PageTitle>
 
@@ -24,6 +25,11 @@
     @if (_scanError is not null)
     {
         <div class="form-alert mt-3 mb-0" role="alert">@_scanError</div>
+    }
+
+    @if (Session.Can(Permissions.ProductsManage) && (_scanError is not null || _results is { Count: 0 }))
+    {
+        <div class="mt-2"><a class="btn btn-quiet" href="products/new"><AppIcon Name="plus" /> قلم جدید</a></div>
     }
 
     @if (_results is not null)
@@ -119,6 +125,10 @@
                 <div class="mt-3">
                     <ExpiryFields @bind-Value="_expiry" Required="@product.RequiresExpiry" />
                     <FieldError Field="Expiry" Errors="_errors" />
+                    @if (PastExpiryWarning is { } pastWarning)
+                    {
+                        <div class="form-alert mt-2 mb-0" role="alert"><AppIcon Name="warning" /> <span>@pastWarning</span></div>
+                    }
                     @if (!product.RequiresExpiry)
                     {
                         <div class="form-hint">این قلم تاریخ انقضا لازم ندارد.</div>
@@ -190,6 +200,12 @@
     private string _costText = "";
     private int _quantity = 1;
     private string _note = "";
+
+    // تاریخ انقضای گذشته خطا نیست (ممکن است داده‌ی قدیمی را ثبت کنند) ولی بی‌صدا هم نمی‌ماند.
+    private string? PastExpiryWarning =>
+        ExpiryDate.Parse(_expiry) is { Value: { } value } && ExpiryDate.IsExpired(value.Date, LocalDay.Today(DateTime.UtcNow))
+            ? "تاریخ انقضا گذشته است؛ این بچ منقضی ثبت می‌شود و فقط با اسقاط خارج می‌شود."
+            : null;
 
     private BatchItem? SelectedBatch => _product?.Batches.FirstOrDefault(b => b.Id == _batchId);
 

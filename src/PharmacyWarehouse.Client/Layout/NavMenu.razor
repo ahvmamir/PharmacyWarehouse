@@ -28,6 +28,15 @@
         <nav class="sidebar-nav">
             @if (Session.CurrentUser is { MustChangePassword: false })
             {
+                @if (Session.Can(Permissions.WithdrawalCreate))
+                {
+                    <NavLink class="sidebar-link" href="withdraw">
+                        <AppIcon Name="box" /> ثبت برداشت
+                    </NavLink>
+                    <NavLink class="sidebar-link" href="my-withdrawals">
+                        <AppIcon Name="history" /> برداشت‌های من
+                    </NavLink>
+                }
                 @if (Session.Can(Permissions.StockView))
                 {
                     <NavLink class="sidebar-link" href="" Match="NavLinkMatch.All">

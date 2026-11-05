@@ -13,7 +13,8 @@ public static class AuditLabels
         ["Product"] = "قلم",
         ["Batch"] = "بچ",
         ["ProductBarcode"] = "بارکد",
-        ["StorageLocation"] = "محل"
+        ["StorageLocation"] = "محل",
+        ["Withdrawal"] = "برداشت"
     };
 
     private static readonly Dictionary<string, string> Actions = new()
@@ -43,7 +44,17 @@ public static class AuditLabels
         ["ExpiryCalendar"] = "تقویم انقضا",
         ["UnitCost"] = "قیمت واحد",
         ["ParentId"] = "والد",
-        ["SortOrder"] = "ترتیب"
+        ["SortOrder"] = "ترتیب",
+        ["UserId"] = "ثبت‌کننده",
+        ["AtUtc"] = "زمان ثبت",
+        ["OccurredAtUtc"] = "زمان برداشت",
+        ["IsLate"] = "ثبت دیرهنگام",
+        ["AfterStocktake"] = "پس از انبارگردانی",
+        ["Status"] = "وضعیت",
+        ["ReviewedById"] = "بررسی‌کننده",
+        ["ReviewedAtUtc"] = "زمان بررسی",
+        ["ReviewNote"] = "یادداشت بررسی",
+        ["SelfReviewed"] = "بررسی توسط خود ثبت‌کننده"
     };
 
     public static string Entity(string? entityType) =>
@@ -73,6 +84,8 @@ public static class AuditLabels
                 return calendar == CalendarKind.Jalali ? "شمسی" : "میلادی";
             case "ExpiryDate" when DateOnly.TryParse(raw, CultureInfo.InvariantCulture, out var date):
                 return ExpiryDate.Gregorian(new ExpiryValue(date, ExpiryPrecision.Day, CalendarKind.Gregorian));
+            case "Status" when Enum.TryParse<WithdrawalStatus>(raw, out var status):
+                return status switch { WithdrawalStatus.Pending => "تأییدنشده", WithdrawalStatus.Approved => "تأییدشده", _ => "ردشده" };
             case "UnitCost" when long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var cost):
                 return cost.ToString("N0", CultureInfo.InvariantCulture);
             default:

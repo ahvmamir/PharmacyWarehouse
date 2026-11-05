@@ -90,6 +90,26 @@ public class StockMovement
     public string? Note { get; set; }
 }
 
+// یک برداشت = یک قلم، یک یا چند بچ. حرکت‌های برداشت با WithdrawalId به آن وصل‌اند. حذف ندارد.
+public class Withdrawal : IAudited
+{
+    public const int MaxReviewNote = 500;
+
+    public Guid Id { get; set; }
+    public Guid ProductId { get; set; }
+    public Guid UserId { get; set; }
+    public DateTime AtUtc { get; set; }
+    public DateTime OccurredAtUtc { get; set; }
+    public bool IsLate { get; set; }
+    public bool AfterStocktake { get; set; }
+    public WithdrawalStatus Status { get; set; } = WithdrawalStatus.Pending;
+    public Guid? ReviewedById { get; set; }
+    public DateTime? ReviewedAtUtc { get; set; }
+    public string? ReviewNote { get; set; }
+    public bool SelfReviewed { get; set; }
+    public int Version { get; set; } = 1;
+}
+
 // فقط اضافه‌شونده؛ trigger جلوی UPDATE و DELETE را می‌گیرد.
 public class AuditEntry
 {

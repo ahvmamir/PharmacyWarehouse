@@ -60,7 +60,8 @@ public class ReceiptTests : ApiTestBase
         var movement = Assert.Single(await App.MovementsAsync(result.Batch.Id));
         Assert.Equal(StockMovementKind.Receipt, movement.Kind);
         Assert.Equal(7, movement.Quantity);
-        Assert.Equal(movement.AtUtc, movement.OccurredAtUtc);
+        // AtUtc همیشه اکنونِ سرور در StockLedger.Post است؛ برای ورود جنس با زمان واقعی فقط میلی‌ثانیه فرق دارد.
+        Assert.True((movement.AtUtc - movement.OccurredAtUtc).Duration() < TimeSpan.FromSeconds(5));
         await App.AssertLedgerConsistentAsync();
     }
 

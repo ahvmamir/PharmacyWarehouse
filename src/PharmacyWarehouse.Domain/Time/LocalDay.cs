@@ -8,6 +8,9 @@ public static class LocalDay
 {
     public static readonly TimeSpan OffsetFromUtc = new(3, 30, 0);
 
+    // «امروز» به وقت محلی، نه UTC.
+    public static DateOnly Today(DateTime utcNow) => DateOnly.FromDateTime((utcNow + OffsetFromUtc).Date);
+
     // [StartUtc, EndUtc): نیمه‌شب محلی تا نیمه‌شب محلی بعد.
     public static (DateTimeOffset StartUtc, DateTimeOffset EndUtc) BoundsUtc(DateTimeOffset nowUtc)
     {

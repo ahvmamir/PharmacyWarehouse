@@ -18,6 +18,7 @@ public class WarehouseDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>,
     public DbSet<ProductBarcode> ProductBarcodes => Set<ProductBarcode>();
     public DbSet<Batch> Batches => Set<Batch>();
     public DbSet<StockMovement> StockMovements => Set<StockMovement>();
+    public DbSet<Withdrawal> Withdrawals => Set<Withdrawal>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 
     protected override void OnModelCreating(ModelBuilder builder)
@@ -79,6 +80,18 @@ public class WarehouseDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>,
             movement.HasOne<StockMovement>().WithMany().HasForeignKey(m => m.ReversesId).OnDelete(DeleteBehavior.Restrict);
             movement.HasIndex(m => new { m.BatchId, m.AtUtc });
         });
+
+        builder.Entity<Withdrawal>(withdrawal =>
+        {
+            withdrawal.Property(w => w.Status).HasConversion<string>().HasMaxLength(10);
+            withdrawal.Property(w => w.ReviewNote).HasMaxLength(Withdrawal.MaxReviewNote);
+            withdrawal.Property(w => w.Version).IsConcurrencyToken();
+            withdrawal.HasOne<Product>().WithMany().HasForeignKey(w => w.ProductId).OnDelete(DeleteBehavior.Restrict);
+            withdrawal.HasIndex(w => new { w.UserId, w.OccurredAtUtc });
+            withdrawal.HasIndex(w => new { w.Status, w.AtUtc });
+        });
+
+        builder.Entity<StockMovement>().HasOne<Withdrawal>().WithMany().HasForeignKey(m => m.WithdrawalId).OnDelete(DeleteBehavior.Restrict);
 
         builder.Entity<AuditEntry>(entry =>
         {

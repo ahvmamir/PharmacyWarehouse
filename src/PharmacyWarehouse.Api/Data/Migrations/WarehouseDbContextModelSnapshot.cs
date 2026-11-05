@@ -491,6 +491,8 @@ namespace PharmacyWarehouse.Api.Data.Migrations
 
                     b.HasIndex("ReversesId");
 
+                    b.HasIndex("WithdrawalId");
+
                     b.HasIndex("BatchId", "AtUtc");
 
                     b.ToTable("StockMovements");
@@ -538,6 +540,63 @@ namespace PharmacyWarehouse.Api.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("StorageLocations");
+                });
+
+            modelBuilder.Entity("PharmacyWarehouse.Api.Data.Withdrawal", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("AfterStocktake")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("AtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsLate")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("OccurredAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReviewNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ReviewedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("ReviewedById")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("SelfReviewed")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("Status", "AtUtc");
+
+                    b.HasIndex("UserId", "OccurredAtUtc");
+
+                    b.ToTable("Withdrawals");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
@@ -634,6 +693,11 @@ namespace PharmacyWarehouse.Api.Data.Migrations
                         .WithMany()
                         .HasForeignKey("ReversesId")
                         .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("PharmacyWarehouse.Api.Data.Withdrawal", null)
+                        .WithMany()
+                        .HasForeignKey("WithdrawalId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("PharmacyWarehouse.Api.Data.StorageLocation", b =>
@@ -642,6 +706,15 @@ namespace PharmacyWarehouse.Api.Data.Migrations
                         .WithMany()
                         .HasForeignKey("ParentId")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("PharmacyWarehouse.Api.Data.Withdrawal", b =>
+                {
+                    b.HasOne("PharmacyWarehouse.Api.Data.Product", null)
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 #pragma warning restore 612, 618
         }

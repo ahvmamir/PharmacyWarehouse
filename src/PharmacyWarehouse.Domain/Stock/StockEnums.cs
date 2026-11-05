@@ -7,3 +7,5 @@ public enum ExpiryPrecision { Day, Month }
 public enum CalendarKind { Gregorian, Jalali }
 
 public enum StockMovementKind { Import, Receipt, Withdrawal, Reversal, Adjustment, Disposal }
+
+public enum WithdrawalStatus { Pending, Approved, Rejected }

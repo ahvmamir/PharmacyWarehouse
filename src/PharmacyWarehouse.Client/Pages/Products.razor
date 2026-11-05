@@ -124,8 +124,8 @@ else
                         <td>
                             @if (item.NearestExpiry is { } expiry)
                             {
-                                <span>@ExpiryText(expiry)</span>
-                                @if (expiry < Today())
+                                <span>@(item.NearestExpiryText ?? "—")</span>
+                                @if (ExpiryDate.IsExpired(expiry, Today()))
                                 {
                                     <span class="status-badge status-expired">منقضی</span>
                                 }
@@ -211,11 +211,7 @@ else
 
     private bool HasCriteria => !string.IsNullOrWhiteSpace(_query) || _locationText != "" || _filter != "";
 
-    private static DateOnly Today() => DateOnly.FromDateTime(DateTime.UtcNow + LocalDay.OffsetFromUtc);
-
-    // فهرست فقط تاریخ دقیق دارد، نه تقویم ورودی؛ پس میلادی روزانه نشان داده می‌شود.
-    private static string ExpiryText(DateOnly date) =>
-        ExpiryDate.Display(new ExpiryValue(date, ExpiryPrecision.Day, CalendarKind.Gregorian));
+    private static DateOnly Today() => LocalDay.Today(DateTime.UtcNow);
 
     protected override async Task OnInitializedAsync()
     {

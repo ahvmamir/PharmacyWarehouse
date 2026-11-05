@@ -1,0 +1,370 @@
+@page "/withdraw"
+@attribute [Authorize]
+@using PharmacyWarehouse.Domain.Stock
+@inject ProductsClient ProductsApi
+@inject WithdrawalsClient WithdrawalsApi
+@inject ApiAuthenticationStateProvider Session
+@inject ToastService Toasts
+
+<PageTitle>ثبت برداشت | انبار داروخانه</PageTitle>
+
+<RequirePermission Permission="@Permissions.WithdrawalCreate">
+<div class="withdraw-page">
+    <div class="withdraw-user">
+        <span class="withdraw-user-name"><AppIcon Name="user" Size="20" /> <bdi>@Session.CurrentUser?.DisplayName</bdi></span>
+        <a class="btn btn-quiet" href="my-withdrawals">برداشت‌های من</a>
+    </div>
+
+    <section class="card-emu">
+        <div class="form-hint">قلم</div>
+        <ScanInput @ref="_scan" OnScan="OnScanAsync" Placeholder="اسکن بارکد (یا نام قلم و Enter)" />
+
+        @if (_scanError is not null)
+        {
+            <div class="form-alert mt-3 mb-0" role="alert">@_scanError</div>
+        }
+
+        @if (_results is not null)
+        {
+            @if (_results.Count == 0)
+            {
+                <div class="form-hint mt-2">قلمی پیدا نشد.</div>
+            }
+            else
+            {
+                <div class="mt-2" style="max-height:260px;overflow:auto;">
+                    @foreach (var item in _results)
+                    {
+                        <button type="button" class="linked-item withdraw-pick" @key="item.Id" @onclick="() => PickAsync(item.Id)">
+                            <span style="flex:1;">
+                                <strong>@item.Name</strong>
+                                <small class="cell-sub">@string.Join(" · ", new[] { item.Brand, item.PackDescription }.Where(s => !string.IsNullOrEmpty(s)))</small>
+                            </span>
+                            <span class="cell-sub">موجودی: @JalaliDate.ToPersianDigits(item.UsableOnHand.ToString())</span>
+                        </button>
+                    }
+                </div>
+            }
+        }
+    </section>
+
+    @if (_loading)
+    {
+        <div class="loading-line">در حال بارگذاری…</div>
+    }
+
+    @if (_allocation is { } allocation)
+    {
+        <section class="card-emu">
+            <h2 class="withdraw-product">@allocation.ProductName</h2>
+            <p class="form-hint">
+                @string.Join(" · ", new[] { allocation.Brand, allocation.PackDescription }.Where(s => !string.IsNullOrEmpty(s)))
+                — موجودی قابل‌برداشت: <strong>@JalaliDate.ToPersianDigits(allocation.UsableOnHand.ToString())</strong> جعبه
+            </p>
+
+            <div class="form-field">
+                <label for="withdraw-qty">تعداد (جعبه)</label>
+                <div class="withdraw-qty">
+                    <button type="button" class="btn btn-quiet withdraw-step" aria-label="کم کن" disabled="@(_quantity <= 1 || _manual)" @onclick="() => ChangeQuantityAsync(_quantity - 1)">−</button>
+                    <input id="withdraw-qty" type="number" min="1" step="1" inputmode="numeric" class="form-control" dir="ltr" disabled="@_manual"
+                           value="@_quantity" @onchange="OnQuantityTyped" />
+                    <button type="button" class="btn btn-quiet withdraw-step" aria-label="زیاد کن" disabled="@_manual" @onclick="() => ChangeQuantityAsync(_quantity + 1)">+</button>
+                </div>
+                <FieldError Field="Quantity" Errors="_errors" />
+            </div>
+
+            @if (allocation.Shortfall > 0 && !_manual)
+            {
+                <div class="form-alert" role="alert"><AppIcon Name="warning" /> <span>موجودی قابل‌برداشت @JalaliDate.ToPersianDigits(allocation.Shortfall.ToString()) جعبه کمتر از درخواست است.</span></div>
+            }
+
+            <h3>از کدام بچ‌ها</h3>
+            @if (!_manual)
+            {
+                @foreach (var line in allocation.Lines)
+                {
+                    <div class="linked-item" @key="line.BatchId">
+                        <span style="flex:1;">
+                            <bdi>@line.BatchNumber</bdi>
+                            <small class="cell-sub">انقضا: @(line.ExpiryText ?? "—")@(line.LocationPath is null ? "" : " · محل: " + line.LocationPath)</small>
+                        </span>
+                        <strong>@JalaliDate.ToPersianDigits(line.Quantity.ToString()) جعبه</strong>
+                    </div>
+                }
+                @if (allocation.Lines.Count == 0)
+                {
+                    <div class="form-hint">بچ قابل‌پیشنهاد نیست.</div>
+                }
+                <button type="button" class="btn btn-quiet mt-2" @onclick="StartManual">تغییر بچ‌ها</button>
+            }
+            else
+            {
+                @foreach (var batch in allocation.Available)
+                {
+                    var blocked = batch.IsExpired && !allocation.AllowExpiredWithdrawal;
+                    <div class="linked-item" @key="batch.BatchId">
+                        <span style="flex:1;">
+                            <bdi>@batch.BatchNumber</bdi>
+                            <small class="cell-sub">
+                                انقضا: @(batch.ExpiryText ?? "—")@(batch.LocationPath is null ? "" : " · محل: " + batch.LocationPath)
+                                — موجودی: @JalaliDate.ToPersianDigits(batch.OnHand.ToString())
+                            </small>
+                            @if (batch.IsExpired)
+                            {
+                                <span class="status-badge status-expired">@(blocked ? "منقضی؛ برداشت مجاز نیست" : "منقضی")</span>
+                            }
+                        </span>
+                        <input type="number" min="0" max="@batch.OnHand" step="1" inputmode="numeric" class="form-control withdraw-line-qty" dir="ltr"
+                               aria-label="تعداد از بچ @batch.BatchNumber" disabled="@blocked"
+                               value="@ManualQuantity(batch.BatchId)" @onchange="e => SetManual(batch.BatchId, batch.OnHand, e)" />
+                    </div>
+                }
+                <div class="form-hint mt-2">جمع انتخاب‌شده: @JalaliDate.ToPersianDigits(ManualTotal.ToString()) جعبه</div>
+                <FieldError Field="Lines" Errors="_errors" />
+                <button type="button" class="btn btn-quiet mt-2" @onclick="CancelManualAsync">بازگشت به پیشنهاد خودکار</button>
+            }
+
+            @if (SelectedHasExpired)
+            {
+                <div class="form-alert mt-3" role="alert"><AppIcon Name="warning" /> <span>بچ منقضی انتخاب شده است؛ این برداشت در بررسی با علامت «منقضی» دیده می‌شود.</span></div>
+            }
+
+            <div class="form-grid mt-3">
+                <div class="form-field">
+                    <label for="withdraw-when">زمان برداشت</label>
+                    <select id="withdraw-when" class="form-select" @bind="_whenMinutes">
+                        @foreach (var (minutes, label) in WhenOptions)
+                        {
+                            <option value="@minutes">@label</option>
+                        }
+                    </select>
+                    <FieldError Field="OccurredAtUtc" Errors="_errors" />
+                    @if (_whenMinutes != "0")
+                    {
+                        <div class="form-hint">ثبت دیرهنگام؛ برای انباردار علامت می‌خورد.</div>
+                    }
+                </div>
+                <div class="form-field">
+                    <label for="withdraw-note">یادداشت</label>
+                    <input id="withdraw-note" class="form-control" autocomplete="off" @bind="_note" />
+                    <FieldError Field="Note" Errors="_errors" />
+                </div>
+            </div>
+
+            @if (_formError is not null)
+            {
+                <div class="form-alert mt-3" role="alert"><AppIcon Name="warning" /> <span>@_formError</span></div>
+            }
+
+            <div class="mt-3 withdraw-actions">
+                <button type="button" class="btn btn-primary" disabled="@(_busy || !CanSubmit)" @onclick="SubmitAsync">@(_busy ? "در حال ثبت…" : "ثبت برداشت")</button>
+                <button type="button" class="btn btn-quiet" disabled="@_busy" @onclick="ResetAsync">انصراف</button>
+            </div>
+        </section>
+    }
+</div>
+</RequirePermission>
+
+@code {
+    // مقدار = دقیقه‌ی قبل. حداکثر ۶ روز (نه ۷)، تا اختلاف ساعت گوشی و سرور مرز ۷ روزه‌ی سرور را رد نکند.
+    private static readonly (string Minutes, string Label)[] WhenOptions =
+    [
+        ("0", "اکنون"), ("60", "۱ ساعت پیش"), ("180", "۳ ساعت پیش"), ("360", "۶ ساعت پیش"), ("720", "۱۲ ساعت پیش"),
+        ("1440", "۱ روز پیش"), ("2880", "۲ روز پیش"), ("4320", "۳ روز پیش"), ("7200", "۵ روز پیش"), ("8640", "۶ روز پیش")
+    ];
+
+    private ScanInput? _scan;
+    private List<ProductListItem>? _results;
+    private AllocationResponse? _allocation;
+    private Dictionary<string, string[]> _errors = [];
+    private string? _scanError;
+    private string? _formError;
+    private bool _busy;
+    private bool _loading;
+
+    private int _quantity = 1;
+    private bool _manual;
+    private readonly Dictionary<Guid, int> _manualLines = [];
+    private string _whenMinutes = "0";
+    private string _note = "";
+
+    private int ManualTotal => _manualLines.Values.Sum();
+    private int ManualQuantity(Guid id) => _manualLines.GetValueOrDefault(id);
+
+    private IEnumerable<(Guid BatchId, int Quantity)> SelectedLines => _manual
+        ? _manualLines.Where(p => p.Value > 0).Select(p => (p.Key, p.Value))
+        : _allocation?.Lines.Select(l => (l.BatchId, l.Quantity)) ?? [];
+
+    private bool SelectedHasExpired =>
+        _allocation is { } a && SelectedLines.Any(s => a.Available.FirstOrDefault(b => b.BatchId == s.BatchId)?.IsExpired == true);
+
+    private bool CanSubmit => _allocation is { } a && (_manual
+        ? ManualTotal > 0
+        : a.Shortfall == 0 && a.Lines.Count > 0);
+
+    private async Task OnScanAsync(string text)
+    {
+        _scanError = null;
+        _results = null;
+
+        var lookup = await ProductLookup.ByCodeAsync(ProductsApi, text);
+        if (lookup.Kind == LookupKind.Found)
+        {
+            await StartProductAsync(lookup.Product!.Summary.Id);
+            return;
+        }
+
+        if (lookup.Kind == LookupKind.Error)
+        {
+            _scanError = lookup.Error;
+            return;
+        }
+
+        var list = await ProductsApi.ListAsync(text);
+        if (!list.IsSuccess)
+        {
+            _scanError = list.ErrorMessage;
+            return;
+        }
+
+        _results = list.Value!;
+        if (_results.Count == 0 && !ProductLookup.LooksLikeName(text)) _scanError = "بارکد ناشناخته؛ قلم را با نام جست‌وجو کنید.";
+    }
+
+    private async Task PickAsync(Guid id)
+    {
+        _results = null;
+        await StartProductAsync(id);
+    }
+
+    private async Task StartProductAsync(Guid productId)
+    {
+        _quantity = 1;
+        _manual = false;
+        _manualLines.Clear();
+        _note = "";
+        _whenMinutes = "0";
+        _errors = [];
+        _formError = null;
+        await LoadAllocationAsync(productId, _quantity);
+    }
+
+    private async Task LoadAllocationAsync(Guid productId, int quantity)
+    {
+        _loading = true;
+        var result = await WithdrawalsApi.AllocationAsync(productId, quantity);
+        _loading = false;
+
+        if (!result.IsSuccess)
+        {
+            _allocation = null;
+            _scanError = result.Outcome == ApiOutcome.NotFound ? "این قلم پیدا نشد." : result.ErrorMessage;
+            return;
+        }
+
+        _allocation = result.Value!;
+    }
+
+    private async Task ChangeQuantityAsync(int quantity)
+    {
+        if (_allocation is not { } allocation || quantity < 1) return;
+        _quantity = quantity;
+        _errors = [];
+        await LoadAllocationAsync(allocation.ProductId, quantity);
+    }
+
+    private async Task OnQuantityTyped(ChangeEventArgs e)
+    {
+        var text = TextNormalizer.ToAsciiDigits(e.Value?.ToString() ?? "");
+        if (!int.TryParse(text, out var parsed) || parsed < 1)
+        {
+            _errors = new() { ["Quantity"] = ["تعداد باید حداقل ۱ باشد."] };
+            return;
+        }
+
+        await ChangeQuantityAsync(parsed);
+    }
+
+    private void StartManual()
+    {
+        _manual = true;
+        _manualLines.Clear();
+        if (_allocation is { } a) foreach (var l in a.Lines) _manualLines[l.BatchId] = l.Quantity;
+        _errors = [];
+    }
+
+    private async Task CancelManualAsync()
+    {
+        _manual = false;
+        _manualLines.Clear();
+        _errors = [];
+        if (_allocation is { } a) await LoadAllocationAsync(a.ProductId, _quantity);
+    }
+
+    private void SetManual(Guid batchId, int onHand, ChangeEventArgs e)
+    {
+        var text = TextNormalizer.ToAsciiDigits(e.Value?.ToString() ?? "");
+        var value = int.TryParse(text, out var parsed) ? Math.Clamp(parsed, 0, onHand) : 0;
+        _manualLines[batchId] = value;
+        _quantity = Math.Max(1, ManualTotal);
+    }
+
+    private async Task ResetAsync()
+    {
+        _allocation = null;
+        _results = null;
+        _scanError = null;
+        _formError = null;
+        _errors = [];
+        _manual = false;
+        _manualLines.Clear();
+        if (_scan is not null) await _scan.FocusAsync();
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (_allocation is not { } allocation || !CanSubmit) return;
+
+        _errors = [];
+        _formError = null;
+
+        var request = new WithdrawalRequest
+        {
+            ProductId = allocation.ProductId,
+            Note = string.IsNullOrWhiteSpace(_note) ? null : _note,
+            Lines = SelectedLines.Select(s => new WithdrawalLineRequest
+            {
+                BatchId = s.BatchId,
+                Quantity = s.Quantity,
+                BatchVersion = allocation.Available.First(b => b.BatchId == s.BatchId).Version
+            }).ToList()
+        };
+        if (int.TryParse(_whenMinutes, out var minutes) && minutes > 0) request.OccurredAtUtc = DateTime.UtcNow.AddMinutes(-minutes);
+
+        _busy = true;
+        var result = await WithdrawalsApi.CreateAsync(request);
+        _busy = false;
+
+        if (result.IsSuccess)
+        {
+            var item = result.Value!;
+            var text = $"ثبت شد: {item.ProductName} — {JalaliDate.ToPersianDigits(item.TotalQuantity.ToString())} جعبه";
+            if (item.IsLate) text += " (ثبت دیرهنگام)";
+            Toasts.Show(text);
+            await ResetAsync();
+            return;
+        }
+
+        _errors = result.Problem?.Errors ?? [];
+        _formError = result.ErrorMessage;
+
+        if (result.Outcome == ApiOutcome.Conflict)
+        {
+            // موجودی یا Version عوض شده: تقسیم تازه گرفته می‌شود و هیچ‌چیز بی‌صدا ثبت نمی‌شود.
+            _manual = false;
+            _manualLines.Clear();
+            await LoadAllocationAsync(allocation.ProductId, _quantity);
+            _formError = $"{result.ErrorMessage} تقسیم از نو محاسبه شد؛ بررسی کنید و دوباره ثبت کنید.";
+        }
+    }
+}

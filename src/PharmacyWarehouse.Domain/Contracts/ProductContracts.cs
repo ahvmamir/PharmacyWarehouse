@@ -19,10 +19,11 @@ public sealed class AddBarcodeRequest
     public string Code { get; set; } = "";
 }
 
+// NearestExpiryText: همان تاریخ نزدیک‌ترین بچ، با تقویم و دقت ورودی خودش (سرور می‌سازد تا Client تبدیل نکند).
 // UsableOnHand: موجودی بچ‌های منقضی‌نشده و بی‌تاریخ (امروز به وقت LocalDay).
 public sealed record ProductListItem(
     Guid Id, string Name, string? Brand, string? PackDescription, string? LocationPath,
-    int OnHand, int UsableOnHand, int? MinStock, DateOnly? NearestExpiry, bool IsActive, int Version);
+    int OnHand, int UsableOnHand, int? MinStock, DateOnly? NearestExpiry, string? NearestExpiryText, bool IsActive, int Version);
 
 public sealed record BatchItem(
     Guid Id, string BatchNumber, DateOnly? ExpiryDate, ExpiryPrecision Precision, CalendarKind Calendar,

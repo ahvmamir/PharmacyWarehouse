@@ -1479,3 +1479,17 @@ details > summary.import-subhead { cursor: pointer; }
 .scan-warn svg { color: var(--warning); }
 .scan-error svg { color: var(--danger); }
 @media (max-width: 760px) { .stocktake-scan { grid-template-columns: minmax(0, 1fr); } }
+
+
+/* صفحه‌ی ثبت برداشت: اول گوشی، بدون اسکرول افقی */
+.withdraw-page { max-width: 640px; margin-inline: auto; }
+.withdraw-user { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.withdraw-user-name { display: inline-flex; align-items: center; gap: 8px; font-size: 1.25rem; font-weight: 700; }
+.withdraw-product { font-size: 1.2rem; margin: 0 0 4px; overflow-wrap: anywhere; }
+.withdraw-pick { width: 100%; text-align: start; background: none; border-inline: 0; border-top: 0; }
+.withdraw-qty { display: flex; align-items: center; gap: 8px; }
+.withdraw-qty .form-control { max-width: 120px; text-align: center; font-size: 1.25rem; min-height: 48px; }
+.withdraw-step { min-width: 52px; min-height: 48px; font-size: 1.4rem; }
+.withdraw-line-qty { max-width: 84px; text-align: center; min-height: 44px; }
+.withdraw-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.withdraw-actions .btn-primary { flex: 1; min-height: 48px; font-size: 1.05rem; }

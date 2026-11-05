@@ -8,7 +8,7 @@ namespace PharmacyWarehouse.Api.Stock;
 internal static class BatchMapping
 {
     // «امروز» به وقت محلی (LocalDay)، نه UTC.
-    public static DateOnly Today() => DateOnly.FromDateTime((DateTime.UtcNow + LocalDay.OffsetFromUtc).Date);
+    public static DateOnly Today() => LocalDay.Today(DateTime.UtcNow);
 
     // محل بچ؛ اگر ندارد، محل قلم نمایش داده می‌شود.
     public static BatchItem ToItem(Batch b, IReadOnlyDictionary<Guid, string> paths, Guid? productLocationId, DateOnly today)
@@ -16,6 +16,6 @@ internal static class BatchMapping
         string? PathOf(Guid? id) => id is { } g && paths.TryGetValue(g, out var p) ? p : null;
         return new BatchItem(b.Id, b.BatchNumber, b.ExpiryDate, b.ExpiryPrecision, b.ExpiryCalendar,
             b.ExpiryDate is { } d ? ExpiryDate.Display(new ExpiryValue(d, b.ExpiryPrecision, b.ExpiryCalendar)) : null,
-            PathOf(b.LocationId) ?? PathOf(productLocationId), b.OnHand, b.ExpiryDate is { } e && e < today, b.Version);
+            PathOf(b.LocationId) ?? PathOf(productLocationId), b.OnHand, ExpiryDate.IsExpired(b.ExpiryDate, today), b.Version);
     }
 }

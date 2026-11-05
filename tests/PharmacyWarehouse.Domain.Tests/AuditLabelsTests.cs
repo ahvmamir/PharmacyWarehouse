@@ -14,7 +14,10 @@ public class AuditLabelsTests
         { "ProductBarcode", "ProductId" }, { "ProductBarcode", "Code" },
         { "Batch", "ProductId" }, { "Batch", "BatchNumber" }, { "Batch", "ExpiryDate" }, { "Batch", "ExpiryPrecision" },
         { "Batch", "ExpiryCalendar" }, { "Batch", "LocationId" }, { "Batch", "UnitCost" },
-        { "StorageLocation", "ParentId" }, { "StorageLocation", "Name" }, { "StorageLocation", "SortOrder" }, { "StorageLocation", "IsActive" }
+        { "StorageLocation", "ParentId" }, { "StorageLocation", "Name" }, { "StorageLocation", "SortOrder" }, { "StorageLocation", "IsActive" },
+        { "Withdrawal", "UserId" }, { "Withdrawal", "AtUtc" }, { "Withdrawal", "OccurredAtUtc" }, { "Withdrawal", "IsLate" },
+        { "Withdrawal", "AfterStocktake" }, { "Withdrawal", "Status" }, { "Withdrawal", "ReviewedById" },
+        { "Withdrawal", "ReviewedAtUtc" }, { "Withdrawal", "ReviewNote" }, { "Withdrawal", "SelfReviewed" }
     };
 
     [Theory]

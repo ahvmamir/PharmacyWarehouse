@@ -23,6 +23,9 @@ public static class ExpiryDate
     private static readonly PersianCalendar Persian = new();
     private static readonly GregorianCalendar Gregorian_ = new();
 
+    // منقضی یعنی تاریخ انقضا قبل از امروز باشد؛ خودِ روز انقضا هنوز قابل‌استفاده است. بدون تاریخ هرگز منقضی نمی‌شود.
+    public static bool IsExpired(DateOnly? expiry, DateOnly today) => expiry is { } d && d < today;
+
     public static ExpiryParse Parse(string? text)
     {
         var s = TextNormalizer.ToAsciiDigits(text ?? "");

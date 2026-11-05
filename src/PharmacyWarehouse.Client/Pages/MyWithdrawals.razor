@@ -1,0 +1,81 @@
+@page "/my-withdrawals"
+@attribute [Authorize]
+@using PharmacyWarehouse.Domain.Stock
+@inject WithdrawalsClient WithdrawalsApi
+
+<PageTitle>برداشت‌های من | انبار داروخانه</PageTitle>
+
+<RequirePermission Permission="@Permissions.WithdrawalCreate">
+<div class="page-head">
+    <div>
+        <h1>برداشت‌های من</h1>
+        <p>آخرین برداشت‌هایی که شما ثبت کرده‌اید و وضعیت بررسی آن‌ها.</p>
+    </div>
+    <a class="btn btn-primary" href="withdraw">ثبت برداشت</a>
+</div>
+
+@if (_error is not null)
+{
+    <div class="form-alert" role="alert"><AppIcon Name="warning" /> <span>@_error</span></div>
+}
+else if (_items is null)
+{
+    <div class="loading-line">در حال بارگذاری…</div>
+}
+else if (_items.Count == 0)
+{
+    <div class="table-card"><div class="empty-state"><h2>هنوز برداشتی ثبت نکرده‌اید</h2></div></div>
+}
+else
+{
+    @foreach (var item in _items)
+    {
+        <section class="card-emu" @key="item.Id">
+            <div class="d-flex align-items-center gap-2">
+                <strong style="flex:1;">@item.ProductName</strong>
+                <span class="status-badge @StatusClass(item.Status)">@StatusText(item.Status)</span>
+            </div>
+            <div class="form-hint">
+                @JalaliDate.ToPersianDigits(item.TotalQuantity.ToString()) جعبه —
+                <bdi>@JalaliDate.Format(item.OccurredAtUtc)</bdi>
+                @if (item.IsLate) { <span class="status-badge status-pending">دیرهنگام</span> }
+                @if (item.ContainsExpired) { <span class="status-badge status-expired">منقضی</span> }
+            </div>
+            @foreach (var line in item.Lines)
+            {
+                <div class="cell-sub"><bdi>@line.BatchNumber</bdi> — @JalaliDate.ToPersianDigits(line.Quantity.ToString()) جعبه</div>
+            }
+            @if (item.Status == WithdrawalStatus.Rejected && item.ReviewNote is not null)
+            {
+                <div class="form-alert mt-2 mb-0" role="alert">رد شد: @item.ReviewNote</div>
+            }
+        </section>
+    }
+}
+</RequirePermission>
+
+@code {
+    private List<WithdrawalItem>? _items;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await WithdrawalsApi.MineAsync();
+        if (result.IsSuccess) _items = result.Value!;
+        else _error = result.ErrorMessage;
+    }
+
+    private static string StatusText(WithdrawalStatus status) => status switch
+    {
+        WithdrawalStatus.Pending => "تأییدنشده",
+        WithdrawalStatus.Approved => "تأییدشده",
+        _ => "ردشده"
+    };
+
+    private static string StatusClass(WithdrawalStatus status) => status switch
+    {
+        WithdrawalStatus.Approved => "status-active",
+        WithdrawalStatus.Rejected => "status-expired",
+        _ => "status-pending"
+    };
+}

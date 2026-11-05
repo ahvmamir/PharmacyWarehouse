@@ -19,7 +19,7 @@ public sealed class StockLedger
         _audit = audit;
     }
 
-    public void Post(Batch batch, StockMovementKind kind, int quantity, DateTime occurredAtUtc, string? note = null, DateTime? atUtc = null)
+    public void Post(Batch batch, StockMovementKind kind, int quantity, DateTime occurredAtUtc, string? note = null, Guid? withdrawalId = null, Guid? reversesId = null)
     {
         if (quantity == 0) throw new InvalidOperationException("مقدار حرکت نمی‌تواند صفر باشد.");
         if (_db.Entry(batch).State == EntityState.Detached) throw new InvalidOperationException("بچ باید در DbContext ردیابی شود.");
@@ -33,9 +33,11 @@ public sealed class StockLedger
             BatchId = batch.Id,
             Kind = kind,
             Quantity = quantity,
-            AtUtc = atUtc ?? DateTime.UtcNow,
+            AtUtc = DateTime.UtcNow, // زمان ثبت همیشه اکنونِ سرور است، نه ورودی فراخواننده
             OccurredAtUtc = occurredAtUtc,
             UserId = _audit.UserId,
+            WithdrawalId = withdrawalId,
+            ReversesId = reversesId,
             Note = TextNormalizer.Clean(note)
         });
         batch.OnHand = next;

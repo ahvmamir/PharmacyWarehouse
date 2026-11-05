@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using PharmacyWarehouse.Api.Auth;
 using PharmacyWarehouse.Api.Data;
 using PharmacyWarehouse.Domain.Auth;
 using PharmacyWarehouse.Domain.Contracts;
@@ -55,9 +56,10 @@ public static class ProductEndpoints
     {
         var onHand = batches.Sum(b => b.OnHand);
         var usable = batches.Where(b => b.ExpiryDate is null || b.ExpiryDate >= today).Sum(b => b.OnHand);
-        var nearest = batches.Where(b => b.OnHand > 0 && b.ExpiryDate is not null).Select(b => b.ExpiryDate).Min();
+        var nearest = batches.Where(b => b.OnHand > 0 && b.ExpiryDate is not null).OrderBy(b => b.ExpiryDate).ThenBy(b => b.CreatedAtUtc).FirstOrDefault();
+        var nearestText = nearest is null ? null : ExpiryDate.Display(new ExpiryValue(nearest.ExpiryDate!.Value, nearest.ExpiryPrecision, nearest.ExpiryCalendar));
         return new ProductListItem(p.Id, p.Name, p.Brand, p.PackDescription, PathOf(locations, p.LocationId),
-            onHand, usable, p.MinStock, nearest, p.IsActive, p.Version);
+            onHand, usable, p.MinStock, nearest?.ExpiryDate, nearestText, p.IsActive, p.Version);
     }
 
     private static async Task<ProductDetail> ToDetailAsync(WarehouseDbContext db, Product p)
@@ -143,7 +145,7 @@ public static class ProductEndpoints
         return product is null ? ApiProblems.NotFound() : Results.Ok(await ToDetailAsync(db, product));
     }
 
-    private static async Task<IResult> HistoryAsync(Guid id, WarehouseDbContext db)
+    private static async Task<IResult> HistoryAsync(Guid id, WarehouseDbContext db, AuditContext audit, PermissionService permissions)
     {
         if (!await db.Products.AnyAsync(p => p.Id == id)) return ApiProblems.NotFound();
 
@@ -156,15 +158,31 @@ public static class ProductEndpoints
         var users = await db.Users.AsNoTracking().Where(u => userIds.Contains(u.Id)).Select(u => new { u.Id, u.UserName }).ToListAsync();
         var names = users.ToDictionary(u => u.Id, u => u.UserName ?? "");
 
-        var audit = await db.AuditEntries.AsNoTracking().Where(a => a.SubjectId == id).ToListAsync();
+        var entries = await db.AuditEntries.AsNoTracking().Where(a => a.SubjectId == id).ToListAsync();
+
+        // [تصمیم ۲۰۲۶-۱۱-۰۵] قیمت خرید فقط برای دارندگان reports.view دیده می‌شود. هم ردیف ویرایش قیمت حذف می‌شود
+        // و هم کلید قیمت از JSON ردیف‌های «ثبت» و «حذف» بچ.
+        if (!await permissions.HasAsync(audit.UserId, Permissions.ReportsView))
+        {
+            entries = entries
+                .Where(a => !(a.EntityType == nameof(Batch) && a.Field == nameof(Batch.UnitCost)))
+                .Select(a => a.EntityType != nameof(Batch) || a.Action is not (AuditActions.Created or AuditActions.Deleted) ? a : new AuditEntry
+                {
+                    Id = a.Id, ChangeSetId = a.ChangeSetId, AtUtc = a.AtUtc, UserId = a.UserId, UserName = a.UserName, EntityType = a.EntityType,
+                    EntityId = a.EntityId, SubjectId = a.SubjectId, EntityLabel = a.EntityLabel, Action = a.Action, Field = a.Field,
+                    OldValue = AuditRedaction.WithoutKey(a.OldValue, nameof(Batch.UnitCost)),
+                    NewValue = AuditRedaction.WithoutKey(a.NewValue, nameof(Batch.UnitCost)), Reason = a.Reason
+                })
+                .ToList();
+        }
 
         return Results.Ok(new ProductHistory
         {
-            Movements = movements.OrderByDescending(m => m.AtUtc)
+            Movements = movements.OrderByDescending(m => m.OccurredAtUtc).ThenByDescending(m => m.AtUtc)
                 .Select(m => new MovementItem(m.Id, m.BatchId, numbers[m.BatchId], m.Kind, m.Quantity, m.AtUtc, m.OccurredAtUtc,
                     m.UserId is { } u && names.TryGetValue(u, out var n) ? n : "سیستم", m.Note))
                 .ToList(),
-            Changes = audit.OrderByDescending(a => a.AtUtc)
+            Changes = entries.OrderByDescending(a => a.AtUtc)
                 .Select(a => new AuditEntryItem
                 {
                     Id = a.Id, ChangeSetId = a.ChangeSetId, AtUtc = a.AtUtc, UserName = a.UserName, EntityType = a.EntityType,
