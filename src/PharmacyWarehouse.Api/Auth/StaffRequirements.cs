@@ -7,12 +7,13 @@ namespace PharmacyWarehouse.Api.Auth;
 // هر مسیر دامنه یک مجوز می‌خواهد، به‌علاوه‌ی کاربر فعال با رمز عوض‌شده.
 public sealed class PermissionRequirement : IAuthorizationRequirement
 {
-    public PermissionRequirement(string permission)
+    // یکی از مجوزها کافی است (برای جست‌وجوی قلم)؛ با یک مجوز، همان لازم است.
+    public PermissionRequirement(params string[] anyOf)
     {
-        Permission = permission;
+        AnyOf = anyOf;
     }
 
-    public string Permission { get; }
+    public IReadOnlyList<string> AnyOf { get; }
 }
 
 // شرطی که برقرار نشود Succeed نمی‌شود و policy رد می‌شود (۴۰۳).
@@ -38,7 +39,8 @@ public sealed class PermissionHandler : AuthorizationHandler<PermissionRequireme
         // مهر امنیتی خط دفاع اول است؛ IsActive بیمه‌ی مسیری است که مهر را نچرخانده.
         if (user is null || !user.IsActive || user.MustChangePassword) return;
 
-        if ((await _permissions.GetEffectiveAsync(user.Id)).Contains(requirement.Permission))
+        var effective = await _permissions.GetEffectiveAsync(user.Id);
+        if (requirement.AnyOf.Any(effective.Contains))
         {
             context.Succeed(requirement);
         }

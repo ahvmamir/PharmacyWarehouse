@@ -1,1 +1,10 @@
 /* Styles of feature pages (slice 6.5+). The app shell, sidebar and theme live in app.css. */
+
+/* Package A: role editor (AdminRoles.razor) */
+.role-perm-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.role-perm-head h3 { margin: 0; }
+.role-perm-item { padding: 4px 0; }
+.role-perm-item .cell-sub { display: block; font-size: .8rem; line-height: 1.6; }
+.role-diff { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; font-size: .88rem; display: grid; gap: 2px; }
+.role-diff .diff-added { color: var(--st-active-fg); }
+.role-diff .diff-removed { color: var(--danger); }

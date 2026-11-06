@@ -141,6 +141,11 @@ foreach (var permission in Permissions.All)
         .AddRequirements(new PermissionRequirement(permission.Key)));
 }
 
+// جست‌وجو، کد و allocation قلم: یکی از stock.view، withdrawal.create یا receipt.submit.
+authorization.AddPolicy(Permissions.ProductLookup, policy => policy
+    .RequireAuthenticatedUser()
+    .AddRequirements(new PermissionRequirement([.. Permissions.ProductLookupAnyOf])));
+
 // CORS فقط وقتی فعال می‌شود که origin صریح در تنظیمات باشد.
 const string ClientCorsPolicy = "Client";
 var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];

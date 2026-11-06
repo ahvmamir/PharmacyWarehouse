@@ -17,7 +17,7 @@ public static class WithdrawalEndpoints
 
     public static void MapWithdrawalEndpoints(this WebApplication app)
     {
-        app.MapGet($"{ApiRoutes.Products}/{{id:guid}}/allocation", AllocationAsync).RequireAuthorization(Permissions.WithdrawalCreate);
+        app.MapGet($"{ApiRoutes.Products}/{{id:guid}}/allocation", AllocationAsync).RequireAuthorization(Permissions.ProductLookup);
 
         var group = app.MapGroup(ApiRoutes.Withdrawals).RequireAuthorization(Permissions.WithdrawalCreate);
         group.MapPost("", CreateAsync);

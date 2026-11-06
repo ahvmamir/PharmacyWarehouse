@@ -63,20 +63,69 @@ else
                 <input id="role-name" class="form-control" style="max-width:320px;" @bind="_name" />
             </div>
 
+            <div class="form-field mb-3">
+                <label for="role-copy">شروع از مجوزهای یک نقش دیگر</label>
+                <select id="role-copy" class="form-control" style="max-width:320px;" @onchange="CopyFrom">
+                    <option value="">— بدون کپی —</option>
+                    @foreach (var other in _roles!.Where(r => r.Id != _editId))
+                    {
+                        <option value="@other.Id" selected="@(_copyFrom == other.Id)">@Roles.Label(other.Name)</option>
+                    }
+                </select>
+                <span class="cell-sub">مجوزهای انتخاب‌شده را جایگزین می‌کند؛ ذخیره نشده تا دکمه‌ی «ذخیره».</span>
+            </div>
+
             @foreach (var group in Permissions.All.GroupBy(p => p.Group))
             {
-                <div class="permission-group" @key="group.Key">
-                    <h3>@group.Key</h3>
+                var keys = group.Select(p => p.Key).ToArray();
+                var chosen = keys.Count(_selected.Contains);
+                <div class="permission-group role-perm-group" @key="group.Key">
+                    <div class="role-perm-head">
+                        <h3>@group.Key <span class="muted">(@JalaliDate.ToPersianDigits(chosen.ToString()) از @JalaliDate.ToPersianDigits(keys.Length.ToString()))</span></h3>
+                        <span class="row-actions">
+                            <button type="button" class="btn btn-sm btn-ghost" disabled="@(chosen == keys.Length)" @onclick="() => SetGroup(keys, true)">انتخاب همه</button>
+                            <button type="button" class="btn btn-sm btn-ghost" disabled="@(chosen == 0)" @onclick="() => SetGroup(keys, false)">هیچ‌کدام</button>
+                        </span>
+                    </div>
                     @foreach (var permission in group)
                     {
-                        <div class="form-check" @key="permission.Key">
+                        <div class="form-check role-perm-item" @key="permission.Key">
                             <input id="@permission.Key" class="form-check-input" type="checkbox" checked="@_selected.Contains(permission.Key)"
                                    @onchange="e => Toggle(permission.Key, e.Value is true)" />
-                            <label class="form-check-label" for="@permission.Key">@permission.Label</label>
+                            <label class="form-check-label" for="@permission.Key">
+                                @permission.Label
+                                @if (permission.Description.Length > 0)
+                                {
+                                    <span class="cell-sub">@permission.Description</span>
+                                }
+                            </label>
                         </div>
                     }
                 </div>
             }
+
+            @{
+                var added = Permissions.All.Where(p => _selected.Contains(p.Key) && !_original.Contains(p.Key)).ToList();
+                var removed = Permissions.All.Where(p => !_selected.Contains(p.Key) && _original.Contains(p.Key)).ToList();
+            }
+            <div class="role-diff" aria-live="polite">
+                <strong>تغییرات ذخیره‌نشده</strong>
+                @if (added.Count == 0 && removed.Count == 0)
+                {
+                    <span class="muted">بدون تغییر.</span>
+                }
+                else
+                {
+                    @foreach (var p in added)
+                    {
+                        <div class="diff-added">+ @p.Label</div>
+                    }
+                    @foreach (var p in removed)
+                    {
+                        <div class="diff-removed">− @p.Label</div>
+                    }
+                }
+            </div>
 
             @if (_dialogError is not null)
             {
@@ -110,6 +159,8 @@ else
     private Guid? _editId;
     private string _name = "";
     private HashSet<string> _selected = [];
+    private HashSet<string> _original = [];
+    private Guid? _copyFrom;
     private RoleItem? _deleting;
 
     protected override Task OnInitializedAsync() => LoadAsync();
@@ -133,6 +184,8 @@ else
         _editId = null;
         _name = "";
         _selected = [Permissions.StockView];
+        _original = [];
+        _copyFrom = null;
         _dialogError = null;
         _editing = true;
     }
@@ -142,8 +195,29 @@ else
         _editId = role.Id;
         _name = role.Name;
         _selected = role.Permissions.ToHashSet();
+        _original = role.Permissions.ToHashSet();
+        _copyFrom = null;
         _dialogError = null;
         _editing = true;
+    }
+
+    private void SetGroup(string[] keys, bool on)
+    {
+        foreach (var key in keys)
+        {
+            if (on) _selected.Add(key);
+            else _selected.Remove(key);
+        }
+    }
+
+    private void CopyFrom(ChangeEventArgs e)
+    {
+        _copyFrom = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        var source = _roles?.FirstOrDefault(r => r.Id == _copyFrom);
+        if (source is null) return;
+
+        // نقش قفل‌شده (مدیر) همه‌ی مجوزها را دارد.
+        _selected = (source.IsLocked ? Permissions.All.Select(p => p.Key) : source.Permissions).ToHashSet();
     }
 
     private void Toggle(string key, bool on)

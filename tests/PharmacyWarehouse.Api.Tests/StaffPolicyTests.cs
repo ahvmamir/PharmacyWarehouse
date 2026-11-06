@@ -23,10 +23,10 @@ public class StaffPolicyTests : ApiTestBase
     {
         var granted = new Dictionary<string, string[]>
         {
-            [Roles.Staff] = [Permissions.StockView, Permissions.WithdrawalCreate],
+            [Roles.Staff] = [Permissions.StockView, Permissions.WithdrawalCreate, Permissions.ReceiptSubmit],
             [Roles.Keeper] =
             [
-                Permissions.StockView, Permissions.WithdrawalCreate, Permissions.WithdrawalReview, Permissions.StockReceive,
+                Permissions.StockView, Permissions.WithdrawalCreate, Permissions.ReceiptSubmit, Permissions.WithdrawalReview, Permissions.StockReceive,
                 Permissions.StockAdjust, Permissions.ProductsManage, Permissions.DashboardView, Permissions.ReportsView,
                 Permissions.DataImport, Permissions.DataExport, Permissions.BackupDownload
             ],

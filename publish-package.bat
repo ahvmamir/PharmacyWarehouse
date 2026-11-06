@@ -27,6 +27,8 @@ del /q publish\PharmacyWarehouse-package\app\appsettings.Production.json 2>nul
 
 copy /y deploy\*.ps1 publish\PharmacyWarehouse-package\ >nul
 if errorlevel 1 goto fail
+copy /y deploy\*.bat publish\PharmacyWarehouse-package\ >nul
+if errorlevel 1 goto fail
 
 powershell -NoProfile -Command "Compress-Archive -Path publish\PharmacyWarehouse-package\* -DestinationPath publish\PharmacyWarehouse-package.zip"
 if errorlevel 1 goto fail

@@ -22,10 +22,12 @@ public static class ProductEndpoints
     {
         var read = app.MapGroup(ApiRoutes.Products).RequireAuthorization(Permissions.StockView);
         read.MapGet("", ListAsync);
-        read.MapGet("search", SearchAsync);
-        read.MapGet("by-code/{code}", ByCodeAsync);
         read.MapGet("{id:guid}", GetAsync);
         read.MapGet("{id:guid}/history", HistoryAsync);
+
+        var lookup = app.MapGroup(ApiRoutes.Products).RequireAuthorization(Permissions.ProductLookup);
+        lookup.MapGet("search", SearchAsync);
+        lookup.MapGet("by-code/{code}", ByCodeAsync);
 
         var manage = app.MapGroup(ApiRoutes.Products).RequireAuthorization(Permissions.ProductsManage);
         manage.MapPost("", CreateAsync);
