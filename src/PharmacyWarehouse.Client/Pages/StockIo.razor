@@ -1,0 +1,66 @@
+@page "/stock-io"
+@attribute [Authorize]
+@inject ApiAuthenticationStateProvider Session
+@inject NavigationManager Navigation
+
+<PageTitle>ورود و خروج | انبار داروخانه</PageTitle>
+
+@if (!CanWithdraw && !CanReceive)
+{
+    <div class="empty-state">
+        <h2>اجازه‌ی دیدن این صفحه را ندارید</h2>
+        <p>برای دسترسی به این بخش با مدیر سیستم صحبت کنید.</p>
+    </div>
+}
+else
+{
+    <div class="page-head">
+        <div>
+            <h1>ورود و خروج</h1>
+            <p>برداشت جنس از انبار یا ثبت ورود جنس تازه. هر دو فرم نیمه‌کاره می‌مانند و با رفتن به زبانه‌ی دیگر پاک نمی‌شوند.</p>
+        </div>
+    </div>
+
+    @if (CanWithdraw && CanReceive)
+    {
+        <div class="stock-io-tabs" role="tablist">
+            <button type="button" role="tab" aria-selected="@(!ReceiveActive)" class="btn btn-quiet @(ReceiveActive ? "" : "active")" @onclick="() => SelectTab(false)">برداشت</button>
+            <button type="button" role="tab" aria-selected="@ReceiveActive" class="btn btn-quiet @(ReceiveActive ? "active" : "")" @onclick="() => SelectTab(true)">ورود</button>
+        </div>
+    }
+
+    @* هر دو فرم همیشه رندر می‌شوند و فقط پنهان می‌شوند تا حالتشان با جابه‌جایی زبانه حفظ شود. *@
+    @if (CanWithdraw)
+    {
+        <div style="@(ReceiveActive ? "display:none" : null)"><WithdrawForm /></div>
+    }
+    @if (CanReceive)
+    {
+        <div style="@(ReceiveActive ? null : "display:none")">
+            <QuickReceiptForm DraftKey="quick-receipt" />
+            @if (Session.Can(Permissions.StockReceive))
+            {
+                <p class="form-hint mt-2">برای ثبت کامل (برند، بسته، محل، انقضا): <a href="receive">صفحه‌ی ورود جنس کامل</a></p>
+            }
+        </div>
+    }
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "tab")] public string? Tab { get; set; }
+
+    private bool? _receiveTab;
+
+    private bool CanWithdraw => Session.Can(Permissions.WithdrawalCreate);
+    private bool CanReceive => Session.Can(Permissions.ReceiptSubmit);
+
+    // اگر فقط یکی مجاز است همان نمایش داده می‌شود؛ وگرنه query یا انتخاب کاربر.
+    private bool ReceiveActive => !CanWithdraw || (CanReceive && (_receiveTab ?? Tab == "in"));
+
+    private void SelectTab(bool receive)
+    {
+        _receiveTab = receive;
+        var uri = Navigation.GetUriWithQueryParameter("tab", receive ? "in" : null);
+        Navigation.NavigateTo(uri, replace: true);
+    }
+}

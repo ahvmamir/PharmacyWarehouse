@@ -209,6 +209,14 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        // صفحه‌ی اول کاربری که داشبورد ندارد ولی ثبت می‌کند، «ورود و خروج» است (بخش ۱۵.۲ spec).
+        if (Navigation.ToBaseRelativePath(Navigation.Uri).TrimEnd('/') is "" && !Session.Can(Permissions.DashboardView)
+            && (Session.Can(Permissions.WithdrawalCreate) || Session.Can(Permissions.ReceiptSubmit)))
+        {
+            Navigation.NavigateTo("stock-io", replace: true);
+            return;
+        }
+
         var locations = await LocationsApi.ListAsync();
         if (locations.IsSuccess) _locations = locations.Value!;
         await LoadAsync();

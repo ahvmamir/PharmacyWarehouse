@@ -1,8 +1,10 @@
+@using System.Text.Json.Serialization
+@inject DraftStore Drafts
 @inject ReceiptsClient ReceiptsApi
 @inject ToastService Toasts
 
 @* ورود جنس ساده: قلم (انتخاب یا نام تازه)، بچ نامبر و تعداد. موجودی همان لحظه زیاد می‌شود و انباردار بعداً تکمیل می‌کند (بخش ۱۵.۲ spec).
-   DraftKey برای ذخیره‌ی پیش‌نویس در برش C است؛ فعلاً فقط پارامتر است و چیزی ذخیره نمی‌شود. *@
+   DraftKey (کلید فرم) اگر داده شود فهرست ثبت‌نشده در پیش‌نویس می‌ماند. *@
 <section class="card-emu">
     <h2>ورود جنس ساده</h2>
     <p class="form-hint">فقط نام، بچ نامبر و تعداد را بنویسید. موجودی همین حالا زیاد می‌شود؛ انباردار برند، بسته‌بندی، محل و تاریخ انقضا را بعداً تکمیل می‌کند.</p>
@@ -47,9 +49,10 @@
         <button type="button" class="btn btn-primary" disabled="@(_busy || _rows.Count == 0)" @onclick="SubmitAsync">ثبت ورود</button>
         @if (_rows.Count > 0)
         {
-            <button type="button" class="btn btn-quiet" disabled="@_busy" @onclick="Clear">پاک کردن فهرست</button>
+            <button type="button" class="btn btn-quiet" disabled="@_busy" @onclick="ClearAsync">پاک کردن پیش‌نویس</button>
         }
     </div>
+    <DraftBar State="_draft" OnClear="ClearAsync" />
 </section>
 
 @code {
@@ -60,10 +63,10 @@
         public string DisplayName { get; init; } = "";
         public string Batch { get; set; } = "";
         public int? Quantity { get; set; }
-        public List<string> Errors { get; } = [];
+        [JsonIgnore] public List<string> Errors { get; } = [];
     }
 
-    /// <summary>کلید پیش‌نویس (کاربر + فرم). فعلاً استفاده نمی‌شود.</summary>
+    /// <summary>کلید فرم برای پیش‌نویس (کاربر را DraftStore اضافه می‌کند). null یعنی بدون پیش‌نویس.</summary>
     [Parameter] public string? DraftKey { get; set; }
     [Parameter] public string IdPrefix { get; set; } = "qr";
     [Parameter] public EventCallback<ReceiptItem> OnSubmitted { get; set; }
@@ -73,6 +76,8 @@
     private string _newName = "";
     private string? _error;
     private bool _busy;
+    private Draft<List<Row>>? _draft;
+    private bool _draftLoaded;
 
     private void AddProduct(ProductListItem product)
     {
@@ -93,10 +98,32 @@
         if (e.Key == "Enter") AddNewName();
     }
 
-    private void Clear()
+    protected override async Task OnInitializedAsync()
+    {
+        if (DraftKey is not null)
+        {
+            _draft = Drafts.Open<List<Row>>(DraftKey);
+            if (await _draft.LoadAsync() is { } rows) _rows.AddRange(rows);
+        }
+
+        _draftLoaded = true;
+    }
+
+    // هر رندر وضعیت فهرست را ذخیره می‌کند؛ Draft متن یکسان را دوباره نمی‌نویسد.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_draftLoaded || _draft is null) return;
+
+        var before = _draft.Saved;
+        await _draft.SaveAsync(_rows.Count == 0 ? null : _rows);
+        if (_draft.Saved != before) StateHasChanged();
+    }
+
+    private async Task ClearAsync()
     {
         _rows.Clear();
         _error = null;
+        if (_draft is not null) await _draft.ClearAsync();
     }
 
     private async Task SubmitAsync()

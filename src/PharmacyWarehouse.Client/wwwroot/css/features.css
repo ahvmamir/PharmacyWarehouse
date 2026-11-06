@@ -18,3 +18,8 @@
 .rv-line { border-top: 1px solid var(--line); padding: 10px 0; display: grid; gap: 8px; }
 .rv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
 @media (max-width: 640px) { .qr-row { grid-template-columns: 1fr 1fr; } }
+
+/* ===== Package C: stock-io page and drafts ===== */
+.draft-bar { display: flex; align-items: center; gap: .5rem; margin-top: .5rem; }
+.stock-io-tabs { display: flex; gap: .5rem; margin-bottom: 1rem; }
+.stock-io-tabs .btn.active { background: var(--accent, #0d6efd); color: #fff; }

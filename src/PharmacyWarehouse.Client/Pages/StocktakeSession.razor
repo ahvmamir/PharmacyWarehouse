@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @inject StockClient StockApi
 @inject ToastService Toasts
+@inject DraftStore Drafts
 
 <PageTitle>نوبت انبارگردانی | انبار داروخانه</PageTitle>
 
@@ -52,6 +53,7 @@ else
             <div style="max-width:420px;">
                 <ProductCombobox @ref="_combo" InputId="stocktake-product" OnPick="PickProductAsync" />
             </div>
+            <DraftBar State="_draft" OnClear="ClearDraftAsync" />
             @if (_picked is { } picked)
             {
                 <h3 class="mt-3">@picked.Name <span class="cell-sub">@picked.Brand</span></h3>
@@ -270,6 +272,15 @@ else
     private bool _busy;
     private bool _showClose;
     private Guid _loadedId;
+    private Draft<CountDraft>? _draft;
+    private bool _draftChecked;
+
+    // فقط عددهای تایپ‌شده و ثبت‌نشده؛ بچ‌ها هنگام بازیابی از سرور تازه می‌شوند.
+    private sealed class CountDraft
+    {
+        public ProductListItem? Product { get; set; }
+        public Dictionary<Guid, int> Counts { get; set; } = [];
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -280,6 +291,39 @@ else
         _picked = null;
         _entries = [];
         await LoadAsync();
+        await RestoreDraftAsync();
+    }
+
+    private async Task RestoreDraftAsync()
+    {
+        _draft = Drafts.Open<CountDraft>($"stocktake-{Id}");
+        _draftChecked = false;
+        if (_detail?.ClosedAtUtc is null && await _draft.LoadAsync() is { Product: { } product } d)
+        {
+            await PickProductAsync(product);
+            foreach (var entry in _entries)
+            {
+                if (d.Counts.TryGetValue(entry.Batch.BatchId, out var counted)) entry.Counted = counted;
+            }
+        }
+
+        _draftChecked = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_draftChecked || _draft is null) return;
+
+        var counts = _entries.Where(e => e.Counted is not null).ToDictionary(e => e.Batch.BatchId, e => e.Counted!.Value);
+        var before = _draft.Saved;
+        await _draft.SaveAsync(_picked is not null && counts.Count > 0 ? new CountDraft { Product = _picked, Counts = counts } : null);
+        if (_draft.Saved != before) StateHasChanged();
+    }
+
+    private async Task ClearDraftAsync()
+    {
+        foreach (var entry in _entries) entry.Counted = null;
+        if (_draft is not null) await _draft.ClearAsync();
     }
 
     private async Task LoadAsync()

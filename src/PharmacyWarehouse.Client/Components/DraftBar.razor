@@ -1,0 +1,13 @@
+@* نوار کوچک پیش‌نویس: «ذخیره شد»، «بازیابی شد» و پاک کردن. بخش ۱۵.۲ spec. *@
+@if (State is { Has: true })
+{
+    <div class="draft-bar" role="status">
+        <small class="form-hint">@(State.Restored && !State.Saved ? "پیش‌نویس قبلی بازیابی شد." : "پیش‌نویس ذخیره شد.")</small>
+        <button type="button" class="btn btn-sm btn-quiet" @onclick="OnClear">پاک کردن پیش‌نویس</button>
+    </div>
+}
+
+@code {
+    [Parameter] public DraftState? State { get; set; }
+    [Parameter] public EventCallback OnClear { get; set; }
+}

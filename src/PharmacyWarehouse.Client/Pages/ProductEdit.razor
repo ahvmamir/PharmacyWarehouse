@@ -6,6 +6,7 @@
 @inject LocationsClient LocationsApi
 @inject ToastService Toasts
 @inject NavigationManager Navigation
+@inject DraftStore Drafts
 
 <PageTitle>@(IsNew ? "قلم جدید" : "ویرایش قلم") | انبار داروخانه</PageTitle>
 
@@ -89,6 +90,7 @@ else
                 }
                 <a class="btn btn-quiet" href="@(IsNew ? "" : $"products/{Id}")">انصراف</a>
             </div>
+            <DraftBar State="_draft" OnClear="ClearDraftAsync" />
         </section>
     </EditForm>
 }
@@ -109,6 +111,8 @@ else
     private bool _ready;
     private bool _busy;
     private Guid? _loadedId;
+    private Draft<SaveProductRequest>? _draft;
+    private SaveProductRequest? _baseline;
 
     private bool IsNew => Id is null;
 
@@ -141,6 +145,7 @@ else
             Fill(result.Value!);
         }
 
+        await RestoreDraftAsync();
         _ready = true;
     }
 
@@ -157,8 +162,71 @@ else
         _locationId = detail.LocationId;
     }
 
+    private SaveProductRequest Snapshot() => new()
+    {
+        Name = _request.Name,
+        Brand = _request.Brand,
+        PackDescription = _request.PackDescription,
+        LocationId = _locationId,
+        MinStock = _request.MinStock,
+        RequiresExpiry = _request.RequiresExpiry,
+        AllowExpiredWithdrawal = _request.AllowExpiredWithdrawal
+    };
+
+    private static bool Same(SaveProductRequest a, SaveProductRequest b) =>
+        a.Name == b.Name && a.Brand == b.Brand && a.PackDescription == b.PackDescription && a.LocationId == b.LocationId
+        && a.MinStock == b.MinStock && a.RequiresExpiry == b.RequiresExpiry && a.AllowExpiredWithdrawal == b.AllowExpiredWithdrawal;
+
+    // Version هرگز در پیش‌نویس نمی‌ماند؛ همیشه از سرور تازه گرفته می‌شود.
+    private async Task RestoreDraftAsync()
+    {
+        _baseline = IsNew ? null : Snapshot();
+        _draft = Drafts.Open<SaveProductRequest>($"product-{(Id?.ToString() ?? "new")}");
+        if (await _draft.LoadAsync() is not { } d) return;
+
+        _request.Name = d.Name;
+        _request.Brand = d.Brand;
+        _request.PackDescription = d.PackDescription;
+        _request.MinStock = d.MinStock;
+        _request.RequiresExpiry = d.RequiresExpiry;
+        _request.AllowExpiredWithdrawal = d.AllowExpiredWithdrawal;
+        _locationId = d.LocationId;
+    }
+
+    // ورود جدید: وقتی نام خالی است چیزی نگه داشته نمی‌شود. ویرایش: وقتی چیزی نسبت به سرور عوض نشده.
+    private async Task SaveDraftAsync()
+    {
+        if (_draft is null) return;
+
+        var snap = Snapshot();
+        var empty = IsNew ? string.IsNullOrWhiteSpace(snap.Name) : _baseline is not null && Same(snap, _baseline);
+        var before = _draft.Saved;
+        await _draft.SaveAsync(empty ? null : snap);
+        if (_draft.Saved != before) StateHasChanged();
+    }
+
+    private async Task ClearDraftAsync()
+    {
+        if (_draft is null) return;
+
+        await _draft.ClearAsync();
+        if (_baseline is { } b)
+        {
+            _request.Name = b.Name; _request.Brand = b.Brand; _request.PackDescription = b.PackDescription;
+            _request.MinStock = b.MinStock; _request.RequiresExpiry = b.RequiresExpiry;
+            _request.AllowExpiredWithdrawal = b.AllowExpiredWithdrawal; _locationId = b.LocationId;
+        }
+        else
+        {
+            _request.Name = ""; _request.Brand = null; _request.PackDescription = null; _request.MinStock = null;
+            _request.RequiresExpiry = true; _request.AllowExpiredWithdrawal = false; _locationId = null;
+        }
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_ready) await SaveDraftAsync();
+
         if (!_focusName) return;
 
         _focusName = false;
@@ -174,6 +242,7 @@ else
         var saved = await SaveCoreAsync();
         if (saved is null) return;
 
+        if (_draft is { } d) { _draft = null; await d.ClearAsync(); }
         Toasts.Show($"ذخیره شد: {saved.Summary.Name}");
         Navigation.NavigateTo($"products/{saved.Summary.Id}");
     }
@@ -192,6 +261,7 @@ else
         _request.RequiresExpiry = true;
         _request.AllowExpiredWithdrawal = false;
         _focusName = true;
+        if (_draft is not null) await _draft.ClearAsync();
     }
 
     private async Task<ProductDetail?> SaveCoreAsync()

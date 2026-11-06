@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @inject LocationsClient LocationsApi
 @inject ToastService Toasts
+@inject DraftStore Drafts
 @inject ApiAuthenticationStateProvider Session
 
 <PageTitle>محل‌ها | انبار داروخانه</PageTitle>
@@ -103,6 +104,7 @@ else
                 <div class="form-alert mt-3 mb-0" role="alert">@_dialogError</div>
             }
 
+            <DraftBar State="_draft" OnClear="ClearDraftAsync" />
             <div class="modal-actions">
                 <button type="submit" class="btn btn-primary" disabled="@_busy">@(_busy ? "در حال ذخیره…" : "ذخیره")</button>
                 <button type="button" class="btn btn-quiet" @onclick="CloseDialog">انصراف</button>
@@ -131,10 +133,65 @@ else
 
     private bool CanManage => Session.Can(Permissions.ProductsManage);
 
-    protected override Task OnInitializedAsync() => LoadAsync();
+    private sealed class LocationDraft
+    {
+        public Guid? EditingId { get; set; }
+        public string Name { get; set; } = "";
+        public Guid? ParentId { get; set; }
+        public int SortOrder { get; set; }
+    }
+
+    private Draft<LocationDraft>? _draft;
+    private bool _draftChecked;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        await RestoreDraftAsync();
+    }
+
+    // پنجره‌ی نیمه‌کاره بعد از reload دوباره باز می‌شود؛ «انصراف» و ثبت موفق پیش‌نویس را پاک می‌کنند.
+    private async Task RestoreDraftAsync()
+    {
+        _draft = Drafts.Open<LocationDraft>("location-dialog");
+        if (CanManage && await _draft.LoadAsync() is { } d)
+        {
+            var editing = d.EditingId is { } id ? _items.FirstOrDefault(i => i.Id == id) : null;
+            if (d.EditingId is null || editing is not null)
+            {
+                _editing = editing;
+                _name = d.Name;
+                _parentId = d.ParentId;
+                _sortOrder = d.SortOrder;
+                _dialogTitle = editing is null ? "محل تازه (پیش‌نویس)" : $"ویرایش {editing.Name}";
+            }
+        }
+
+        _draftChecked = true;
+    }
+
+    private async Task SaveDraftAsync()
+    {
+        if (!_draftChecked || _draft is null) return;
+
+        var changed = _dialogTitle is not null && (_editing is null
+            ? !string.IsNullOrWhiteSpace(_name)
+            : _name != _editing.Name || _parentId != _editing.ParentId || _sortOrder != _editing.SortOrder);
+        var before = _draft.Saved;
+        await _draft.SaveAsync(changed ? new LocationDraft { EditingId = _editing?.Id, Name = _name, ParentId = _parentId, SortOrder = _sortOrder } : null);
+        if (_draft.Saved != before) StateHasChanged();
+    }
+
+    private async Task ClearDraftAsync()
+    {
+        if (_draft is not null) await _draft.ClearAsync();
+        if (_editing is { } e) { _name = e.Name; _parentId = e.ParentId; _sortOrder = e.SortOrder; }
+        else { _name = ""; _parentId = null; _sortOrder = 0; }
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        await SaveDraftAsync();
         if (_focusName)
         {
             _focusName = false;
@@ -198,6 +255,7 @@ else
     private void CloseDialog()
     {
         _dialogTitle = null;
+        _ = _draft?.ClearAsync();
         _editing = null;
     }
 

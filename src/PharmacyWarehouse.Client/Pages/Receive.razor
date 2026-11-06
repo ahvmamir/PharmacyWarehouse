@@ -6,7 +6,7 @@
 @inject LocationsClient LocationsApi
 @inject ToastService Toasts
 @inject ApiAuthenticationStateProvider Session
-@inject IJSRuntime JS
+@inject DraftStore Drafts
 
 <PageTitle>ورود جنس | انبار داروخانه</PageTitle>
 
@@ -98,8 +98,9 @@ else
 
         <div class="mt-3 d-flex gap-2 flex-wrap">
             <button type="button" class="btn btn-primary" disabled="@(_busy || _rows.Count == 0)" @onclick="SubmitAsync">@(_busy ? "در حال ثبت…" : "ثبت نهایی")</button>
-            <button type="button" class="btn btn-quiet" disabled="@_busy" @onclick="ClearAll">خالی کردن فهرست</button>
+            <button type="button" class="btn btn-quiet" disabled="@_busy" @onclick="ClearDraftAsync">پاک کردن پیش‌نویس</button>
         </div>
+        <DraftBar State="_draft" OnClear="ClearDraftAsync" />
         <div class="form-hint mt-2">«ثبت نهایی» همه‌ی ردیف‌ها را با هم ثبت می‌کند؛ اگر یک ردیف خطا داشته باشد هیچ‌کدام ثبت نمی‌شود. این فهرست تا پیش از ثبت در همین مرورگر می‌ماند.</div>
     </section>
 }
@@ -227,8 +228,6 @@ else
 
     [SupplyParameterFromQuery(Name = "productId")] public Guid? ProductId { get; set; }
 
-    private static readonly JsonSerializerOptions DraftJson = new();
-
     private ProductCombobox? _search;
     private readonly List<ReceiveRow> _rows = [];
     private List<StorageLocationItem> _locations = [];
@@ -238,9 +237,8 @@ else
     private string? _formError;
     private bool _busy;
     private bool _draftLoaded;
-    private string? _savedDraft;
+    private Draft<List<ReceiveRow>>? _draft;
 
-    private string DraftKey => $"pw-receive-draft-{Session.CurrentUser?.Id}";
 
     // تاریخ انقضای گذشته خطا نیست (ممکن است داده‌ی قدیمی را ثبت کنند) ولی بی‌صدا هم نمی‌ماند.
     private static string? PastExpiryWarning(ReceiveRow row) =>
@@ -291,45 +289,29 @@ else
         _openKey = AddRow(result.Value!).Key;
     }
 
-    // فهرست هر بار که عوض شود ذخیره می‌شود؛ مقایسه‌ی متن جلوی نوشتن بی‌دلیل را می‌گیرد.
+    // فهرست هر بار که عوض شود ذخیره می‌شود؛ مقایسه‌ی متن در Draft جلوی نوشتن بی‌دلیل را می‌گیرد.
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!_draftLoaded) return;
+        if (!_draftLoaded || _draft is null) return;
 
-        var json = JsonSerializer.Serialize(_rows, DraftJson);
-        if (json == _savedDraft) return;
-
-        _savedDraft = json;
-        try
-        {
-            if (_rows.Count == 0) await JS.InvokeVoidAsync("localStorage.removeItem", DraftKey);
-            else await JS.InvokeVoidAsync("localStorage.setItem", DraftKey, json);
-        }
-        catch (JSException ex)
-        {
-            // localStorage پر یا بسته: کار ادامه دارد، فقط پیش‌نویس نمی‌ماند.
-            Console.WriteLine(ex.Message);
-        }
+        var before = _draft.Saved;
+        await _draft.SaveAsync(_rows.Count == 0 ? null : _rows);
+        if (_draft.Saved != before) StateHasChanged();
     }
 
     private async Task LoadDraftAsync()
     {
-        try
-        {
-            var json = await JS.InvokeAsync<string?>("localStorage.getItem", DraftKey);
-            if (!string.IsNullOrEmpty(json))
-            {
-                _rows.AddRange(JsonSerializer.Deserialize<List<ReceiveRow>>(json, DraftJson) ?? []);
-                _savedDraft = json;
-            }
-        }
-        catch (Exception ex) when (ex is JSException or JsonException)
-        {
-            Console.WriteLine(ex.Message);
-        }
+        _draft = Drafts.Open<List<ReceiveRow>>("receive", legacyKey: $"pw-receive-draft-{Session.CurrentUser?.Id}");
+        if (await _draft.LoadAsync() is { } rows) _rows.AddRange(rows);
 
         foreach (var row in _rows) await RefreshRowAsync(row);
         _draftLoaded = true;
+    }
+
+    private async Task ClearDraftAsync()
+    {
+        ClearAll();
+        if (_draft is not null) await _draft.ClearAsync();
     }
 
     // Version و موجودی بچ‌ها همیشه از سرور تازه می‌شود؛ پیش‌نویس فقط ورودی کاربر را نگه می‌دارد.
