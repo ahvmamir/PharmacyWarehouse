@@ -37,7 +37,8 @@ public sealed record BarcodeItem(Guid Id, string Code);
 
 public sealed record MovementItem(
     Guid Id, Guid BatchId, string BatchNumber, StockMovementKind Kind, int Quantity,
-    DateTime AtUtc, DateTime OccurredAtUtc, string UserName, string? Note);
+    DateTime AtUtc, DateTime OccurredAtUtc, string UserName, string? Note,
+    int BalanceAfter, int BatchBalanceAfter);
 
 public sealed class ProductDetail
 {

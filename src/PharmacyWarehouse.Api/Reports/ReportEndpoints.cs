@@ -19,7 +19,7 @@ public static class ReportEndpoints
         app.MapGet(ApiRoutes.ReportConsumption, ConsumptionAsync).RequireAuthorization(Permissions.ReportsView);
     }
 
-    private static async Task<IResult> MovementsAsync(WarehouseDbContext db, int days = 30, string? kind = null, Guid? productId = null, int skip = 0, int take = 100)
+    private static async Task<IResult> MovementsAsync(WarehouseDbContext db, int days = 30, string? kind = null, Guid? productId = null, bool oldestFirst = false, int skip = 0, int take = 100)
     {
         if (days is < 1 or > MaxDays) return ApiProblems.Validation("days", $"بازه باید ۱ تا {MaxDays} روز باشد.");
         if (skip < 0) return ApiProblems.Validation("skip", "مقدار نامعتبر است.");
@@ -45,14 +45,30 @@ public static class ReportEndpoints
             select new { m, b.BatchNumber, p.Name, p.Brand, ProductId = p.Id };
 
         var total = await query.CountAsync();
-        var rows = await query.OrderByDescending(r => r.m.OccurredAtUtc).ThenByDescending(r => r.m.Id).Skip(skip).Take(take).ToListAsync();
+        var ordered = oldestFirst
+            ? query.OrderBy(r => r.m.OccurredAtUtc).ThenBy(r => r.m.Id)
+            : query.OrderByDescending(r => r.m.OccurredAtUtc).ThenByDescending(r => r.m.Id);
+        var rows = await ordered.Skip(skip).Take(take).ToListAsync();
+
+        // موجودی بعد از حرکت فقط با فیلتر قلم؛ از همه‌ی حرکت‌های قلم حساب می‌شود (نه فقط بازه و صفحه‌ی فعلی).
+        IReadOnlyDictionary<Guid, int>? productBalances = null;
+        if (productId is { } product)
+        {
+            var all = await (
+                from m in db.StockMovements.AsNoTracking()
+                join b in db.Batches.AsNoTracking() on m.BatchId equals b.Id
+                where b.ProductId == product
+                select new { m.Id, m.BatchId, m.AtUtc, m.Quantity }).ToListAsync();
+            productBalances = MovementBalance.After(all.Select(x => new MovementBalance.Row(x.Id, x.BatchId, x.AtUtc, x.Quantity))).Product;
+        }
 
         var userIds = rows.Where(r => r.m.UserId != null).Select(r => r.m.UserId!.Value).Distinct().ToList();
         var names = await db.Users.AsNoTracking().Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.UserName ?? "—");
 
         return Results.Ok(new MovementReportResponse(total, rows.Select(r => new MovementReportItem(
             r.m.Id, r.m.AtUtc, r.m.OccurredAtUtc, r.m.Kind, r.ProductId, r.Name, r.Brand, r.BatchNumber, r.m.Quantity,
-            r.m.UserId is { } id ? names.GetValueOrDefault(id, "—") : "سیستم", r.m.Note)).ToList()));
+            r.m.UserId is { } id ? names.GetValueOrDefault(id, "—") : "سیستم", r.m.Note,
+            productBalances is null ? null : productBalances[r.m.Id])).ToList()));
     }
 
     private static async Task<IResult> ConsumptionAsync(WarehouseDbContext db, int days = 30)

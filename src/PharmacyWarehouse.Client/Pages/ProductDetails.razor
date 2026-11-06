@@ -172,19 +172,46 @@ else
         }
         else
         {
+            <div class="toolbar">
+                <div>
+                    <label for="movement-kind">نوع حرکت</label>
+                    <select id="movement-kind" class="form-select" value="@_kindFilter?.ToString()" @onchange="OnKindFilterChanged">
+                        <option value="">همه</option>
+                        @foreach (var kind in Enum.GetValues<StockMovementKind>())
+                        {
+                            <option value="@kind">@MovementLabels.Kind(kind)</option>
+                        }
+                    </select>
+                </div>
+                <div>
+                    <label for="movement-sort">ترتیب</label>
+                    <select id="movement-sort" class="form-select" value="@(_newestFirst ? "new" : "old")" @onchange="OnSortChanged">
+                        <option value="new">جدیدترین اول</option>
+                        <option value="old">قدیمی‌ترین اول</option>
+                    </select>
+                </div>
+            </div>
+            @if (VisibleMovements().Count == 0)
+            {
+                <div class="empty-state"><p>با این فیلتر حرکتی نیست.</p></div>
+            }
+            else
+            {
             <div class="table-card">
                 <table class="data-table">
                     <thead>
-                        <tr><th>زمان</th><th>نوع</th><th>بچ</th><th>تعداد</th><th>کاربر</th><th>یادداشت</th></tr>
+                        <tr><th>زمان</th><th>نوع</th><th>بچ</th><th>تعداد</th><th>موجودی قلم بعد از حرکت</th><th>موجودی بچ بعد از حرکت</th><th>کاربر</th><th>یادداشت</th></tr>
                     </thead>
                     <tbody>
-                        @foreach (var movement in _history.Movements)
+                        @foreach (var movement in VisibleMovements())
                         {
                             <tr @key="movement.Id">
                                 <td>@JalaliDate.Format(movement.OccurredAtUtc)</td>
                                 <td>@MovementLabels.Kind(movement.Kind)</td>
                                 <td><bdi>@movement.BatchNumber</bdi></td>
                                 <td dir="ltr" style="text-align:right;">@Signed(movement.Quantity)</td>
+                                <td dir="ltr" style="text-align:right;">@Num(movement.BalanceAfter)</td>
+                                <td dir="ltr" style="text-align:right;">@Num(movement.BatchBalanceAfter)</td>
                                 <td>@movement.UserName</td>
                                 <td>@movement.Note</td>
                             </tr>
@@ -192,6 +219,7 @@ else
                     </tbody>
                 </table>
             </div>
+            }
         }
     </section>
 
@@ -304,6 +332,8 @@ else
     private string? _batchNote;
     private string? _batchError;
     private bool _batchBusy;
+    private StockMovementKind? _kindFilter;
+    private bool _newestFirst = true;
 
     private bool CanManage => Session.Can(Permissions.ProductsManage);
     private bool CanAdjust => Session.Can(Permissions.StockAdjust);
@@ -414,6 +444,23 @@ else
 
     private static string Signed(int quantity) =>
         JalaliDate.ToPersianDigits(quantity > 0 ? $"+{quantity}" : quantity.ToString());
+
+    private static string Num(int value) => JalaliDate.ToPersianDigits(value.ToString());
+
+    // فیلتر و ترتیب فقط روی فهرست کامل که سرور می‌دهد اعمال می‌شود؛ موجودی بعد از حرکت از قبل روی همه‌ی حرکت‌ها حساب شده.
+    private List<MovementItem> VisibleMovements()
+    {
+        if (_history is null) return [];
+
+        var items = _kindFilter is { } kind ? _history.Movements.Where(m => m.Kind == kind) : _history.Movements;
+        // سرور از جدید به قدیم می‌فرستد؛ برای «قدیمی‌ترین اول» برعکس می‌کنیم.
+        return (_newestFirst ? items : items.Reverse()).ToList();
+    }
+
+    private void OnKindFilterChanged(ChangeEventArgs e) =>
+        _kindFilter = Enum.TryParse<StockMovementKind>(e.Value?.ToString(), out var kind) ? kind : null;
+
+    private void OnSortChanged(ChangeEventArgs e) => _newestFirst = e.Value?.ToString() != "old";
 
     private void OpenAdjust(BatchItem batch)
     {

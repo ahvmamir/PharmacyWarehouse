@@ -41,11 +41,12 @@ public sealed class StockClient
     public Task<ApiResult<StocktakeDetail>> ApproveCountAsync(Guid id, Guid countId, int version) =>
         ApiSender.SendAsync<StocktakeDetail>(ct => _http.PostAsJsonAsync(ApiRoutes.StocktakeApprove(id, countId), new VersionRequest { Version = version }, ct));
 
-    public Task<ApiResult<MovementReportResponse>> MovementReportAsync(int days, StockMovementKind? kind, Guid? productId, int skip, int take)
+    public Task<ApiResult<MovementReportResponse>> MovementReportAsync(int days, StockMovementKind? kind, Guid? productId, int skip, int take, bool oldestFirst = false)
     {
         var query = new List<string> { $"days={days}", $"skip={skip}", $"take={take}" };
         if (kind is { } k) query.Add($"kind={k}");
         if (productId is { } id) query.Add($"productId={id}");
+        if (oldestFirst) query.Add("oldestFirst=true");
         var url = $"{ApiRoutes.ReportMovements}?{string.Join('&', query)}";
         return ApiSender.SendAsync<MovementReportResponse>(ct => _http.GetAsync(url, ct));
     }

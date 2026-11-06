@@ -58,7 +58,9 @@ public sealed class StocktakeDetail
 
 public sealed record MovementReportItem(
     Guid Id, DateTime AtUtc, DateTime OccurredAtUtc, StockMovementKind Kind, Guid ProductId, string ProductName, string? Brand,
-    string BatchNumber, int Quantity, string UserName, string? Note);
+    string BatchNumber, int Quantity, string UserName, string? Note,
+    // فقط وقتی فیلتر قلم ست باشد پر است (موجودی کل قلم بعد از این حرکت).
+    int? ProductBalanceAfter);
 
 public sealed record MovementReportResponse(int Total, IReadOnlyList<MovementReportItem> Items);
 

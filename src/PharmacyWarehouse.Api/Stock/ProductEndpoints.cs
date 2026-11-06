@@ -218,11 +218,15 @@ public static class ProductEndpoints
                 .ToList();
         }
 
+        // موجودی بعد از حرکت از همه‌ی حرکت‌های قلم حساب می‌شود، نه فقط از فهرست برگشتی.
+        var balances = MovementBalance.After(movements.Select(m => new MovementBalance.Row(m.Id, m.BatchId, m.AtUtc, m.Quantity)));
+
         return Results.Ok(new ProductHistory
         {
             Movements = movements.OrderByDescending(m => m.OccurredAtUtc).ThenByDescending(m => m.AtUtc)
                 .Select(m => new MovementItem(m.Id, m.BatchId, numbers[m.BatchId], m.Kind, m.Quantity, m.AtUtc, m.OccurredAtUtc,
-                    m.UserId is { } u && names.TryGetValue(u, out var n) ? n : "سیستم", m.Note))
+                    m.UserId is { } u && names.TryGetValue(u, out var n) ? n : "سیستم", m.Note,
+                    balances.Product[m.Id], balances.Batch[m.Id]))
                 .ToList(),
             Changes = entries.OrderByDescending(a => a.AtUtc)
                 .Select(a => new AuditEntryItem

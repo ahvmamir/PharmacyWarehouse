@@ -40,6 +40,13 @@
                 }
             </select>
         </div>
+        <div>
+            <label for="report-sort">ترتیب</label>
+            <select id="report-sort" class="form-select" value="@(_oldestFirst ? "old" : "new")" @onchange="OnSortChangedAsync">
+                <option value="new">جدیدترین اول</option>
+                <option value="old">قدیمی‌ترین اول</option>
+            </select>
+        </div>
         <div style="min-width:18rem;">
             <label for="report-product">قلم</label>
             @if (_product is { } product)
@@ -77,7 +84,8 @@
         {
             <section class="table-card">
                 <table class="data-table">
-                    <thead><tr><th>زمان</th><th>نوع</th><th>قلم</th><th>بچ</th><th>تعداد</th><th>کاربر</th><th>یادداشت</th></tr></thead>
+                    <thead><tr><th>زمان</th><th>نوع</th><th>قلم</th><th>بچ</th><th>تعداد</th>@if (_product is not null)
+                    {<th>موجودی قلم بعد از حرکت</th>}<th>کاربر</th><th>یادداشت</th></tr></thead>
                     <tbody>
                         @foreach (var item in report.Items)
                         {
@@ -87,6 +95,10 @@
                                 <td><a class="row-link-main" href="products/@item.ProductId">@item.ProductName</a> <span class="cell-sub">@item.Brand</span></td>
                                 <td><bdi>@item.BatchNumber</bdi></td>
                                 <td dir="ltr" style="text-align:right;">@Signed(item.Quantity)</td>
+                                @if (_product is not null)
+                                {
+                                    <td dir="ltr" style="text-align:right;">@Num(item.ProductBalanceAfter ?? 0)</td>
+                                }
                                 <td><bdi>@item.UserName</bdi></td>
                                 <td>@item.Note</td>
                             </tr>
@@ -159,6 +171,7 @@ else
     private ReportTab _tab = ReportTab.Movements;
     private int _days = 30;
     private StockMovementKind? _kind;
+    private bool _oldestFirst;
     private ProductListItem? _product;
     private int _skip;
     private int _seq;
@@ -178,7 +191,7 @@ else
 
         if (_tab == ReportTab.Movements)
         {
-            var result = await StockApi.MovementReportAsync(_days, _kind, _product?.Id, _skip, PageSize);
+            var result = await StockApi.MovementReportAsync(_days, _kind, _product?.Id, _skip, PageSize, _oldestFirst);
             if (seq != _seq) return;
             if (result.IsSuccess) _movements = result.Value;
             else _error = result.ErrorMessage;
@@ -222,6 +235,12 @@ else
         return ReloadFromStartAsync();
     }
 
+    private Task OnSortChangedAsync(ChangeEventArgs e)
+    {
+        _oldestFirst = e.Value?.ToString() == "old";
+        return ReloadFromStartAsync();
+    }
+
     private Task PickProductAsync(ProductListItem product)
     {
         _product = product;
@@ -241,6 +260,7 @@ else
     }
 
     private static string Num(int value) => JalaliDate.ToPersianDigits(value.ToString());
+
 
     private static string Signed(int value) => JalaliDate.ToPersianDigits(value > 0 ? $"+{value}" : value.ToString());
 }
