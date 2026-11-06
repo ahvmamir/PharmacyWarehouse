@@ -1,0 +1,186 @@
+@implements IDisposable
+@inject ApiAuthenticationStateProvider Session
+@inject NavigationManager Navigation
+@inject ToastService Toasts
+@inject AlertsClient AlertsApi
+@inject AppInfoState AppInfo
+@inject IJSRuntime JS
+
+@* نوار بالای محتوا. گوشه‌ی چپ (سمت دور در راست‌به‌چپ): کاربر، زنگوله، منوی ⋮. در موبایل دکمه‌ی منو سمت راست است. *@
+<header class="topbar">
+    <button type="button" class="icon-button topbar-menu" aria-label="منو" @onclick="() => OnMenu.InvokeAsync()">
+        <AppIcon Name="list" Size="22" />
+    </button>
+    <span class="topbar-title">@AppInfoResponse.ProductName</span>
+
+    <div class="topbar-spacer"></div>
+
+    @if (Session.CurrentUser is { } user)
+    {
+        <div class="topbar-cluster">
+            <a class="topbar-user" href="account" title="حساب من">
+                <span class="topbar-avatar"><AppIcon Name="user" Size="16" /></span>
+                <span class="topbar-user-text">
+                    <bdi>@user.DisplayName</bdi>
+                    <small>@Roles.Label(user.Roles.FirstOrDefault())</small>
+                </span>
+            </a>
+
+            @AlertBell
+
+            <div class="menu-wrap">
+                <button type="button" class="alert-bell" title="بیشتر" aria-label="بیشتر" aria-haspopup="menu" aria-expanded="@_menuOpen" @onclick="() => _menuOpen = !_menuOpen">
+                    <svg class="icon" width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="12" cy="19" r="1.6" /></svg>
+                </button>
+                @if (_menuOpen)
+                {
+                    <div class="menu-backdrop" @onclick="() => _menuOpen = false"></div>
+                    <div class="menu-pop" role="menu">
+                        <a class="menu-item" role="menuitem" href="settings" @onclick="() => _menuOpen = false">
+                            <AppIcon Name="wrench" /> تنظیمات
+                        </a>
+                        <button type="button" class="menu-item" role="menuitem" @onclick="NextThemeAsync">
+                            <AppIcon Name="@ThemeIcon" /> @ThemeLabel
+                        </button>
+                        <button type="button" class="menu-item" role="menuitem" disabled="@_loggingOut" @onclick="LogoutAsync">
+                            <AppIcon Name="logout" /> @(_loggingOut ? "در حال خروج…" : "خروج")
+                        </button>
+                        <div class="menu-foot" title="@($"سرور {AppVersion.Display(_serverVersion)}، صفحه {AppVersion.Display(ClientVersion)}")">
+                            نسخه‌ی @AppVersion.Display(_serverVersion ?? ClientVersion)
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</header>
+
+@if (_serverVersion is not null && !AppVersion.Same(_serverVersion, ClientVersion))
+{
+    @* کلاینت قدیمی در کش مرورگر بعد از به‌روزرسانی سرور؛ ممکن است با Api جدید درست کار نکند. *@
+    <button type="button" class="version-stale" @onclick="Reload">نسخه‌ی جدید نصب شده؛ برای بارگذاری کلیک کنید (Ctrl+F5)</button>
+}
+
+@code {
+    [Parameter] public EventCallback OnMenu { get; set; }
+
+    private static readonly string? ClientVersion = AppVersion.Of(typeof(App).Assembly);
+    private string? _serverVersion;
+    private int _alertCount;
+    private bool _alertUrgent;
+    private DateTime _lastCheck = DateTime.MinValue;
+    private bool _menuOpen;
+    private bool _loggingOut;
+    private string _theme = "auto";
+
+    private string ThemeIcon => _theme switch { "light" => "sun", "dark" => "moon", _ => "sun-moon" };
+
+    private string ThemeLabel => _theme switch
+    {
+        "light" => "حالت روشن (کلیک: تیره)",
+        "dark" => "حالت تیره (کلیک: خودکار)",
+        _ => "حالت خودکار (کلیک: روشن)"
+    };
+
+    // تعداد اعلان‌ها با هر جابه‌جایی صفحه، حداکثر یک بار در دقیقه؛ نه پیوسته در پس‌زمینه.
+    private async Task RefreshAsync(bool force = false)
+    {
+        if (!force && DateTime.UtcNow - _lastCheck < TimeSpan.FromMinutes(1)) return;
+        _lastCheck = DateTime.UtcNow;
+
+        if (_serverVersion is null)
+        {
+            var info = await AppInfo.LoadAsync();
+            _serverVersion = info.Version;
+        }
+
+        if (Session.CurrentUser is { MustChangePassword: false } && Session.Can(Permissions.StockView))
+        {
+            var alerts = (await AlertsApi.ListAsync()).Value ?? [];
+            _alertCount = alerts.Count;
+            _alertUrgent = alerts.Any(a => a.Severity != AlertSeverity.Info);
+        }
+        else
+        {
+            _alertCount = 0;
+        }
+
+        StateHasChanged();
+    }
+
+    private RenderFragment AlertBell => __builder =>
+    {
+        if (Session.CurrentUser is not { MustChangePassword: false } || !Session.Can(Permissions.StockView)) return;
+
+        var label = _alertCount > 0 ? $"اعلان‌ها، {_alertCount} مورد" : "اعلان‌ها";
+        <a class="@(OnAlerts ? "alert-bell active" : "alert-bell")" href="alerts" title="اعلان‌ها" aria-label="@label">
+            <AppIcon Name="bell" Size="17" />
+            @if (_alertCount > 0)
+            {
+                <span class="alert-bell-count @(_alertUrgent ? "urgent" : "")" aria-hidden="true">@JalaliDate.ToPersianDigits(_alertCount > 9 ? "9+" : _alertCount.ToString())</span>
+            }
+        </a>
+    };
+
+    private bool OnAlerts => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("alerts", StringComparison.OrdinalIgnoreCase);
+
+    private void Reload() => Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+
+    protected override void OnInitialized()
+    {
+        Session.StatusChanged += OnStatusChanged;
+        Navigation.LocationChanged += OnLocationChanged;
+        _ = InvokeAsync(() => RefreshAsync(force: true));
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _theme = await JS.InvokeAsync<string>("pwTheme.get");
+        StateHasChanged();
+    }
+
+    private void OnStatusChanged() => _ = InvokeAsync(() => RefreshAsync(force: true));
+
+    // صفحه‌ی اعلان‌ها خودش تازه است؛ شمارنده هم با رفتن به آن به‌روز می‌شود.
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        _menuOpen = false;
+        _ = InvokeAsync(() => RefreshAsync(force: e.Location.Contains("/alerts")));
+    }
+
+    private async Task NextThemeAsync()
+    {
+        _theme = _theme switch { "auto" => "light", "light" => "dark", _ => "auto" };
+        await JS.InvokeVoidAsync("pwTheme.set", _theme);
+    }
+
+    private async Task LogoutAsync()
+    {
+        if (_loggingOut) return;
+
+        _loggingOut = true;
+        try
+        {
+            if (await Session.LogoutAsync())
+            {
+                _menuOpen = false;
+                Navigation.NavigateTo("login");
+            }
+            else
+            {
+                Toasts.Show("خروج انجام نشد. اتصال شبکه را بررسی کنید و دوباره تلاش کنید.", isWarning: true);
+            }
+        }
+        finally
+        {
+            _loggingOut = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        Session.StatusChanged -= OnStatusChanged;
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
+}

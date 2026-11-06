@@ -1,8 +1,12 @@
-@* نشانه‌ی برنامه: برچسب، نماد قفسه‌ی انبار. *@
+@* نشانه‌ی برنامه: کپسول دارو روی قفسه. رنگ زمینه از currentColor می‌آید (در تیره هم کار می‌کند)؛ جزئیات سفیدند. *@
 <span class="brand-mark" aria-hidden="true">
     <svg viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg">
-        <path d="M5 11.2 11.6 4.5h17.9A2.5 2.5 0 0 1 32 7v22a2.5 2.5 0 0 1-2.5 2.5H11.6L5 24.8z" fill="currentColor" />
-        <circle cx="11.4" cy="18" r="2.3" fill="#fff" />
-        <path d="M17 12.5h10M17 18h10M17 23.5h6" stroke="#fff" stroke-width="2.2" stroke-linecap="round" />
+        <rect width="36" height="36" rx="9" fill="currentColor" />
+        <g transform="rotate(-40 18 15.5)">
+            <rect x="6.5" y="9.5" width="23" height="12" rx="6" fill="#fff" />
+            <path d="M18 9.5h5.5a6 6 0 0 1 0 12H18z" fill="#fff" fill-opacity=".55" />
+            <path d="M18 9.5v12" stroke="currentColor" stroke-width="1.4" />
+        </g>
+        <rect x="8" y="27" width="20" height="2.6" rx="1.3" fill="#fff" />
     </svg>
 </span>

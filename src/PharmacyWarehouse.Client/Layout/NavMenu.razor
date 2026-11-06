@@ -1,14 +1,19 @@
 @implements IDisposable
 @inject ApiAuthenticationStateProvider Session
-@inject NavigationManager Navigation
-@inject ToastService Toasts
-@inject AlertsClient AlertsApi
 @inject AppInfoState AppInfo
+@inject IJSRuntime JS
 
-<aside class="sidebar">
-    <a class="sidebar-brand" href="">
+@* نوار کناری شناور (سمت راست). حالت جمع‌شده (فقط آیکون) و گروه‌های بازشده در localStorage می‌مانند.
+   در موبایل کشوی کنار صفحه است و با TopBar باز و بسته می‌شود. *@
+@if (_drawerOpen)
+{
+    <div class="sidebar-backdrop" @onclick="CloseDrawer"></div>
+}
+
+<aside class="sidebar @(_collapsed ? "collapsed" : "") @(_drawerOpen ? "drawer-open" : "")" aria-label="منوی اصلی">
+    <a class="sidebar-brand" href="" title="@AppInfoResponse.ProductName" @onclick="CloseDrawer">
         <BrandMark />
-        <div>
+        <div class="nav-text">
             <strong>@AppInfoResponse.ProductName</strong>
             @if (_organization is not null)
             {
@@ -17,259 +22,170 @@
         </div>
     </a>
 
-    @* در موبایل بخش کاربر زیر منوی بسته پنهان است؛ زنگوله کنار دکمه‌ی منو هم دیده شود. *@
-    <span class="topbar-bell">@AlertBell</span>
-
-    <button type="button" class="icon-button topbar-toggle" aria-label="منو" @onclick="() => _open = !_open">
-        <AppIcon Name="list" Size="22" />
-    </button>
-
-    <div class="sidebar-collapsible @(_open ? "open" : "")" @onclick="() => _open = false">
-        <nav class="sidebar-nav">
-            @if (Session.CurrentUser is { MustChangePassword: false })
+    <nav class="sidebar-nav">
+        @if (Session.CurrentUser is { MustChangePassword: false })
+        {
+            @* پرکاربردها: بدون عنوان *@
+            @if (CanStockIo)
             {
-                @* گروه بی‌مورد نشان داده نمی‌شود: عنوان فقط وقتی می‌آید که کاربر دست‌کم یکی از پیوندهایش را دارد. *@
-                @if (Session.Can(Permissions.WithdrawalCreate) || Session.Can(Permissions.StockReceive))
-                {
-                    <div class="nav-section">کار روزانه</div>
-                }
-                @if (Session.Can(Permissions.WithdrawalCreate))
-                {
-                    <NavLink class="sidebar-link" href="withdraw">
-                        <AppIcon Name="upload" /> ثبت برداشت
-                    </NavLink>
-                    <NavLink class="sidebar-link" href="my-withdrawals">
-                        <AppIcon Name="history" /> برداشت‌های من
-                    </NavLink>
-                }
-                @if (Session.Can(Permissions.StockReceive))
-                {
-                    <NavLink class="sidebar-link" href="receive">
-                        <AppIcon Name="download" /> ورود جنس
-                    </NavLink>
-                }
+                @Item("stock-io", "upload", "ورود و خروج")
+            }
+            @if (Session.Can(Permissions.StockView))
+            {
+                @Item("", "box", "اقلام", NavLinkMatch.All)
+            }
+            @if (Session.Can(Permissions.DashboardView))
+            {
+                @Item("dashboard", "dashboard", "داشبورد")
+            }
 
-                @if (Session.Can(Permissions.DashboardView) || Session.Can(Permissions.WithdrawalReview) || Session.Can(Permissions.StockView) || Session.Can(Permissions.ReportsView))
+            @if (Session.Can(Permissions.WithdrawalReview) || Session.Can(Permissions.StockReceive) || Session.Can(Permissions.ReportsView))
+            {
+                @GroupStart("review", "بررسی")
+                @if (IsOpen("review"))
                 {
-                    <div class="nav-section">بررسی</div>
-                }
-                @if (Session.Can(Permissions.DashboardView))
-                {
-                    <NavLink class="sidebar-link" href="dashboard">
-                        <AppIcon Name="dashboard" /> داشبورد
-                    </NavLink>
-                }
-                @if (Session.Can(Permissions.WithdrawalReview))
-                {
-                    <NavLink class="sidebar-link" href="review">
-                        <AppIcon Name="check" /> بررسی برداشت‌ها
-                    </NavLink>
-                }
-                @if (Session.Can(Permissions.StockView))
-                {
-                    <NavLink class="sidebar-link" href="alerts">
-                        <AppIcon Name="bell" /> اعلان‌ها
-                    </NavLink>
-                }
-                @if (Session.Can(Permissions.ReportsView))
-                {
-                    <NavLink class="sidebar-link" href="reports">
-                        <AppIcon Name="report" /> گزارش‌ها
-                    </NavLink>
-                }
-
-                @if (Session.Can(Permissions.StockView) || Session.Can(Permissions.StockAdjust) || Session.Can(Permissions.ProductsManage))
-                {
-                    <div class="nav-section">انبار</div>
-                }
-                @if (Session.Can(Permissions.StockView))
-                {
-                    <NavLink class="sidebar-link" href="" Match="NavLinkMatch.All">
-                        <AppIcon Name="box" /> اقلام
-                    </NavLink>
-                    <NavLink class="sidebar-link" href="locations">
-                        <AppIcon Name="location" /> محل‌ها
-                    </NavLink>
-                }
-                @if (Session.Can(Permissions.StockAdjust))
-                {
-                    <NavLink class="sidebar-link" href="stocktakes">
-                        <AppIcon Name="scan" /> انبارگردانی
-                    </NavLink>
-                }
-                @if (Session.Can(Permissions.ProductsManage))
-                {
-                    <NavLink class="sidebar-link" href="labels">
-                        <AppIcon Name="barcode" /> برچسب
-                    </NavLink>
-                }
-
-                @if (Session.Can(Permissions.UsersManage) || Session.Can(Permissions.RolesManage) || Session.Can(Permissions.BackupDownload) || Session.Can(Permissions.DataImport) || Session.Can(Permissions.DataExport) || Session.Can(Permissions.SettingsManage))
-                {
-                    <div class="nav-section">مدیریت</div>
-                }
-                @if (Session.Can(Permissions.UsersManage))
-                {
-                    <NavLink class="sidebar-link" href="admin/users">
-                        <AppIcon Name="users" /> کاربران
-                    </NavLink>
-                }
-                @if (Session.Can(Permissions.RolesManage))
-                {
-                    <NavLink class="sidebar-link" href="admin/roles">
-                        <AppIcon Name="key" /> نقش‌ها و مجوزها
-                    </NavLink>
-                }
-                @if (Session.Can(Permissions.DataImport) || Session.Can(Permissions.DataExport))
-                {
-                    <NavLink class="sidebar-link" href="admin/import">
-                        <AppIcon Name="report" /> ورود و خروج Excel
-                    </NavLink>
-                }
-                @if (Session.Can(Permissions.BackupDownload))
-                {
-                    <NavLink class="sidebar-link" href="admin/data">
-                        <AppIcon Name="storage" /> پشتیبان
-                    </NavLink>
-                }
-                @if (Session.Can(Permissions.SettingsManage))
-                {
-                    <NavLink class="sidebar-link" href="admin/settings">
-                        <AppIcon Name="filter" /> آستانه‌های انقضا
-                    </NavLink>
+                    @if (Session.Can(Permissions.WithdrawalReview))
+                    {
+                        @Item("review", "check", "بررسی برداشت‌ها")
+                    }
+                    @if (Session.Can(Permissions.StockReceive))
+                    {
+                        @Item("receipts/review", "verified", "بررسی ورودها")
+                    }
+                    @if (Session.Can(Permissions.ReportsView))
+                    {
+                        @Item("reports", "report", "گزارش‌ها")
+                    }
                 }
             }
-        </nav>
 
-        @if (Session.CurrentUser is { } user)
-        {
-            <div class="sidebar-user">
-                <div class="sidebar-user-row">
-                    <div class="sidebar-user-name">
-                        <bdi>@user.DisplayName</bdi>
-                        <small>@Roles.Label(user.Roles.FirstOrDefault())</small>
-                    </div>
-                    <ThemeToggle />
-                    @AlertBell
-                </div>
-                <NavLink class="sidebar-link" href="account">
-                    <AppIcon Name="user" /> حساب من
-                </NavLink>
-                <button type="button" class="sidebar-link" disabled="@_loggingOut" @onclick="LogoutAsync">
-                    <AppIcon Name="logout" /> @(_loggingOut ? "در حال خروج…" : "خروج")
-                </button>
-            </div>
+            @if (Session.Can(Permissions.StockView) || Session.Can(Permissions.StockAdjust) || Session.Can(Permissions.ProductsManage) || Session.Can(Permissions.StockReceive) || Session.Can(Permissions.WithdrawalCreate))
+            {
+                @GroupStart("stock", "انبار")
+                @if (IsOpen("stock"))
+                {
+                    @if (Session.Can(Permissions.StockView))
+                    {
+                        @Item("locations", "location", "محل‌ها")
+                    }
+                    @if (Session.Can(Permissions.StockAdjust))
+                    {
+                        @Item("stocktakes", "scan", "انبارگردانی")
+                    }
+                    @if (Session.Can(Permissions.ProductsManage))
+                    {
+                        @Item("labels", "barcode", "برچسب")
+                    }
+                    @if (Session.Can(Permissions.StockReceive))
+                    {
+                        @Item("receive", "download", "ورود جنس کامل")
+                    }
+                    @if (Session.Can(Permissions.WithdrawalCreate))
+                    {
+                        @Item("my-withdrawals", "history", "برداشت‌های من")
+                    }
+                }
+            }
         }
+    </nav>
 
-        @if (_serverVersion is not null && !AppVersion.Same(_serverVersion, ClientVersion))
-        {
-            @* کلاینت قدیمی در کش مرورگر بعد از به‌روزرسانی سرور؛ ممکن است با Api جدید درست کار نکند. *@
-            <button type="button" class="version-stale" @onclick="Reload">نسخه‌ی جدید نصب شده؛ برای بارگذاری کلیک کنید (Ctrl+F5)</button>
-        }
-        <div class="sidebar-version" title="@($"سرور {AppVersion.Display(_serverVersion)}، صفحه {AppVersion.Display(ClientVersion)}")">
-            نسخه‌ی @AppVersion.Display(_serverVersion ?? ClientVersion)
-        </div>
-    </div>
+    <button type="button" class="sidebar-collapse-btn" title="@(_collapsed ? "باز کردن منو" : "جمع کردن منو")"
+            aria-label="@(_collapsed ? "باز کردن منو" : "جمع کردن منو")" aria-expanded="@(!_collapsed)" @onclick="ToggleCollapsed">
+        <AppIcon Name="chevron" Size="16" />
+        <span class="nav-text">جمع کردن منو</span>
+    </button>
 </aside>
 
 @code {
-    private bool _open;
 
-    private static readonly string? ClientVersion = AppVersion.Of(typeof(App).Assembly);
-    private string? _serverVersion;
+    [Parameter] public bool DrawerOpen { get; set; }
+    [Parameter] public EventCallback<bool> DrawerOpenChanged { get; set; }
+
+    private bool _drawerOpen;
+    private bool _collapsed;
     private string? _organization;
-    private int _alertCount;
-    private bool _alertUrgent;
-    private DateTime _lastCheck = DateTime.MinValue;
+    private readonly HashSet<string> _closedGroups = [];
 
-    // تعداد اعلان‌ها با هر جابه‌جایی صفحه، حداکثر یک بار در دقیقه؛ نه پیوسته در پس‌زمینه.
-    private async Task RefreshAsync(bool force = false)
+    private bool CanStockIo => Session.Can(Permissions.WithdrawalCreate) || Session.Can(Permissions.ReceiptSubmit);
+
+    // در حالت جمع‌شده همه‌ی آیتم‌ها دیده می‌شوند (عنوان گروه نیست که بازش کنند).
+    private bool IsOpen(string group) => _collapsed || !_closedGroups.Contains(group);
+
+    private RenderFragment Item(string href, string icon, string text, NavLinkMatch match = NavLinkMatch.Prefix) => __builder =>
     {
-        if (!force && DateTime.UtcNow - _lastCheck < TimeSpan.FromMinutes(1)) return;
-        _lastCheck = DateTime.UtcNow;
+        <NavLink class="sidebar-link" href="@href" Match="match" title="@text" aria-label="@text" @onclick="CloseDrawer">
+            <AppIcon Name="@icon" /> <span class="nav-text">@text</span>
+        </NavLink>
+    };
 
-        if (_serverVersion is null)
+    private RenderFragment GroupStart(string key, string title) => __builder =>
+    {
+        if (_collapsed)
         {
-            var info = await AppInfo.LoadAsync();
-            _serverVersion = info.Version;
-            _organization = info.Organization;
-        }
-
-        if (Session.CurrentUser is { MustChangePassword: false } && Session.Can(Permissions.StockView))
-        {
-            var alerts = (await AlertsApi.ListAsync()).Value ?? [];
-            _alertCount = alerts.Count;
-            _alertUrgent = alerts.Any(a => a.Severity != AlertSeverity.Info);
+            <div class="nav-divider" role="separator"></div>
         }
         else
         {
-            _alertCount = 0;
+            var open = IsOpen(key);
+            <button type="button" class="nav-section" aria-expanded="@open" @onclick="() => ToggleGroupAsync(key)">
+                <span>@title</span>
+                <AppIcon Name="chevron" Size="14" Class="@(open ? "nav-section-open" : "")" />
+            </button>
         }
-
-        StateHasChanged();
-    }
-
-    // زنگوله‌ی گرد اعلان‌ها کنار نام کاربر؛ عدد روی گوشه‌اش، نارنجی اگر هشدار هست.
-    private RenderFragment AlertBell => __builder =>
-    {
-        if (Session.CurrentUser is not { MustChangePassword: false } || !Session.Can(Permissions.StockView)) return;
-
-        var label = _alertCount > 0 ? $"اعلان‌ها، {_alertCount} مورد" : "اعلان‌ها";
-        <a class="@(OnAlerts ? "alert-bell active" : "alert-bell")" href="alerts" title="اعلان‌ها" aria-label="@label">
-            <AppIcon Name="bell" Size="17" />
-            @if (_alertCount > 0)
-            {
-                <span class="alert-bell-count @(_alertUrgent ? "urgent" : "")" aria-hidden="true">@JalaliDate.ToPersianDigits(_alertCount > 9 ? "9+" : _alertCount.ToString())</span>
-            }
-        </a>
     };
 
-    private bool OnAlerts => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("alerts", StringComparison.OrdinalIgnoreCase);
+    protected override void OnParametersSet() => _drawerOpen = DrawerOpen;
 
-    private void Reload() => Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
-
-    // منوی فعال بر اساس نشانی صفحه روشن می‌ماند تا کاربر بداند کجاست.
-    private bool _loggingOut;
-
-    // بعد از بارگذاری مجدد، کاربر کمی دیرتر از ساخت این منو معلوم می‌شود.
     protected override void OnInitialized()
     {
         Session.StatusChanged += OnStatusChanged;
-        Navigation.LocationChanged += OnLocationChanged;
-        _ = InvokeAsync(() => RefreshAsync(force: true));
+        _ = InvokeAsync(async () =>
+        {
+            var info = await AppInfo.LoadAsync();
+            _organization = info.Organization;
+            StateHasChanged();
+        });
     }
 
-    private void OnStatusChanged() => _ = InvokeAsync(() => RefreshAsync(force: true));
-
-    // صفحه‌ی اعلان‌ها خودش تازه است؛ شمارنده‌ی منو هم با رفتن به آن به‌روز می‌شود.
-    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) =>
-        _ = InvokeAsync(() => RefreshAsync(force: e.Location.Contains("/alerts")));
-
-    public void Dispose()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        Session.StatusChanged -= OnStatusChanged;
-        Navigation.LocationChanged -= OnLocationChanged;
-    }
-
-    private async Task LogoutAsync()
-    {
-        if (_loggingOut) return;
-
-        _loggingOut = true;
+        if (!firstRender) return;
         try
         {
-            if (await Session.LogoutAsync())
-            {
-                Navigation.NavigateTo("login");
-            }
-            else
-            {
-                Toasts.Show("خروج انجام نشد. اتصال شبکه را بررسی کنید و دوباره تلاش کنید.", isWarning: true);
-            }
+            _collapsed = await JS.InvokeAsync<string?>("localStorage.getItem", "pw-nav-collapsed") == "1";
+            var closed = await JS.InvokeAsync<string?>("localStorage.getItem", "pw-nav-closed");
+            foreach (var g in (closed ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)) _closedGroups.Add(g);
+            StateHasChanged();
         }
-        finally
-        {
-            _loggingOut = false;
-        }
+        catch (JSException) { }
     }
+
+    private void OnStatusChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private async Task ToggleCollapsed()
+    {
+        _collapsed = !_collapsed;
+        await SaveAsync("pw-nav-collapsed", _collapsed ? "1" : "0");
+    }
+
+    private async Task ToggleGroupAsync(string key)
+    {
+        if (!_closedGroups.Remove(key)) _closedGroups.Add(key);
+        await SaveAsync("pw-nav-closed", string.Join(',', _closedGroups));
+    }
+
+    private async Task SaveAsync(string key, string value)
+    {
+        try { await JS.InvokeVoidAsync("localStorage.setItem", key, value); }
+        catch (JSException) { }
+    }
+
+    private async Task CloseDrawer()
+    {
+        if (!_drawerOpen) return;
+        _drawerOpen = false;
+        await DrawerOpenChanged.InvokeAsync(false);
+    }
+
+    public void Dispose() => Session.StatusChanged -= OnStatusChanged;
 }

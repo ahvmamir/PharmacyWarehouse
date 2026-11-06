@@ -5,9 +5,11 @@
 @inject ToastService Toasts
 
 <div class="app-shell">
-    <NavMenu />
+    <NavMenu @bind-DrawerOpen="_drawerOpen" />
 
     <div class="main-area">
+        <TopBar OnMenu="() => _drawerOpen = !_drawerOpen" />
+
         @if (Session.IdentityLoadFailed)
         {
             <div class="banner" role="alert">
@@ -25,9 +27,11 @@
             </div>
         }
 
-        <main class="content">
-            @Body
-        </main>
+        <div class="content-scroll">
+            <main class="content">
+                @Body
+            </main>
+        </div>
     </div>
 </div>
 
@@ -43,6 +47,7 @@
 
 @code {
     private bool _retrying;
+    private bool _drawerOpen;
 
     private bool MustChangePassword => Session.CurrentUser is { MustChangePassword: true };
 
@@ -67,6 +72,7 @@
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
+        if (_drawerOpen) _ = InvokeAsync(() => { _drawerOpen = false; StateHasChanged(); });
         EnforcePasswordChange();
     }
 
