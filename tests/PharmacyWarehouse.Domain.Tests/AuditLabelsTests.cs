@@ -10,7 +10,11 @@ public class AuditLabelsTests
     {
         { "Product", "Name" }, { "Product", "Brand" }, { "Product", "PackDescription" }, { "Product", "LocationId" },
         { "Product", "MinStock" }, { "Product", "UnitsPerPack" }, { "Product", "RequiresExpiry" },
-        { "Product", "AllowExpiredWithdrawal" }, { "Product", "IsActive" },
+        { "Product", "AllowExpiredWithdrawal" }, { "Product", "IsActive" }, { "Product", "IsProvisional" },
+        { "Receipt", "UserId" }, { "Receipt", "AtUtc" }, { "Receipt", "Note" }, { "Receipt", "Status" }, { "Receipt", "ReviewedById" },
+        { "Receipt", "ReviewedAtUtc" }, { "Receipt", "ReviewNote" },
+        { "ReceiptLine", "ReceiptId" }, { "ReceiptLine", "Position" }, { "ReceiptLine", "ProductId" }, { "ReceiptLine", "BatchId" },
+        { "ReceiptLine", "MovementId" }, { "ReceiptLine", "Quantity" },
         { "ProductBarcode", "ProductId" }, { "ProductBarcode", "Code" },
         { "Batch", "ProductId" }, { "Batch", "BatchNumber" }, { "Batch", "ExpiryDate" }, { "Batch", "ExpiryPrecision" },
         { "Batch", "ExpiryCalendar" }, { "Batch", "LocationId" }, { "Batch", "UnitCost" },

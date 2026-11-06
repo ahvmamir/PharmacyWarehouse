@@ -1,0 +1,132 @@
+@inject ReceiptsClient ReceiptsApi
+@inject ToastService Toasts
+
+@* ورود جنس ساده: قلم (انتخاب یا نام تازه)، بچ نامبر و تعداد. موجودی همان لحظه زیاد می‌شود و انباردار بعداً تکمیل می‌کند (بخش ۱۵.۲ spec).
+   DraftKey برای ذخیره‌ی پیش‌نویس در برش C است؛ فعلاً فقط پارامتر است و چیزی ذخیره نمی‌شود. *@
+<section class="card-emu">
+    <h2>ورود جنس ساده</h2>
+    <p class="form-hint">فقط نام، بچ نامبر و تعداد را بنویسید. موجودی همین حالا زیاد می‌شود؛ انباردار برند، بسته‌بندی، محل و تاریخ انقضا را بعداً تکمیل می‌کند.</p>
+
+    <ProductCombobox @ref="_search" InputId="@(IdPrefix + "-search")" AutoFocus="false" OnPick="AddProduct" />
+    <div class="qr-new-name">
+        <input id="@(IdPrefix)-newname" class="form-control" autocomplete="off" placeholder="یا نام جنریک قلم تازه را بنویسید"
+               @bind="_newName" @bind:event="oninput" @onkeydown="OnNewNameKey" />
+        <button type="button" class="btn btn-quiet" disabled="@string.IsNullOrWhiteSpace(_newName)" @onclick="AddNewName">افزودن قلم تازه</button>
+    </div>
+
+    @if (_rows.Count > 0)
+    {
+        <div class="mt-3">
+            @for (var i = 0; i < _rows.Count; i++)
+            {
+                var index = i;
+                var row = _rows[index];
+                <div class="qr-row" @key="row">
+                    <div class="qr-name">
+                        <strong>@row.DisplayName</strong>
+                        @if (row.ProductId is null) { <span class="status-badge status-pending">قلم تازه</span> }
+                    </div>
+                    <input class="form-control" dir="ltr" autocomplete="off" placeholder="بچ نامبر" aria-label="بچ نامبر" @bind="row.Batch" @bind:event="oninput" />
+                    <input class="form-control" type="number" min="1" inputmode="numeric" placeholder="تعداد" aria-label="تعداد" @bind="row.Quantity" @bind:event="oninput" />
+                    <button type="button" class="icon-button" title="حذف ردیف" aria-label="حذف ردیف" @onclick="() => _rows.RemoveAt(index)"><AppIcon Name="close" Size="16" /></button>
+                    @foreach (var message in row.Errors)
+                    {
+                        <div class="field-error qr-errors" role="alert">@message</div>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+    @if (_error is not null)
+    {
+        <div class="form-alert mt-2" role="alert"><AppIcon Name="warning" /> <span>@_error</span></div>
+    }
+
+    <div class="mt-3 d-flex gap-2">
+        <button type="button" class="btn btn-primary" disabled="@(_busy || _rows.Count == 0)" @onclick="SubmitAsync">ثبت ورود</button>
+        @if (_rows.Count > 0)
+        {
+            <button type="button" class="btn btn-quiet" disabled="@_busy" @onclick="Clear">پاک کردن فهرست</button>
+        }
+    </div>
+</section>
+
+@code {
+    private sealed class Row
+    {
+        public Guid? ProductId { get; init; }
+        public string? NewName { get; init; }
+        public string DisplayName { get; init; } = "";
+        public string Batch { get; set; } = "";
+        public int? Quantity { get; set; }
+        public List<string> Errors { get; } = [];
+    }
+
+    /// <summary>کلید پیش‌نویس (کاربر + فرم). فعلاً استفاده نمی‌شود.</summary>
+    [Parameter] public string? DraftKey { get; set; }
+    [Parameter] public string IdPrefix { get; set; } = "qr";
+    [Parameter] public EventCallback<ReceiptItem> OnSubmitted { get; set; }
+
+    private readonly List<Row> _rows = [];
+    private ProductCombobox? _search;
+    private string _newName = "";
+    private string? _error;
+    private bool _busy;
+
+    private void AddProduct(ProductListItem product)
+    {
+        _rows.Add(new Row { ProductId = product.Id, DisplayName = string.Join(" · ", new[] { product.Name, product.Brand, product.PackDescription }.Where(s => !string.IsNullOrEmpty(s))) });
+    }
+
+    private void AddNewName()
+    {
+        var name = _newName.Trim();
+        if (name.Length == 0) return;
+
+        _rows.Add(new Row { NewName = name, DisplayName = name });
+        _newName = "";
+    }
+
+    private void OnNewNameKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") AddNewName();
+    }
+
+    private void Clear()
+    {
+        _rows.Clear();
+        _error = null;
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (_busy || _rows.Count == 0) return;
+
+        foreach (var r in _rows) r.Errors.Clear();
+        _error = null;
+        _busy = true;
+
+        var request = new QuickReceiptRequest
+        {
+            Lines = _rows.Select(r => new QuickReceiptLineRequest { ProductId = r.ProductId, NewName = r.NewName, BatchNumber = r.Batch, Quantity = r.Quantity ?? 0 }).ToList()
+        };
+        var result = await ReceiptsApi.SubmitAsync(request);
+        _busy = false;
+
+        if (result.IsSuccess)
+        {
+            _rows.Clear();
+            Toasts.Show("ورود ثبت شد و موجودی زیاد شد. انباردار بعداً آن را بررسی می‌کند.");
+            await OnSubmitted.InvokeAsync(result.Value!);
+            return;
+        }
+
+        _error = result.ErrorMessage;
+        foreach (var (key, messages) in result.Problem?.Errors ?? [])
+        {
+            if (BulkReceiptErrors.TryParse(key, out var line, out _) && line >= 0 && line < _rows.Count) _rows[line].Errors.AddRange(messages);
+            else _error = messages.FirstOrDefault() ?? _error;
+        }
+    }
+}

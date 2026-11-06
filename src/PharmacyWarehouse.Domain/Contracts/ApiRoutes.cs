@@ -45,6 +45,13 @@ public static class ApiRoutes
     public static string StocktakeClose(Guid id) => $"{Stocktakes}/{id}/close";
     public static string StocktakeApprove(Guid id, Guid countId) => $"{Stocktakes}/{id}/counts/{countId}/approve";
     public const string ReceiptsBulk = "/api/receipts/bulk";
+    public const string ReceiptsQuick = "/api/receipts/quick";
+    public const string ReceiptsPending = "/api/receipts/pending";
+    public const string ReceiptsMine = "/api/receipts/mine";
+    public static string ReceiptById(Guid id) => $"{Receipts}/{id}";
+    public static string ReceiptReview(Guid id) => $"{Receipts}/{id}/review";
+    public static string ReceiptApprove(Guid id) => $"{Receipts}/{id}/approve";
+    public static string ReceiptReject(Guid id) => $"{Receipts}/{id}/reject";
     public static string ProductSearch(string query) => $"{Products}/search?q={Uri.EscapeDataString(query)}";
     public static string ProductByCode(string code) => $"{Products}/by-code/{Uri.EscapeDataString(code)}";
     public static string ProductBarcodes(Guid id) => $"{Products}/{id}/barcodes";

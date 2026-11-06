@@ -43,6 +43,8 @@ public class Product : IAudited
     public bool RequiresExpiry { get; set; } = true;
     public bool AllowExpiredWithdrawal { get; set; }
     public bool IsActive { get; set; } = true;
+    // قلمی که پرسنل با نام آزاد ساخته و انباردار هنوز تکمیل یا یکی نکرده است.
+    public bool IsProvisional { get; set; }
     public string SearchText { get; set; } = "";
     public DateTime CreatedAtUtc { get; set; }
     public int Version { get; set; } = 1;
@@ -107,6 +109,35 @@ public class Withdrawal : IAudited
     public DateTime? ReviewedAtUtc { get; set; }
     public string? ReviewNote { get; set; }
     public bool SelfReviewed { get; set; }
+    public int Version { get; set; } = 1;
+}
+
+// ورود جنس ساده توسط پرسنل (بخش ۱۵.۲ spec): موجودی همان لحظه زیاد می‌شود و انباردار بعداً بررسی می‌کند. حذف ندارد.
+public class Receipt : IAudited
+{
+    public const int MaxNote = 500;
+
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public DateTime AtUtc { get; set; }
+    public string? Note { get; set; }
+    public ReceiptStatus Status { get; set; } = ReceiptStatus.Pending;
+    public Guid? ReviewedById { get; set; }
+    public DateTime? ReviewedAtUtc { get; set; }
+    public string? ReviewNote { get; set; }
+    public int Version { get; set; } = 1;
+}
+
+// Quantity مقدار فعلی ورود این ردیف است (بعد از اصلاح انباردار)؛ MovementId حرکت Receipt اولیه برای Reversal هنگام رد.
+public class ReceiptLine : IAudited
+{
+    public Guid Id { get; set; }
+    public Guid ReceiptId { get; set; }
+    public int Position { get; set; }
+    public Guid ProductId { get; set; }
+    public Guid BatchId { get; set; }
+    public Guid MovementId { get; set; }
+    public int Quantity { get; set; }
     public int Version { get; set; } = 1;
 }
 

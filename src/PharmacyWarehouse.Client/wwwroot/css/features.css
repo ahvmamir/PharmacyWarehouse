@@ -8,3 +8,13 @@
 .role-diff { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; font-size: .88rem; display: grid; gap: 2px; }
 .role-diff .diff-added { color: var(--st-active-fg); }
 .role-diff .diff-removed { color: var(--danger); }
+
+/* Package B: quick receipt form (QuickReceiptForm.razor) and keeper review (ReviewReceipts.razor) */
+.qr-row { display: grid; grid-template-columns: minmax(140px, 2fr) minmax(110px, 1fr) 100px auto; gap: 8px; align-items: start; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.qr-row .qr-name { display: grid; gap: 2px; }
+.qr-new-name { display: flex; gap: 8px; margin-top: 8px; }
+.qr-new-name .form-control { flex: 1; }
+.qr-errors { grid-column: 1 / -1; }
+.rv-line { border-top: 1px solid var(--line); padding: 10px 0; display: grid; gap: 8px; }
+.rv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+@media (max-width: 640px) { .qr-row { grid-template-columns: 1fr 1fr; } }

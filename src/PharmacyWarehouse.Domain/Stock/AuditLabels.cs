@@ -15,6 +15,8 @@ public static class AuditLabels
         ["ProductBarcode"] = "بارکد",
         ["StorageLocation"] = "محل",
         ["Withdrawal"] = "برداشت",
+        ["Receipt"] = "ورود جنس",
+        ["ReceiptLine"] = "ردیف ورود",
         ["AppSetting"] = "تنظیم",
         ["Stocktake"] = "انبارگردانی",
         ["StocktakeCount"] = "شمارش"
@@ -68,7 +70,13 @@ public static class AuditLabels
         ["BatchId"] = "بچ",
         ["ExpectedOnHand"] = "موجودی مورد انتظار",
         ["Counted"] = "شمرده‌شده",
-        ["AdjustmentId"] = "حرکت اصلاح"
+        ["AdjustmentId"] = "حرکت اصلاح",
+        ["IsProvisional"] = "قلم موقت",
+        ["ReceiptId"] = "ورود جنس",
+        ["Position"] = "شماره‌ی ردیف",
+        ["MovementId"] = "حرکت ورود",
+        ["Quantity"] = "تعداد",
+        ["Note"] = "یادداشت"
     };
 
     public static string Entity(string? entityType) =>

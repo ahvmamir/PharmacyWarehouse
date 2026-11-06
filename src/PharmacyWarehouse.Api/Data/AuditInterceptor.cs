@@ -158,7 +158,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         var kind = (entity, field) switch
         {
             (StorageLocation, "ParentId") or (Product or Batch, "LocationId") => typeof(StorageLocation),
-            (Batch or ProductBarcode, "ProductId") => typeof(Product),
+            (Batch or ProductBarcode or ReceiptLine, "ProductId") => typeof(Product),
             _ => null
         };
         if (kind is null) return id.ToString();

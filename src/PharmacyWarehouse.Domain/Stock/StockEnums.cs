@@ -9,3 +9,5 @@ public enum CalendarKind { Gregorian, Jalali }
 public enum StockMovementKind { Import, Receipt, Withdrawal, Reversal, Adjustment, Disposal }
 
 public enum WithdrawalStatus { Pending, Approved, Rejected }
+
+public enum ReceiptStatus { Pending, Approved, Rejected }

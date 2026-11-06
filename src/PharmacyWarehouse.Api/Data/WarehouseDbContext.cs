@@ -19,6 +19,8 @@ public class WarehouseDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>,
     public DbSet<Batch> Batches => Set<Batch>();
     public DbSet<StockMovement> StockMovements => Set<StockMovement>();
     public DbSet<Withdrawal> Withdrawals => Set<Withdrawal>();
+    public DbSet<Receipt> Receipts => Set<Receipt>();
+    public DbSet<ReceiptLine> ReceiptLines => Set<ReceiptLine>();
     public DbSet<Stocktake> Stocktakes => Set<Stocktake>();
     public DbSet<StocktakeCount> StocktakeCounts => Set<StocktakeCount>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
@@ -98,6 +100,28 @@ public class WarehouseDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>,
         });
 
         builder.Entity<StockMovement>().HasOne<Withdrawal>().WithMany().HasForeignKey(m => m.WithdrawalId).OnDelete(DeleteBehavior.Restrict);
+
+        builder.Entity<Receipt>(receipt =>
+        {
+            receipt.Property(r => r.Status).HasConversion<string>().HasMaxLength(10);
+            receipt.Property(r => r.Note).HasMaxLength(Receipt.MaxNote);
+            receipt.Property(r => r.ReviewNote).HasMaxLength(Receipt.MaxNote);
+            receipt.Property(r => r.Version).IsConcurrencyToken();
+            receipt.HasIndex(r => new { r.Status, r.AtUtc });
+            receipt.HasIndex(r => new { r.UserId, r.AtUtc });
+        });
+
+        builder.Entity<ReceiptLine>(line =>
+        {
+            line.Property(l => l.Version).IsConcurrencyToken();
+            line.HasOne<Receipt>().WithMany().HasForeignKey(l => l.ReceiptId).OnDelete(DeleteBehavior.Restrict);
+            line.HasOne<Product>().WithMany().HasForeignKey(l => l.ProductId).OnDelete(DeleteBehavior.Restrict);
+            line.HasOne<Batch>().WithMany().HasForeignKey(l => l.BatchId).OnDelete(DeleteBehavior.Restrict);
+            line.HasOne<StockMovement>().WithMany().HasForeignKey(l => l.MovementId).OnDelete(DeleteBehavior.Restrict);
+            line.HasIndex(l => l.ReceiptId);
+            line.HasIndex(l => l.ProductId);
+            line.HasIndex(l => l.BatchId);
+        });
 
         builder.Entity<Stocktake>(stocktake =>
         {

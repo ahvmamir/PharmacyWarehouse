@@ -4,6 +4,7 @@ using PharmacyWarehouse.Api.Data;
 using PharmacyWarehouse.Api.Operations;
 using PharmacyWarehouse.Domain.Auth;
 using PharmacyWarehouse.Domain.Contracts;
+using PharmacyWarehouse.Domain.Stock;
 using PharmacyWarehouse.Domain.Storage;
 using PharmacyWarehouse.Domain.Time;
 
@@ -76,6 +77,22 @@ public static class AlertEndpoints
                 Title = "انبارگردانی در جریان است",
                 Detail = $"برداشت‌های ثبت‌نشده را همین حالا ثبت کنید. محل: {string.Join("، ", open.Select(id => paths.GetValueOrDefault(id, "—")))}"
             });
+        }
+
+        if (await permissions.HasAsync(audit.UserId, Permissions.StockReceive))
+        {
+            var pending = await db.Receipts.AsNoTracking().CountAsync(r => r.Status == ReceiptStatus.Pending);
+            if (pending > 0)
+            {
+                alerts.Add(new AlertItem
+                {
+                    Key = AlertKeys.ReceiptsPending,
+                    Severity = AlertSeverity.Info,
+                    Title = "ورود جنس در انتظار بررسی",
+                    Detail = $"{JalaliDate.ToPersianDigits(pending.ToString())} ورود ثبت‌شده توسط پرسنل منتظر تکمیل و تأیید است (ورود جنس ← بررسی ورودها).",
+                    Count = pending
+                });
+            }
         }
 
         // مهم‌ترها اول.

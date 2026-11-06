@@ -37,6 +37,7 @@ builder.Services.AddScoped<AccountClient>();
 builder.Services.AddScoped<LocationsClient>();
 builder.Services.AddScoped<ProductsClient>();
 builder.Services.AddScoped<WithdrawalsClient>();
+builder.Services.AddScoped<ReceiptsClient>();
 builder.Services.AddScoped<DashboardClient>();
 builder.Services.AddScoped<StockClient>();
 builder.Services.AddScoped<BackupClient>();

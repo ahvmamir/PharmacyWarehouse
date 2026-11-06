@@ -410,6 +410,9 @@ namespace PharmacyWarehouse.Api.Data.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("IsProvisional")
+                        .HasColumnType("INTEGER");
+
                     b.Property<Guid?>("LocationId")
                         .HasColumnType("TEXT");
 
@@ -490,6 +493,91 @@ namespace PharmacyWarehouse.Api.Data.Migrations
                     b.HasIndex("ProductId");
 
                     b.ToTable("ProductBarcodes");
+                });
+
+            modelBuilder.Entity("PharmacyWarehouse.Api.Data.Receipt", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("AtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReviewNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ReviewedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("ReviewedById")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Status", "AtUtc");
+
+                    b.HasIndex("UserId", "AtUtc");
+
+                    b.ToTable("Receipts");
+                });
+
+            modelBuilder.Entity("PharmacyWarehouse.Api.Data.ReceiptLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("MovementId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("ReceiptId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BatchId");
+
+                    b.HasIndex("MovementId");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("ReceiptId");
+
+                    b.ToTable("ReceiptLines");
                 });
 
             modelBuilder.Entity("PharmacyWarehouse.Api.Data.StockMovement", b =>
@@ -806,6 +894,33 @@ namespace PharmacyWarehouse.Api.Data.Migrations
                     b.HasOne("PharmacyWarehouse.Api.Data.Product", null)
                         .WithMany()
                         .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PharmacyWarehouse.Api.Data.ReceiptLine", b =>
+                {
+                    b.HasOne("PharmacyWarehouse.Api.Data.Batch", null)
+                        .WithMany()
+                        .HasForeignKey("BatchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PharmacyWarehouse.Api.Data.StockMovement", null)
+                        .WithMany()
+                        .HasForeignKey("MovementId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PharmacyWarehouse.Api.Data.Product", null)
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PharmacyWarehouse.Api.Data.Receipt", null)
+                        .WithMany()
+                        .HasForeignKey("ReceiptId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

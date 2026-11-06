@@ -247,6 +247,8 @@ app.MapAccountEndpoints();
 app.MapStorageLocationEndpoints();
 app.MapProductEndpoints();
 app.MapReceiptEndpoints();
+app.MapQuickReceiptEndpoints();
+app.MapReceiptReviewEndpoints();
 app.MapWithdrawalEndpoints();
 app.MapWithdrawalReviewEndpoints();
 app.MapBatchEndpoints();

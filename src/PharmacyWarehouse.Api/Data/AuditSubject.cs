@@ -9,6 +9,7 @@ internal static class AuditSubject
         StorageLocation location => location.Id,
         Batch batch => batch.ProductId,
         ProductBarcode barcode => barcode.ProductId,
+        ReceiptLine line => line.ReceiptId,
         _ => entity.Id
     };
 }
