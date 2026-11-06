@@ -1,0 +1,71 @@
+@page "/settings"
+@attribute [Authorize]
+@inject ApiAuthenticationStateProvider Session
+
+<PageTitle>تنظیمات | انبار داروخانه</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1>تنظیمات</h1>
+        <p>مدیریت کاربران، داده و تنظیمات برنامه. فقط بخش‌هایی که به آن‌ها دسترسی دارید دیده می‌شوند.</p>
+    </div>
+</div>
+
+@if (Session.CurrentUser is { MustChangePassword: false } || Session.CurrentUser is null)
+{
+    @if (Session.Can(Permissions.UsersManage) || Session.Can(Permissions.RolesManage))
+    {
+        <h2 class="hub-title">دسترسی</h2>
+        <div class="hub-grid">
+            @if (Session.Can(Permissions.UsersManage))
+            {
+                @Card("admin/users", "users", "کاربران", "افزودن کاربر، نقش، بازنشانی رمز و غیرفعال کردن.")
+            }
+            @if (Session.Can(Permissions.RolesManage))
+            {
+                @Card("admin/roles", "key", "نقش‌ها و مجوزها", "تعیین اینکه هر نقش چه کارهایی می‌تواند بکند.")
+            }
+        </div>
+    }
+
+    @if (Session.Can(Permissions.DataImport) || Session.Can(Permissions.DataExport) || Session.Can(Permissions.BackupDownload))
+    {
+        <h2 class="hub-title">داده</h2>
+        <div class="hub-grid">
+            @if (Session.Can(Permissions.DataImport) || Session.Can(Permissions.DataExport))
+            {
+                @Card("admin/import", "report", "ورود و خروج Excel", "ورود اولیه‌ی اقلام از Excel و گرفتن خروجی.")
+            }
+            @if (Session.Can(Permissions.BackupDownload))
+            {
+                @Card("admin/data", "storage", "پشتیبان", "دانلود نسخه‌ی پشتیبان از پایگاه داده.")
+            }
+        </div>
+    }
+
+    @if (Session.Can(Permissions.SettingsManage))
+    {
+        <h2 class="hub-title">برنامه</h2>
+        <div class="hub-grid">
+            @Card("admin/settings", "filter", "آستانه‌های انقضا", "ماه‌های هشدار انقضا در داشبورد.")
+        </div>
+    }
+}
+
+<h2 class="hub-title">حساب</h2>
+<div class="hub-grid">
+    @Card("account", "user", "حساب من", "تغییر رمز و دیدن نشست‌ها.")
+</div>
+
+@code {
+    private RenderFragment Card(string href, string icon, string title, string text) => __builder =>
+    {
+        <a class="hub-card" href="@href">
+            <span class="hub-card-icon"><AppIcon Name="@icon" Size="20" /></span>
+            <span class="hub-card-body">
+                <strong>@title</strong>
+                <small>@text</small>
+            </span>
+        </a>
+    };
+}
