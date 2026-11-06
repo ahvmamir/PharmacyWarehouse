@@ -35,6 +35,9 @@ public class ExpiryDateTests
     [InlineData("00/2028")]
     [InlineData("13/2028")]
     [InlineData("00/01/2028")]
+    [InlineData("31/12/1899")]
+    [InlineData("12/1899")]
+    [InlineData("01/01/1500")]
     public void Parse_Invalid(string input)
     {
         var r = ExpiryDate.Parse(input);

@@ -476,4 +476,14 @@ public class ImportValidatorTests
         var report = ImportValidator.Validate([Row(name: "Test Drug", batch: "TEST-B1"), Row(name: "TESTDRUG", batch: "TEST-B2")], Ctx("ضلع آزمایشی"));
         Assert.Equal(1, report.Summary.NewProducts);
     }
+
+    [Fact]
+    public void Expiry_ExcelZeroDate_IsError_NotAnExpiredBatch()
+    {
+        var report = ImportValidator.Validate([Row(expiry: "31/12/1899")], Ctx("ضلع آزمایشی"));
+
+        Assert.Equal(ImportSeverity.Error, Single(report).Severity);
+        Assert.Contains(Single(report).Messages, m => m.Contains("۱۹۰۰"));
+        Assert.Empty(report.Plan);
+    }
 }

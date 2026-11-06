@@ -26,12 +26,22 @@ public sealed class ImportClient
         ApiSender.SendAsync<ImportPreview>(ct => _http.PostAsJsonAsync(ApiRoutes.ImportValidate, new ImportRequest { Rows = rows.ToList() }, ct), ApiSender.FileTimeout);
 
     // ۴۰۹ یعنی هنوز خطا مانده یا در این فاصله تغییر کرده؛ پیام فارسی در ErrorMessage.
-    public Task<ApiResult<ImportResult>> CommitAsync(IEnumerable<ImportRowInput> rows) =>
-        ApiSender.SendAsync<ImportResult>(ct => _http.PostAsJsonAsync(ApiRoutes.ImportCommit, new ImportRequest { Rows = rows.ToList() }, ct), ApiSender.FileTimeout);
+    public Task<ApiResult<ImportResult>> CommitAsync(IEnumerable<ImportRowInput> rows) => CommitAsync(new ImportRequest { Rows = rows.ToList() });
+
+    // ثبت جزئی: SelectedIndexes یا ValidOnly در request (بخش ۱۲.۳ spec).
+    public Task<ApiResult<ImportResult>> CommitAsync(ImportRequest request) =>
+        ApiSender.SendAsync<ImportResult>(ct => _http.PostAsJsonAsync(ApiRoutes.ImportCommit, request, ct), ApiSender.FileTimeout);
 
     public Task<ApiResult<DownloadedFile>> TemplateAsync() =>
         ApiSender.DownloadAsync(ct => _http.GetAsync(ApiRoutes.ImportTemplate, ct));
 
     public Task<ApiResult<DownloadedFile>> ExportAsync() =>
         ApiSender.DownloadAsync(ct => _http.GetAsync(ApiRoutes.DataExport, ct));
+}
+
+// پیش‌نویس پیش‌نمایش ورود Excel در DraftStore: ردیف‌ها (با اصلاح‌های کاربر) و شمار ردیف‌های نادیده. وضعیت‌ها با بررسی دوباره ساخته می‌شوند.
+public sealed class ImportDraft
+{
+    public List<ImportRowInput> Rows { get; set; } = [];
+    public int IgnoredRows { get; set; }
 }

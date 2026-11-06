@@ -5,6 +5,7 @@
 @inject ApiAuthenticationStateProvider Session
 @inject ToastService Toasts
 @inject IJSRuntime JS
+@inject DraftStore Drafts
 
 <PageTitle>ورود و خروج Excel | انبار داروخانه</PageTitle>
 
@@ -68,14 +69,59 @@
                 <input type="checkbox" class="form-check-input" checked="@_onlyProblems" @onchange="e => { _onlyProblems = (bool)e.Value!; _shown = PageSize; }" /> فقط ردیف‌های دارای خطا یا هشدار
             </label>
             <button type="button" class="btn btn-quiet" disabled="@(_busy || !_dirty)" @onclick="RevalidateAsync">بررسی دوباره</button>
-            <button type="button" class="btn btn-primary" disabled="@(_busy || _dirty || !preview.CanCommit)" @onclick="CommitAsync">
-                ثبت @Num(summary.NewProducts + summary.ExistingProducts) قلم و @Num(summary.NewBatches) بچ
+            <button type="button" class="btn btn-primary" disabled="@(_busy || _dirty || ValidIndexes.Count == 0)" @onclick="() => CommitAsync(false)">
+                ثبت همه‌ی ردیف‌های معتبر (@Num(ValidIndexes.Count))
+            </button>
+            <button type="button" class="btn btn-quiet" disabled="@(_busy || _dirty || SelectedValid.Count == 0)" @onclick="() => CommitAsync(true)">
+                ثبت انتخاب‌شده‌های معتبر (@Num(SelectedValid.Count))
             </button>
             @if (_dirty)
             {
                 <span class="form-hint">ردیف‌ها را تغییر داده‌اید؛ اول «بررسی دوباره».</span>
             }
+            else if (summary.ErrorRows > 0)
+            {
+                <span class="form-hint">ردیف‌های دارای خطا ثبت نمی‌شوند و در جدول می‌مانند تا اصلاح و بعداً ثبت شوند.</span>
+            }
         </div>
+
+        <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+            <button type="button" class="btn btn-sm btn-quiet" @onclick="SelectErrors">انتخاب همه‌ی ردیف‌های دارای خطا</button>
+            <button type="button" class="btn btn-sm btn-quiet" @onclick="SelectAllVisible">انتخاب همه‌ی ردیف‌های نمایش‌داده‌شده</button>
+            <button type="button" class="btn btn-sm btn-quiet" disabled="@(_selected.Count == 0)" @onclick="() => _selected.Clear()">لغو انتخاب</button>
+            <span class="form-hint">@Num(_selected.Count) ردیف انتخاب شده</span>
+        </div>
+
+        @if (_selected.Count > 0)
+        {
+            <section class="card-emu">
+                <div class="card-emu-body d-flex align-items-end gap-2 flex-wrap">
+                    <div>
+                        <label class="form-hint" for="bulk-field">ویرایش گروهی ستون</label>
+                        <select id="bulk-field" class="form-select" @bind="_bulkField">
+                            @foreach (var (key, label) in BulkFields) { <option value="@key">@label</option> }
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-hint" for="bulk-value">مقدار</label>
+                        @if (_bulkField == "notrequired")
+                        {
+                            <select id="bulk-value" class="form-select" @bind="_bulkValue">
+                                <option value="1">انقضا لازم نیست</option>
+                                <option value="0">انقضا لازم است</option>
+                            </select>
+                        }
+                        else
+                        {
+                            <input id="bulk-value" class="form-control" @bind="_bulkValue" @bind:event="oninput" dir="@(_bulkField is "location" or "brand" ? "rtl" : "ltr")" />
+                        }
+                    </div>
+                    <button type="button" class="btn btn-primary" @onclick="ApplyBulkAsync">اعمال روی @Num(_selected.Count) ردیف</button>
+                </div>
+            </section>
+        }
+
+        <DraftBar State="_draft" OnClear="ClearDraftAsync" />
 
         @if (Visible.Count == 0)
         {
@@ -87,7 +133,7 @@
                 <table class="table-emu import-table">
                     <thead>
                         <tr>
-                            <th>شیت / ردیف</th><th>نام دارو و دوز</th><th>نام تجاری</th><th>تعداد</th><th>در بسته</th><th>بچ نامبر</th><th>انقضا</th><th>انقضا لازم نیست</th><th>محل</th><th>بارکد</th><th>حداقل</th><th>قیمت</th><th>وضعیت</th>
+                            <th aria-label="انتخاب"></th><th>شیت / ردیف</th><th>نام دارو و دوز</th><th>نام تجاری</th><th>تعداد</th><th>در بسته</th><th>بچ نامبر</th><th>انقضا</th><th>انقضا لازم نیست</th><th>محل</th><th>بارکد</th><th>حداقل</th><th>قیمت</th><th>وضعیت</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -96,6 +142,7 @@
                             var row = _rows[i];
                             var status = _statuses[i];
                             <tr @key="i" class="import-row-@status.Severity.ToString().ToLowerInvariant()">
+                                <td><input type="checkbox" class="form-check-input" checked="@_selected.Contains(i)" aria-label="انتخاب ردیف" @onchange="e => Toggle(i, (bool)e.Value!)" /></td>
                                 <td><bdi>@row.Sheet</bdi> <span class="cell-sub">@Num(row.RowNumber)</span></td>
                                 <td><input class="form-control" value="@row.Name" aria-label="نام" @onchange="e => Edit(row, r => r.Name = Val(e))" /></td>
                                 <td><input class="form-control" value="@row.Brand" aria-label="برند" @onchange="e => Edit(row, r => r.Brand = Val(e))" /></td>
@@ -148,10 +195,99 @@
         .Where(i => _statuses[i].Severity != ImportSeverity.Ignored && (!_onlyProblems || _statuses[i].Severity is ImportSeverity.Error or ImportSeverity.Warning))
         .ToList();
 
-    private void Edit(ImportRowInput row, Action<ImportRowInput> change)
+    // ---------- انتخاب، ویرایش گروهی، پیش‌نویس ----------
+
+    private static readonly (string Key, string Label)[] BulkFields =
+    [
+        ("location", "محل"), ("expiry", "انقضا"), ("notrequired", "انقضا لازم نیست"), ("brand", "نام تجاری"),
+        ("pack", "در بسته"), ("minstock", "حداقل"), ("cost", "قیمت")
+    ];
+
+    private readonly HashSet<int> _selected = [];
+    private string _bulkField = "location";
+    private string _bulkValue = "";
+    private Draft<ImportDraft>? _draft;
+
+    private bool IsValid(int i) => i < _statuses.Count && _statuses[i].Severity is ImportSeverity.Ok or ImportSeverity.Warning;
+    private List<int> ValidIndexes => Enumerable.Range(0, _rows?.Count ?? 0).Where(IsValid).ToList();
+    private List<int> SelectedValid => _selected.Where(IsValid).Order().ToList();
+
+    private void Toggle(int i, bool on)
+    {
+        if (on) _selected.Add(i); else _selected.Remove(i);
+    }
+
+    private void SelectErrors()
+    {
+        for (var i = 0; i < (_rows?.Count ?? 0); i++)
+            if (i < _statuses.Count && _statuses[i].Severity == ImportSeverity.Error) _selected.Add(i);
+    }
+
+    private void SelectAllVisible()
+    {
+        foreach (var i in Visible) _selected.Add(i);
+    }
+
+    private async Task ApplyBulkAsync()
+    {
+        if (_rows is null || _selected.Count == 0) return;
+
+        var value = string.IsNullOrWhiteSpace(_bulkValue) ? null : _bulkValue.Trim();
+        foreach (var i in _selected.Where(i => i < _rows.Count))
+        {
+            var row = _rows[i];
+            switch (_bulkField)
+            {
+                case "location": row.Location = value; break;
+                case "expiry": row.Expiry = value; break;
+                case "notrequired": row.ExpiryNotRequired = _bulkValue != "0"; break;
+                case "brand": row.Brand = value; break;
+                case "pack": row.UnitsPerPack = value; break;
+                case "minstock": row.MinStock = value; break;
+                case "cost": row.UnitCost = value; break;
+            }
+        }
+
+        _dirty = true;
+        await SaveDraftAsync();
+    }
+
+    private async Task SaveDraftAsync()
+    {
+        if (_draft is null) return;
+
+        var before = _draft.Saved;
+        await _draft.SaveAsync(_rows is { Count: > 0 } ? new ImportDraft { Rows = _rows, IgnoredRows = _preview?.IgnoredRows ?? 0 } : null);
+        if (_draft.Saved != before) StateHasChanged();
+    }
+
+    private async Task ClearDraftAsync()
+    {
+        _preview = null;
+        _rows = null;
+        _selected.Clear();
+        _dirty = false;
+        if (_draft is not null) await _draft.ClearAsync();
+    }
+
+    // بازیابی پیش‌نویس: ردیف‌ها از DraftStore، وضعیت‌ها از بررسی دوباره‌ی سرور (سیستم ممکن است عوض شده باشد).
+    protected override async Task OnInitializedAsync()
+    {
+        _draft = Drafts.Open<ImportDraft>("import");
+        if (await _draft.LoadAsync() is not { Rows.Count: > 0 } saved) return;
+
+        _busy = true;
+        var result = await ImportApi.ValidateAsync(saved.Rows);
+        _busy = false;
+        if (result.IsSuccess) Show(result.Value! with { IgnoredRows = saved.IgnoredRows });
+        else Toasts.Show(result.ErrorMessage, isWarning: true);
+    }
+
+    private async Task Edit(ImportRowInput row, Action<ImportRowInput> change)
     {
         change(row);
         _dirty = true;
+        await SaveDraftAsync();
     }
 
     private void Show(ImportPreview preview)
@@ -169,6 +305,7 @@
         _error = null;
         _preview = null;
         _rows = null;
+        _selected.Clear();
         if (e.FileCount == 0) return;
 
         var file = e.File;
@@ -181,7 +318,7 @@
             using var memory = new MemoryStream();
             await file.OpenReadStream(MaxFileBytes).CopyToAsync(memory);
             var result = await ImportApi.ParseAsync(memory.ToArray(), file.Name);
-            if (result.IsSuccess) Show(result.Value!);
+            if (result.IsSuccess) { Show(result.Value!); await SaveDraftAsync(); }
             else _error = result.ErrorMessage;
         }
         finally
@@ -202,12 +339,16 @@
         else Toasts.Show(result.ErrorMessage, isWarning: true);
     }
 
-    private async Task CommitAsync()
+    // ثبت جزئی: فقط ردیف‌های معتبر (همه یا انتخاب‌شده)؛ ردیف‌های ثبت‌شده از پیش‌نمایش برمی‌روند و بقیه برای اصلاح می‌مانند.
+    private async Task CommitAsync(bool selectedOnly)
     {
         if (_rows is null || _busy) return;
 
+        var sent = selectedOnly ? SelectedValid : ValidIndexes;
+        if (sent.Count == 0) return;
+
         _busy = true;
-        var result = await ImportApi.CommitAsync(_rows);
+        var result = await ImportApi.CommitAsync(new ImportRequest { Rows = _rows, SelectedIndexes = sent });
         _busy = false;
 
         if (!result.IsSuccess)
@@ -219,8 +360,23 @@
 
         var r = result.Value!;
         Toasts.Show($"ثبت شد: {Num(r.ProductsCreated)} قلم تازه، {Num(r.BatchesCreated)} بچ" + (r.LocationsCreated > 0 ? $"، {Num(r.LocationsCreated)} محل تازه" : "") + ".");
-        _preview = null;
-        _rows = null;
+
+        var done = sent.ToHashSet();
+        var ignored = _preview?.IgnoredRows ?? 0;
+        _rows = _rows.Where((_, i) => !done.Contains(i)).ToList();
+        _selected.Clear();
+        if (_rows.All(row => string.IsNullOrWhiteSpace(row.Name)))
+        {
+            await ClearDraftAsync();
+            return;
+        }
+
+        _busy = true;
+        var again = await ImportApi.ValidateAsync(_rows);
+        _busy = false;
+        if (again.IsSuccess) Show(again.Value! with { IgnoredRows = ignored });
+        else Toasts.Show(again.ErrorMessage, isWarning: true);
+        await SaveDraftAsync();
     }
 
     private async Task DownloadAsync(Func<Task<ApiResult<DownloadedFile>>> fetch)

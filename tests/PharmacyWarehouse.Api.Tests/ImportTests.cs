@@ -474,4 +474,99 @@ public class ImportTests : ApiTestBase
         Assert.Equal(623 * 3 + 81 * 2, await db.Batches.SumAsync(b => b.OnHand));
         Assert.True(watch.Elapsed < TimeSpan.FromSeconds(30), $"too slow: {watch.Elapsed}");
     }
+
+    [Fact]
+    public async Task Parse_HeaderWithoutVavInName_IsRecognised()
+    {
+        var rows = new List<string?[]> { new string?[] { "نام دارو دوز", "تعداد", "بچ نامبر", "تاریخ انقضا" }, new string?[] { "داروی آزمایشی ۱", "3", "TEST-B1", "31/05/2028" } };
+        var bytes = Workbook(new XlsxSheet("ضلع آزمایشی", ["تاریخ بروزرسانی: آزمایشی"], rows));
+
+        var preview = await ParseOkAsync(Keeper, bytes);
+
+        Assert.True(preview.CanCommit);
+        Assert.Equal("داروی آزمایشی ۱", Assert.Single(preview.Rows).Name);
+    }
+
+    private static ImportRowInput Bad() => new() { Sheet = "ضلع آزمایشی", RowNumber = 5, Name = "داروی بد", Quantity = "x", BatchNumber = "TEST-BAD", Expiry = "31/05/2028" };
+
+    [Fact]
+    public async Task Commit_ValidOnly_CommitsValidRows_AndSkipsRowsWithErrors()
+    {
+        var response = await Keeper.PostAsJsonAsync(ApiRoutes.ImportCommit,
+            new ImportRequest { Rows = [Input("ضلع آزمایشی", "TEST-B1"), Bad(), Input("ضلع آزمایشی", "TEST-B2", "داروی آزمایشی دو")], ValidOnly = true });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(2, (await response.Content.ReadFromJsonAsync<ImportResult>())!.BatchesCreated);
+        using var scope = App.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<WarehouseDbContext>();
+        Assert.Equal(["TEST-B1", "TEST-B2"], (await db.Batches.AsNoTracking().OrderBy(b => b.BatchNumber).ToListAsync()).Select(b => b.BatchNumber));
+        Assert.False(await db.Products.AnyAsync(p => p.Name == "داروی بد"));
+        await App.AssertLedgerConsistentAsync();
+    }
+
+    [Fact]
+    public async Task Commit_SelectedIndexes_CommitsOnlyThoseRows_AndTheRestCanBeCommittedLater()
+    {
+        var rows = new List<ImportRowInput> { Input("ضلع آزمایشی", "TEST-B1"), Input("ضلع آزمایشی", "TEST-B2", "داروی آزمایشی دو"), Input("ضلع آزمایشی", "TEST-B3", "داروی آزمایشی سه") };
+
+        var first = await Keeper.PostAsJsonAsync(ApiRoutes.ImportCommit, new ImportRequest { Rows = rows, SelectedIndexes = [2, 0] });
+
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        using (var scope = App.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<WarehouseDbContext>();
+            Assert.Equal(["TEST-B1", "TEST-B3"], (await db.Batches.AsNoTracking().OrderBy(b => b.BatchNumber).ToListAsync()).Select(b => b.BatchNumber));
+        }
+
+        // ردیف‌های ثبت‌شده دوباره بفرستند: تکراری ← ۴۰۹ و چیزی عوض نمی‌شود؛ ردیف مانده هنوز ثبت‌شدنی است.
+        Assert.Equal(HttpStatusCode.Conflict, (await Keeper.PostAsJsonAsync(ApiRoutes.ImportCommit, new ImportRequest { Rows = rows, SelectedIndexes = [0, 1] })).StatusCode);
+        var second = await Keeper.PostAsJsonAsync(ApiRoutes.ImportCommit, new ImportRequest { Rows = rows, SelectedIndexes = [1] });
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+        using (var scope = App.CreateScope())
+        {
+            Assert.Equal(3, await scope.ServiceProvider.GetRequiredService<WarehouseDbContext>().Batches.CountAsync());
+        }
+
+        await App.AssertLedgerConsistentAsync();
+    }
+
+    [Fact]
+    public async Task Commit_SelectedRowWithError_Returns409_AndNothingIsCommitted()
+    {
+        var response = await Keeper.PostAsJsonAsync(ApiRoutes.ImportCommit,
+            new ImportRequest { Rows = [Input("ضلع آزمایشی", "TEST-B1"), Bad()], SelectedIndexes = [0, 1] });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        using var scope = App.CreateScope();
+        Assert.Equal(0, await scope.ServiceProvider.GetRequiredService<WarehouseDbContext>().Batches.CountAsync());
+    }
+
+    [Fact]
+    public async Task Commit_SelectedDuplicateBatchInSubset_IsRevalidated_AndRejected()
+    {
+        var rows = new List<ImportRowInput> { Input("ضلع آزمایشی", "TEST-B1"), Input("ضلع آزمایشی", "TEST-B1") };
+
+        // هر دو انتخاب‌شده ← بچ تکراری در همان فایل ← ۴۰۹؛ یکی به‌تنهایی درست است.
+        Assert.Equal(HttpStatusCode.Conflict, (await Keeper.PostAsJsonAsync(ApiRoutes.ImportCommit, new ImportRequest { Rows = rows, SelectedIndexes = [0, 1] })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await Keeper.PostAsJsonAsync(ApiRoutes.ImportCommit, new ImportRequest { Rows = rows, SelectedIndexes = [1] })).StatusCode);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(5)]
+    public async Task Commit_SelectedIndexOutOfRange_Returns400(int index)
+    {
+        var response = await Keeper.PostAsJsonAsync(ApiRoutes.ImportCommit, new ImportRequest { Rows = [Input("ضلع آزمایشی", "TEST-B1")], SelectedIndexes = [index] });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Commit_ExcelZeroDateRow_IsNotCommittedAsExpiredBatch()
+    {
+        var row = Input("ضلع آزمایشی", "TEST-B1");
+        row.Expiry = "31/12/1899";
+
+        Assert.Equal(HttpStatusCode.Conflict, (await CommitRowsAsync(row)).StatusCode);
+    }
 }

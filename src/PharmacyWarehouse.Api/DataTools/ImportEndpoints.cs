@@ -106,7 +106,7 @@ public static class ImportEndpoints
     // نگاشت سرستون‌ها: سطر سرستون جزو ۵ ردیف اول است و ستون «نام دارو» دارد؛ ستون‌های ناشناخته (مثل «بازرسی دوره‌ای») نادیده‌اند.
     private static readonly (string Field, string[] Names)[] HeaderAliases =
     [
-        ("name", ["نامداروودوز", "نامدارو", "نام", "دارو", "نامقلم"]),
+        ("name", ["نامداروودوز", "نامدارودوز", "نامدارو", "نام", "دارو", "نامقلم"]),
         ("brand", ["نامتجاری", "برند"]),
         ("quantity", ["تعداد", "موجودی"]),
         ("pack", ["تعداددربسته", "بستهبندی", "دربسته"]),
@@ -183,7 +183,22 @@ public static class ImportEndpoints
         if (request.Rows is null || request.Rows.Count == 0 || request.Rows.Any(r => r is null)) return ApiProblems.Validation("Rows", "ردیفی برای ثبت نیست.");
         if (request.Rows.Count > ImportValidator.MaxRows) return ApiProblems.Validation("Rows", $"بیش از {ImportValidator.MaxRows} ردیف.");
 
-        var report = ImportValidator.Validate(request.Rows, await BuildContextAsync(db));
+        var context = await BuildContextAsync(db);
+        var rows = request.Rows;
+
+        // ثبت جزئی: فقط ردیف‌های انتخاب‌شده (یا همه‌ی ردیف‌های معتبر) ثبت می‌شوند؛ بقیه دست‌نخورده می‌مانند.
+        if (request.ValidOnly)
+        {
+            rows = ImportValidator.Validate(rows, context).Plan.Select(p => request.Rows[p.Index]).ToList();
+        }
+        else if (request.SelectedIndexes is { } selected)
+        {
+            if (selected.Any(i => i < 0 || i >= rows.Count)) return ApiProblems.Validation("SelectedIndexes", "شماره‌ی ردیف انتخاب‌شده نامعتبر است.");
+            rows = selected.Distinct().Order().Select(i => request.Rows[i]).ToList();
+        }
+
+        // هر چه ثبت می‌شود دوباره و به‌تنهایی اعتبارسنجی می‌شود (به پیش‌نمایش کلاینت اعتماد نمی‌شود).
+        var report = ImportValidator.Validate(rows, context);
         if (!report.CanCommit)
             return ApiProblems.Conflict(report.Summary.ErrorRows > 0
                 ? "ردیف‌های دارای خطا باقی مانده‌اند؛ اول اصلاح و دوباره بررسی کنید."

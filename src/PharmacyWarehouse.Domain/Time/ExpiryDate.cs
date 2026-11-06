@@ -18,6 +18,9 @@ public static class ExpiryDate
     private const int MinJalaliYear = 1300;
     private const int MaxJalaliYear = 1499; // سال < ۱۵۰۰ شمسی است، وگرنه میلادی
     private const int MinGregorianYear = 1500;
+    // سال میلادی کمتر از ۱۹۰۰ تاریخ انقضای واقعی نیست (تاریخ صفر Excel = 31/12/1899)؛ خطا، نه بچ منقضی.
+    private const int MinRealGregorianYear = 1900;
+    private const string TooOldError = "سال تاریخ انقضا قبل از ۱۹۰۰ است (تاریخ صفر Excel)؛ تاریخ درست را وارد کنید.";
     private const int MaxGregorianYear = 9999;
 
     private static readonly PersianCalendar Persian = new();
@@ -42,7 +45,8 @@ public static class ExpiryDate
         var year = int.Parse(yearText, CultureInfo.InvariantCulture);
         CalendarKind calendar;
         if (year is >= MinJalaliYear and <= MaxJalaliYear) calendar = CalendarKind.Jalali;
-        else if (year is >= MinGregorianYear and <= MaxGregorianYear) calendar = CalendarKind.Gregorian;
+        else if (year is >= MinGregorianYear and < MinRealGregorianYear) return new ExpiryParse(null, [], TooOldError);
+        else if (year is >= MinRealGregorianYear and <= MaxGregorianYear) calendar = CalendarKind.Gregorian;
         else return Fail();
 
         var monthText = parts[^2];
