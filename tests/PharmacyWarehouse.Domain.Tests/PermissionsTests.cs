@@ -18,7 +18,7 @@ public class PermissionsTests
         [
             "stock.view", "withdrawal.create", "withdrawal.review", "stock.receive", "stock.adjust", "products.manage",
             "dashboard.view", "reports.view", "data.import", "data.export", "backup.download", "settings.manage",
-            "users.manage", "roles.manage"
+            "users.manage", "roles.manage", "receipt.submit"
         ];
 
         Assert.Equal(expected.Order(), Permissions.All.Select(p => p.Key).Order());
