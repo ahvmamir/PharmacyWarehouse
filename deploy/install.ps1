@@ -95,7 +95,7 @@ if (Get-Service -Name W3SVC -ErrorAction SilentlyContinue) {
     Write-Warning "IIS (W3SVC) is installed. If it already uses port $Port, the check below stops; then pass another -Port."
 }
 if (-not (Test-Path (Join-Path $Source 'PharmacyWarehouse.Api.exe'))) {
-    throw "Package folder .\app\PharmacyWarehouse.Api.exe not found next to this script. Build it with publish-package.bat."
+    throw "Package folder .\app\PharmacyWarehouse.Api.exe not found next to this script. Build it with scripts\publish-package.bat."
 }
 foreach ($ip in $IpAddress) {
     $parsed = $null

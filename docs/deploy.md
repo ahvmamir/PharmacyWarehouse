@@ -13,7 +13,7 @@
 **ساخت بسته (روی سیستم توسعه):**
 
 ```
-publish-package.bat
+scripts\publish-package.bat
 ```
 
 این دستور اول همه‌ی تست‌ها را اجرا می‌کند و بعد `publish\PharmacyWarehouse-package.zip` را می‌سازد. داخل بسته پوشه‌ی `app` و سه اسکریپت `install.ps1`، `update.ps1` و `uninstall.ps1` است.

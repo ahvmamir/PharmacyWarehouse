@@ -22,7 +22,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
-  <!-- بسته‌ی نصب (publish-package.bat): خروجی self-contained ویندوز، بدون نیاز به نصب .NET روی VM.
+  <!-- بسته‌ی نصب (scripts\publish-package.bat): خروجی self-contained ویندوز، بدون نیاز به نصب .NET روی VM.
        RID فقط این‌جا تعیین می‌شود، نه با -r در خط فرمان، تا به پروژه‌ی Client (WebAssembly) سرایت نکند. -->
   <PropertyGroup Condition="'$(WarehousePackage)' == 'true'">
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>

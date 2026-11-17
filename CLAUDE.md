@@ -71,7 +71,7 @@
 - **ترک سیستم:** وقتی امیر گفت «جمع‌بندی کن»، وضعیت برش، کار مانده و تصمیم‌های جدید را در بخش ۷ `docs\brief.md` بنویس، `git status` را بررسی کن تا راز، داده‌ی واقعی یا فایل `.db` نباشد؛ بعد دستور دقیق commit و push را بده.
 - **شروع جلسه:** فقط از `CLAUDE.md`، بخش ۷ `docs\brief.md` و `git log` ادامه بده.
 
-اسکریپت‌های سیستم توسعه در `dev\` (شروع و پایان کار، پشتیبان و به‌روزرسانی دیتابیس، تست؛ راهنما در `dev\README.md`)؛ اسکریپت‌های سرور در `deploy\`.
+اسکریپت‌های سیستم توسعه در `scripts\` (شروع و پایان کار، اجرا، پشتیبان و به‌روزرسانی دیتابیس، تست، ساخت بسته‌ی نصب؛ راهنما در `scripts\README.md`)؛ اسکریپت‌های سرور در `deploy\`.
 
 دستورها:
 
@@ -79,7 +79,7 @@
 dotnet tool restore
 dotnet ef database update --project src\PharmacyWarehouse.Api
 dotnet run --project src\PharmacyWarehouse.Api -- create-admin <username>
-run-dev.bat
+scripts\run-dev.bat
 dotnet test PharmacyWarehouse.sln
 ```
 

@@ -16,5 +16,5 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-echo Ready. Run dev\run-dev.bat to start the Api and the Client.
+echo Ready. Run scripts\run-dev.bat to start the Api and the Client.
 pause
