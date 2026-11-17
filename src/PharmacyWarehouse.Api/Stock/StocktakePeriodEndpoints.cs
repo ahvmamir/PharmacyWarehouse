@@ -5,6 +5,7 @@ using PharmacyWarehouse.Domain.Contracts;
 using PharmacyWarehouse.Domain.Stock;
 using PharmacyWarehouse.Domain.Storage;
 using PharmacyWarehouse.Domain.Text;
+using PharmacyWarehouse.Domain.Time;
 
 namespace PharmacyWarehouse.Api.Stock;
 
@@ -77,9 +78,14 @@ public static class StocktakePeriodEndpoints
             .ToList();
 
         var users = await StocktakeEndpoints.UserNamesAsync(db, latest.Values.Select(c => c.UserId));
+        var misplaced = await db.MisplacedCounts.AsNoTracking().Where(f => sessionIds.Contains(f.StocktakeId)).ToListAsync();
+        var lastFound = misplaced.GroupBy(f => f.BatchId).ToDictionary(g => g.Key, g => g.Max(f => f.AtUtc));
+        var today = LocalDay.Today(DateTime.UtcNow);
         var rows = all.Select(s =>
         {
             latest.TryGetValue(s.Batch.Id, out var c);
+            var needsRecount = c is not null && c.AdjustmentId is null && c.DismissedAtUtc is null
+                && lastFound.TryGetValue(s.Batch.Id, out var found) && found > c.AtUtc;
             var session = c is null ? null : sessions[c.StocktakeId];
             var difference = c is null ? 0 : c.Counted - c.ExpectedOnHand;
             var status = StocktakeRules.Status(c is not null, session?.ClosedAtUtc is not null, difference, c?.AdjustmentId is not null, c?.DismissedAtUtc is not null);
@@ -91,7 +97,8 @@ public static class StocktakePeriodEndpoints
             return new PeriodRowItem(s.Batch.Id, s.Product.Id, s.Product.Name, s.Product.Brand, s.Batch.BatchNumber, StocktakeEndpoints.ExpiryText(s.Batch),
                 s.EffectiveLocation is { } l && paths.TryGetValue(l, out var path) ? path : null, s.Batch.OnHand,
                 status, c?.Id, c?.Version, c?.StocktakeId, c?.ExpectedOnHand, c?.Counted, c is null ? null : difference,
-                c?.AtUtc, c is null ? null : users.GetValueOrDefault(c.UserId, "—"), conflicting, c?.DismissNote);
+                c?.AtUtc, c is null ? null : users.GetValueOrDefault(c.UserId, "—"), conflicting, c?.DismissNote,
+                needsRecount, StocktakeEndpoints.IsExpired(s.Batch, today));
         })
         .OrderBy(r => r.Status switch
         {
@@ -103,7 +110,8 @@ public static class StocktakePeriodEndpoints
 
         int Count(PeriodRowStatus status) => rows.Count(r => r.Status == status);
         return new Stats(rows, new PeriodSummary(Count(PeriodRowStatus.NotCounted), Count(PeriodRowStatus.Pending), Count(PeriodRowStatus.Matched),
-            Count(PeriodRowStatus.Discrepancy), Count(PeriodRowStatus.Adjusted), Count(PeriodRowStatus.Dismissed)));
+            Count(PeriodRowStatus.Discrepancy), Count(PeriodRowStatus.Adjusted), Count(PeriodRowStatus.Dismissed),
+            rows.Count(r => r.NeedsRecount), misplaced.Count(f => f.ResolvedAtUtc is null)));
     }
 
     private static async Task<IResult> ListAsync(WarehouseDbContext db)
@@ -158,7 +166,9 @@ public static class StocktakePeriodEndpoints
             CategoryNames = scope.Categories.Select(c => categories.GetValueOrDefault(c, "دسته‌ی حذف‌شده")).OrderBy(c => c, StringComparer.Ordinal).ToList(),
             Sessions = await StocktakeEndpoints.ListItemsAsync(db, period.Id),
             Rows = stats.Rows,
-            Summary = stats.Summary
+            Summary = stats.Summary,
+            Misplaced = await StocktakeEndpoints.MisplacedItemsAsync(
+                db, await db.Stocktakes.AsNoTracking().Where(s => s.PeriodId == period.Id).Select(s => s.Id).ToListAsync(), paths)
         };
     }
 
@@ -276,6 +286,9 @@ public static class StocktakePeriodEndpoints
         if (open > 0) return ApiProblems.Conflict($"{open} نوبت این دوره هنوز باز است؛ اول نوبت‌ها را ببندید.");
 
         var stats = await StatsAsync(db, id, await ScopeOfAsync(db, id), await db.StorageLocations.AsNoTracking().ToListAsync());
+        // شمارش دوباره اول گفته می‌شود: اختلاف چنین بچی نه اصلاح می‌شود نه صرف‌نظر.
+        if (stats.Summary.OpenMisplaced > 0) return ApiProblems.Conflict($"{stats.Summary.OpenMisplaced} مورد «جای نادرست» هنوز رفع نشده است؛ جعبه‌ها را برگردانید یا محل بچ را عوض کنید.");
+        if (stats.Summary.Recount > 0) return ApiProblems.Conflict($"{stats.Summary.Recount} بچ پس از پیدا شدن جعبه‌هایش در جای دیگر، نیاز به شمارش دوباره دارد.");
         if (stats.Summary.Discrepancy > 0) return ApiProblems.Conflict($"{stats.Summary.Discrepancy} اختلاف هنوز رفع نشده است؛ هر کدام را اصلاح کنید یا با یادداشت صرف‌نظر کنید.");
 
         db.ExpectVersion(period, request.Version);
@@ -353,6 +366,8 @@ public static class StocktakePeriodEndpoints
         {
             return "برای این بچ شمارش تازه‌تری هست؛ این شمارش دیگر معتبر نیست.";
         }
+
+        if (await StocktakeEndpoints.NeedsRecountAsync(db, stocktake.PeriodId, count)) return StocktakeEndpoints.NeedsRecountMessage;
 
         db.ExpectVersion(count, item.Version);
         count.DismissedAtUtc = DateTime.UtcNow;

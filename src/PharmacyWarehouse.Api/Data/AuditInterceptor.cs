@@ -159,7 +159,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         {
             (StorageLocation, "ParentId") or (Product or Batch, "LocationId") => typeof(StorageLocation),
             (Batch or ProductBarcode or ReceiptLine, "ProductId") => typeof(Product),
-            (StocktakePeriodLocation, "LocationId") => typeof(StorageLocation),
+            (StocktakePeriodLocation, "LocationId") or (MisplacedCount, "FoundAtLocationId") => typeof(StorageLocation),
             (Product or Stocktake or StocktakePeriodCategory, "CategoryId") => typeof(ProductCategory),
             _ => null
         };

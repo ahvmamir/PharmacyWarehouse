@@ -386,6 +386,160 @@ namespace PharmacyWarehouse.Api.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("PharmacyWarehouse.Api.Data.CatalogImport", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("AtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("DuplicateGtin")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Empty")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Inserted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Invalid")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AtUtc");
+
+                    b.ToTable("CatalogImports");
+                });
+
+            modelBuilder.Entity("PharmacyWarehouse.Api.Data.CatalogItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("BrandName")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("ConsumerPrice")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("GenericCode")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("GenericName")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Gtin")
+                        .IsRequired()
+                        .HasMaxLength(14)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Irc")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsTemporaryIrc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("LicenseOwner")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("PackageCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PersianBrandName")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Producer")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProducerCountry")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SearchKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Gtin");
+
+                    b.HasIndex("SearchKey");
+
+                    b.ToTable("CatalogItems");
+                });
+
+            modelBuilder.Entity("PharmacyWarehouse.Api.Data.MisplacedCount", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("AtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Counted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("FoundAtLocationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Resolution")
+                        .HasMaxLength(10)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ResolvedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("ResolvedById")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("StocktakeId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FoundAtLocationId");
+
+                    b.HasIndex("StocktakeId");
+
+                    b.HasIndex("BatchId", "AtUtc");
+
+                    b.ToTable("MisplacedCounts");
+                });
+
             modelBuilder.Entity("PharmacyWarehouse.Api.Data.Product", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1021,6 +1175,27 @@ namespace PharmacyWarehouse.Api.Data.Migrations
                     b.HasOne("PharmacyWarehouse.Api.Data.Product", null)
                         .WithMany()
                         .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PharmacyWarehouse.Api.Data.MisplacedCount", b =>
+                {
+                    b.HasOne("PharmacyWarehouse.Api.Data.Batch", null)
+                        .WithMany()
+                        .HasForeignKey("BatchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PharmacyWarehouse.Api.Data.StorageLocation", null)
+                        .WithMany()
+                        .HasForeignKey("FoundAtLocationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PharmacyWarehouse.Api.Data.Stocktake", null)
+                        .WithMany()
+                        .HasForeignKey("StocktakeId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

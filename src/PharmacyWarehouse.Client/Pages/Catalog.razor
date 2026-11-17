@@ -1,0 +1,132 @@
+@page "/catalog"
+@attribute [Authorize]
+@inject CatalogClient CatalogApi
+@inject ToastService Toasts
+
+@* فهرست مرجع TTAC (بخش ۱۵.۴ spec): فقط فایلی که کاربر دستی دانلود می‌کند. نرم‌افزار به هیچ سامانه‌ای وصل نمی‌شود
+   و در راهنما عمداً پیوندی نیست [تصمیم ۲۰۲۶-۱۱-۱۷]. *@
+
+<PageTitle>فهرست مرجع اقلام | داروبار</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1>فهرست مرجع اقلام</h1>
+        <p>هنگام تعریف قلم تازه، با اسکن GTIN یا تایپ نام، نام و برند و بسته از این فهرست پیشنهاد می‌شود. فهرست خودش قلم یا موجودی نمی‌سازد.</p>
+    </div>
+</div>
+
+<RequirePermission Permission="@Permissions.DataImport">
+    <section class="card-emu">
+        <h2>وضعیت</h2>
+        @if (_status is null)
+        {
+            <div class="loading-line">در حال بارگذاری…</div>
+        }
+        else if (_status.LastImportAtUtc is not { } at)
+        {
+            <p class="form-hint">هنوز فهرستی بارگذاری نشده است.</p>
+        }
+        else
+        {
+            <p>
+                <strong>@Num(_status.Count)</strong> ردیف · آخرین بارگذاری <bdi>@JalaliDate.Format(at)</bdi>
+                توسط <bdi>@(_status.LastImportedBy ?? "—")</bdi> · فایل <bdi>@_status.LastFileName</bdi>
+            </p>
+            @if (_status.StaleAfterDays is { } days && DateTime.UtcNow - at > TimeSpan.FromDays(days))
+            {
+                <div class="form-alert warning mb-0"><AppIcon Name="warning" /> <span>فهرست قدیمی‌تر از @Num(days) روز است؛ نسخه‌ی تازه را دانلود و بارگذاری کنید.</span></div>
+            }
+        }
+    </section>
+
+    <section class="card-emu">
+        <h2>بارگذاری فایل تازه</h2>
+        <p class="form-hint">فایل تازه کل فهرست قبلی را جایگزین می‌کند. اگر فایل خطا داشته باشد، فهرست قبلی دست‌نخورده می‌ماند.</p>
+        <label for="catalog-file" class="form-hint">فایل CSV (حداکثر ۲۰ مگابایت)</label>
+        <InputFile id="catalog-file" class="form-control" accept=".csv" OnChange="OnFileAsync" disabled="@_busy" />
+        @if (_busy)
+        {
+            <div class="loading-line">در حال بارگذاری…</div>
+        }
+        @if (_error is not null)
+        {
+            <div class="form-alert mt-3 mb-0" role="alert"><AppIcon Name="warning" /> <span>@_error</span></div>
+        }
+        @if (_result is { } r)
+        {
+            <div class="form-alert success mt-3 mb-0" role="status">
+                <span>
+                    @Num(r.Inserted) ردیف ثبت شد · @Num(r.Empty) ردیف خالی نادیده گرفته شد · @Num(r.Invalid) ردیف بی‌GTIN یا با GTIN نامعتبر رد شد
+                    @if (r.DuplicateGtin > 0)
+                    {
+                        <span> · @Num(r.DuplicateGtin) ردیف GTIN تکراری داشت (هر دو نگه داشته شد)</span>
+                    }
+                </span>
+            </div>
+        }
+    </section>
+
+    <section class="card-emu">
+        <h2>راهنمای دانلود دستی</h2>
+        <ol>
+            <li>در مرورگر خودتان وارد سامانه‌ی TTAC شوید (نرم‌افزار داروبار به آن وصل نمی‌شود).</li>
+            <li>فهرست داروهای دارای مجوز را پیدا کنید و خروجی CSV بگیرید.</li>
+            <li>فایل را در رایانه ذخیره کنید و همین‌جا با «بارگذاری فایل تازه» انتخابش کنید.</li>
+            <li>فایل باید ستون‌های <bdi dir="ltr">Irc</bdi>، <bdi dir="ltr">GTIN</bdi> و <bdi dir="ltr">BrandName</bdi> را داشته باشد؛ ترتیب ستون‌ها مهم نیست.</li>
+            <li>هر چند ماه یک بار، یا وقتی داروی تازه در فهرست پیدا نشد، فایل را تازه کنید.</li>
+        </ol>
+        <p class="form-hint">این فایل فقط روی همین سرور می‌ماند و وارد مخزن کد یا پشتیبان بیرونی نمی‌شود.</p>
+    </section>
+</RequirePermission>
+
+@code {
+    private const long MaxFileBytes = 20 * 1024 * 1024;
+
+    private CatalogStatus? _status;
+    private CatalogImportResult? _result;
+    private string? _error;
+    private bool _busy;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var result = await CatalogApi.StatusAsync();
+        if (result.IsSuccess) _status = result.Value;
+        else _error = result.ErrorMessage;
+    }
+
+    private async Task OnFileAsync(InputFileChangeEventArgs e)
+    {
+        _error = null;
+        _result = null;
+        if (e.FileCount == 0) return;
+
+        var file = e.File;
+        if (file.Size > MaxFileBytes) { _error = "فایل بیش از ۲۰ مگابایت است."; return; }
+
+        _busy = true;
+        try
+        {
+            using var memory = new MemoryStream();
+            await file.OpenReadStream(MaxFileBytes).CopyToAsync(memory);
+            var result = await CatalogApi.ImportAsync(memory.ToArray(), file.Name);
+            if (result.IsSuccess)
+            {
+                _result = result.Value;
+                Toasts.Show("فهرست مرجع جایگزین شد.");
+                await LoadAsync();
+            }
+            else
+            {
+                _error = result.ErrorMessage;
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string Num(int value) => JalaliDate.ToPersianDigits(value.ToString());
+}

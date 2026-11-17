@@ -1,0 +1,72 @@
+@inject CatalogClient CatalogApi
+
+@* پیشنهاد از فهرست مرجع TTAC هنگام تعریف قلم تازه (بخش ۱۵.۴ spec). اول بارکد، و اگر چیزی نیامد نام.
+   «استفاده» فقط فیلدهای فرم را پر می‌کند؛ ذخیره با کاربر است. خطا یا فهرست خالی بی‌صدا هیچ نشان نمی‌دهد. *@
+
+@if (_items.Count > 0)
+{
+    <div class="form-alert success catalog-suggest">
+        <div>
+            <strong>از فهرست مرجع</strong>
+            <ul class="similar-list">
+                @foreach (var item in _items)
+                {
+                    <li @key="item.Id">
+                        <bdi>@item.Name</bdi>
+                        <small class="cell-sub">@string.Join(" · ", new[] { item.Brand, item.PackDescription, item.GenericName, item.Gtin }.Where(x => !string.IsNullOrEmpty(x)))</small>
+                        @if (item.ConsumerPrice is { } price)
+                        {
+                            <small class="cell-sub">قیمت مصرف‌کننده: @JalaliDate.ToPersianDigits(price.ToString("N0"))</small>
+                        }
+                        @if (item.ExistingProductId is { } existing)
+                        {
+                            <small class="d-block">این GTIN بارکد قلم <a href="products/@existing" target="_blank"><bdi>@item.ExistingProductName</bdi></a> است؛ قلم تکراری نسازید.</small>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn btn-sm btn-quiet" @onclick="() => UseAsync(item)">استفاده</button>
+                        }
+                    </li>
+                }
+            </ul>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? Barcode { get; set; }
+    [Parameter] public string? Name { get; set; }
+    [Parameter] public EventCallback<CatalogSuggestion> OnUse { get; set; }
+
+    private List<CatalogSuggestion> _items = [];
+    private string? _lastBarcode;
+    private string? _lastName;
+    private int _seq;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var barcode = string.IsNullOrWhiteSpace(Barcode) ? null : Barcode.Trim();
+        var name = Name?.Trim() is { Length: >= 3 } n ? n : null;
+        if (barcode == _lastBarcode && name == _lastName) return;
+
+        _lastBarcode = barcode;
+        _lastName = name;
+        var seq = ++_seq;
+        var found = new List<CatalogSuggestion>();
+        if (barcode is not null && await CatalogApi.SearchAsync(barcode) is { IsSuccess: true } byCode) found = byCode.Value!;
+        if (found.Count == 0 && name is not null && await CatalogApi.SearchAsync(name) is { IsSuccess: true } byName) found = byName.Value!.Take(5).ToList();
+
+        // پاسخ کهنه‌ی جست‌وجوی قبلی جای تازه را نمی‌گیرد.
+        if (seq == _seq) _items = found;
+    }
+
+    // پس از استفاده کارت بسته می‌شود؛ نام و بارکد تازه‌ی فرم همان پیشنهاد است و دوباره جست‌وجو نمی‌شود.
+    private async Task UseAsync(CatalogSuggestion item)
+    {
+        _items = [];
+        _lastName = item.Name;
+        _lastBarcode = string.IsNullOrWhiteSpace(Barcode) ? null : item.Gtin;
+        ++_seq;
+        await OnUse.InvokeAsync(item);
+    }
+}

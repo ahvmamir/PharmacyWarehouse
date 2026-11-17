@@ -30,6 +30,13 @@
 
 ## ۷. وضعیت جاری و تحویل
 
+**۲۰۲۶-۱۱-۱۷ (برش ۶.۸ و ۶.۸ب، `main`؛ commit محلی، push نشده):**
+- **۶.۸ فهرست مرجع TTAC (بخش ۱۵.۴ spec):** `CatalogCsvReader` و `CatalogMapping` در Domain (بدون کتابخانه)، جدول‌های `CatalogItem` (غیر `IAudited`، جایگزینی با `ExecuteDelete`؛ استثنا در `CLAUDE.md`) و `CatalogImport`، `POST /api/catalog/import`، `GET /api/catalog/status`، `GET /api/catalog/search`، صفحه‌ی `/catalog` (کارت در تنظیمات، گروه «داده»، راهنمای بی‌پیوند)، کارت `CatalogSuggest` در قلم تازه‌ی ورود جنس و در `ProductForm` (GTIN پس از ذخیره افزوده می‌شود). نمونه‌ی `nfi-drugs` فقط برای قالب خوانده شد و در مخزن نیست.
+- **۶.۸ب انبارگردانی (بخش ۱۵.۳.۱ spec):** «جای نادرست» (`MisplacedCount`، رفع با «برگرداندم» یا «محل بچ همین‌جا»)، «شمارش دوباره» برای شمارش پیش از جای نادرست، بستن دوره با جای نادرست باز ۴۰۹، «بچ تازه» داخل شمارش (موجودی ۰، اصلاح مثبت، تاریخ گذشته مجاز)، علامت منقضی در شمارش، اسکن و آمار دوره. پنجره‌های `Side` به خواست امیر وسط صفحه.
+- **migration:** `StocktakeMisplaced` و `Catalog` (هر دو فقط جدول تازه؛ triggerها دست نخوردند). روی هر دو سیستم: `dotnet ef database update --project src\PharmacyWarehouse.Api`.
+- **تست (Claude، خودکار):** build سبز، ۰ هشدار؛ کل تست‌ها Domain ۳۶۴ و Api ۴۷۸ سبز. تست‌های تازه: `CatalogCsvReaderTests`، `CatalogTests`، `StocktakeMisplacedTests`. **مرورگر انجام نشده.**
+- **ریسک باز:** فایل کامل TTAC دیده نشده (اندازه، یکتایی GTIN، سرعت درج ده‌ها هزار ردیف)؛ کش بچ‌های اسکن پیوسته پس از «بچ تازه» تا تازه‌سازی صفحه کهنه می‌ماند؛ محل پیداشده همیشه ریشه‌ی نوبت است؛ پنجره‌ی وسط روی همه‌ی فرم‌ها با چشم بررسی نشده. نسخه‌ی نصب‌شده در `C:\PharmacyWarehouse\app` روی این سیستم در حال اجرا بود و دست نخورد.
+
 **۲۰۲۶-۱۱-۱۶ (برش ۶.۶ در جریان، بخش ۱۵.۳ spec؛ همان branch؛ commit نشده):**
 - **انجام شد:** الف) منوی تازه (ورود و خروج، کارتابل با شمارنده، اقلام، گروه‌های انبارگردانی/انبار/گزارش)، `/inbox` با دو زبانه، `GET /api/inbox`، زبانه‌ی «سابقه‌ی من» در `/stock-io`. ب) `ModalDialog Side` (کشوی کناری؛ زیر ۷۶۸ پیکسل از پایین)، Esc می‌بندد، `ProductForm` مشترک؛ تعریف/ویرایش قلم و شروع نوبت در کشو. ج) دسته‌ی قلم: `ProductCategory`، `/api/categories`، صفحه‌ی `/categories`، دسته در فرم قلم، ستون و فیلتر اقلام، تاریخچه با نام دسته.
 - **migration:** `ProductCategories` (جدول تازه + ستون و FK روی `Products`؛ SQLite جدول `Products` را بازسازی می‌کند؛ trigger روی آن نیست). روی هر دو سیستم: `dotnet ef database update --project src\PharmacyWarehouse.Api`.

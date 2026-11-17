@@ -218,6 +218,60 @@ public class StocktakeCount : IAudited
     public int Version { get; set; } = 1;
 }
 
+// جعبه‌هایی از یک بچ که در انبارگردانی جای دیگری (FoundAtLocationId) پیدا شد (بخش ۱۵.۳ spec).
+// فقط اطلاع است: در اختلاف حساب نمی‌شود و حرکت نمی‌سازد، چون موجودی هر بچ یک محل دارد و شمارش آن را خراب می‌کرد.
+// رفع: «برگرداندن» (فقط علامت) یا «انتقال» (محل بچ = محل پیداشده). حذف ندارد.
+public class MisplacedCount : IAudited
+{
+    public Guid Id { get; set; }
+    public Guid StocktakeId { get; set; }
+    public Guid BatchId { get; set; }
+    public Guid FoundAtLocationId { get; set; }
+    public int Counted { get; set; }
+    public DateTime AtUtc { get; set; }
+    public Guid UserId { get; set; }
+    public DateTime? ResolvedAtUtc { get; set; }
+    public Guid? ResolvedById { get; set; }
+    public MisplacedResolution? Resolution { get; set; }
+    public int Version { get; set; } = 1;
+}
+
+// ردیف فهرست مرجع TTAC (بخش ۱۵.۴ spec). عمداً IAudited نیست: هر بارگذاری ده‌ها هزار ردیف دارد و داده‌ی بیرونی است، نه رکورد داروخانه.
+// هر بارگذاری کل جدول را با ExecuteDelete جایگزین می‌کند (تنها جدولی که این مجاز است)؛ ردپا همان CatalogImport است.
+public class CatalogItem
+{
+    public Guid Id { get; set; }
+    public string? Irc { get; set; }
+    public string Gtin { get; set; } = "";
+    public string? GenericCode { get; set; }
+    public string? GenericName { get; set; }
+    public string? BrandName { get; set; }
+    public string? PersianBrandName { get; set; }
+    public string? LicenseOwner { get; set; }
+    public string? Producer { get; set; }
+    public string? ProducerCountry { get; set; }
+    public int? PackageCount { get; set; }
+    public long? ConsumerPrice { get; set; }
+    public bool IsTemporaryIrc { get; set; }
+    public string SearchKey { get; set; } = "";
+}
+
+// یک ردیف برای هر بارگذاری فهرست مرجع. حذف ندارد.
+public class CatalogImport : IAudited
+{
+    public const int MaxFileName = 200;
+
+    public Guid Id { get; set; }
+    public string FileName { get; set; } = "";
+    public int Inserted { get; set; }
+    public int Empty { get; set; }
+    public int Invalid { get; set; }
+    public int DuplicateGtin { get; set; }
+    public DateTime AtUtc { get; set; }
+    public Guid UserId { get; set; }
+    public int Version { get; set; } = 1;
+}
+
 // تنظیم کلید/مقدار؛ مقدار متن است و معنایش را DashboardRules تعیین می‌کند. ردیف‌ها با migration ساخته می‌شوند، پس Version همیشه هست.
 public class AppSetting : IAudited
 {

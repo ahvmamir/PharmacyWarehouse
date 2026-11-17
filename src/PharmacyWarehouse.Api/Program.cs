@@ -262,6 +262,7 @@ app.MapUserEndpoints();
 app.MapRoleEndpoints();
 app.MapBackupEndpoints();
 app.MapImportEndpoints();
+app.MapCatalogEndpoints();
 app.MapAlertEndpoints();
 PharmacyWarehouse.Api.Dashboard.DashboardEndpoints.MapDashboardEndpoints(app);
 

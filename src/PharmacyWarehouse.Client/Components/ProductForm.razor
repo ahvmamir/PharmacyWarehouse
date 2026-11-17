@@ -20,6 +20,14 @@ else
 {
     <EditForm Model="_request" OnSubmit="SaveAsync">
         <section class="card-emu">
+            @if (IsNew)
+            {
+                <CatalogSuggest Name="@_request.Name" OnUse="UseCatalog" />
+                @if (_catalogGtin is not null)
+                {
+                    <div class="form-hint mb-2">بارکد <bdi dir="ltr">@_catalogGtin</bdi> از فهرست مرجع پس از ذخیره به قلم افزوده می‌شود.</div>
+                }
+            }
             <div class="form-grid">
                 <div class="form-field">
                     <label for="product-name">نام و دوز <span class="required">*</span></label>
@@ -123,6 +131,30 @@ else
     private SaveProductRequest? _baseline;
 
     private bool IsNew => Id is null;
+
+    // GTIN پیشنهاد فهرست مرجع؛ این فرم فیلد بارکد ندارد، پس پس از ساخت قلم جدا افزوده می‌شود.
+    private string? _catalogGtin;
+
+    private void UseCatalog(CatalogSuggestion item)
+    {
+        _request.Name = item.Name;
+        _request.Brand = item.Brand;
+        _request.PackDescription = item.PackDescription;
+        _catalogGtin = item.Gtin;
+    }
+
+    // شکست افزودن بارکد قلم ساخته‌شده را خراب نمی‌کند؛ فقط هشدار می‌دهد (مثلاً بارکد مال قلم دیگری است).
+    private async Task<ProductDetail> AddCatalogBarcodeAsync(ProductDetail saved)
+    {
+        if (_catalogGtin is not { } gtin) return saved;
+
+        _catalogGtin = null;
+        var result = await ProductsApi.AddBarcodeAsync(saved.Summary.Id, gtin);
+        if (result.IsSuccess) return result.Value!;
+
+        Toasts.Show($"قلم ذخیره شد ولی بارکد {gtin} افزوده نشد: {result.ErrorMessage}", isWarning: true);
+        return saved;
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -233,6 +265,7 @@ else
         }
         else
         {
+            _catalogGtin = null;
             _request.Name = ""; _request.Brand = null; _request.PackDescription = null; _request.MinStock = null;
             _request.RequiresExpiry = true; _request.AllowExpiredWithdrawal = false; _locationId = null; _request.CategoryId = null;
         }
@@ -318,7 +351,8 @@ else
             return null;
         }
 
-        await OnAnySaved.InvokeAsync(result.Value!);
-        return result.Value!;
+        var saved = IsNew ? await AddCatalogBarcodeAsync(result.Value!) : result.Value!;
+        await OnAnySaved.InvokeAsync(saved);
+        return saved;
     }
 }

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using PharmacyWarehouse.Domain.Contracts;
+using PharmacyWarehouse.Domain.Import;
 using PharmacyWarehouse.Domain.Stock;
 using PharmacyWarehouse.Domain.Storage;
 
@@ -27,6 +28,9 @@ public class WarehouseDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>,
     public DbSet<StocktakePeriodCategory> StocktakePeriodCategories => Set<StocktakePeriodCategory>();
     public DbSet<Stocktake> Stocktakes => Set<Stocktake>();
     public DbSet<StocktakeCount> StocktakeCounts => Set<StocktakeCount>();
+    public DbSet<MisplacedCount> MisplacedCounts => Set<MisplacedCount>();
+    public DbSet<CatalogItem> CatalogItems => Set<CatalogItem>();
+    public DbSet<CatalogImport> CatalogImports => Set<CatalogImport>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 
@@ -182,6 +186,41 @@ public class WarehouseDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>,
         });
 
         builder.Entity<StockMovement>().HasOne<StocktakeCount>().WithMany().HasForeignKey(m => m.StocktakeCountId).OnDelete(DeleteBehavior.Restrict);
+
+        builder.Entity<MisplacedCount>(found =>
+        {
+            found.Property(f => f.Version).IsConcurrencyToken();
+            found.Property(f => f.Resolution).HasConversion<string>().HasMaxLength(10);
+            found.HasOne<Stocktake>().WithMany().HasForeignKey(f => f.StocktakeId).OnDelete(DeleteBehavior.Restrict);
+            found.HasOne<Batch>().WithMany().HasForeignKey(f => f.BatchId).OnDelete(DeleteBehavior.Restrict);
+            found.HasOne<StorageLocation>().WithMany().HasForeignKey(f => f.FoundAtLocationId).OnDelete(DeleteBehavior.Restrict);
+            found.HasIndex(f => f.StocktakeId);
+            found.HasIndex(f => new { f.BatchId, f.AtUtc });
+        });
+
+        builder.Entity<CatalogItem>(item =>
+        {
+            item.Property(c => c.Gtin).IsRequired().HasMaxLength(14);
+            item.Property(c => c.Irc).HasMaxLength(CatalogCsvReader.MaxText);
+            item.Property(c => c.GenericCode).HasMaxLength(CatalogCsvReader.MaxText);
+            item.Property(c => c.GenericName).HasMaxLength(CatalogCsvReader.MaxText);
+            item.Property(c => c.BrandName).HasMaxLength(CatalogCsvReader.MaxText);
+            item.Property(c => c.PersianBrandName).HasMaxLength(CatalogCsvReader.MaxText);
+            item.Property(c => c.LicenseOwner).HasMaxLength(CatalogCsvReader.MaxText);
+            item.Property(c => c.Producer).HasMaxLength(CatalogCsvReader.MaxText);
+            item.Property(c => c.ProducerCountry).HasMaxLength(CatalogCsvReader.MaxText);
+            item.Property(c => c.SearchKey).IsRequired();
+            // GTIN در فایل ممکن است تکراری باشد (یکتایی دیده نشده)؛ نمایه غیریکتا است.
+            item.HasIndex(c => c.Gtin);
+            item.HasIndex(c => c.SearchKey);
+        });
+
+        builder.Entity<CatalogImport>(import =>
+        {
+            import.Property(i => i.FileName).IsRequired().HasMaxLength(CatalogImport.MaxFileName);
+            import.Property(i => i.Version).IsConcurrencyToken();
+            import.HasIndex(i => i.AtUtc);
+        });
 
         builder.Entity<AppSetting>(setting =>
         {

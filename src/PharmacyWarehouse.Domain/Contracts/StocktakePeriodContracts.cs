@@ -16,12 +16,14 @@ public sealed record PeriodListItem(
     int Sessions, int OpenSessions, int Discrepancies, int Version);
 
 // یک بچ در دامنه‌ی دوره با آخرین شمارشش در کل دوره. Conflicting: در دو نوبت مختلف دو عدد متفاوت شمرده شده.
+// NeedsRecount: پس از آخرین شمارش، جعبه‌هایی از همین بچ جای نادرست پیدا شد؛ آن شمارش دیگر کامل نیست.
 public sealed record PeriodRowItem(
     Guid BatchId, Guid ProductId, string ProductName, string? Brand, string BatchNumber, string? ExpiryText, string? LocationPath, int OnHand,
     PeriodRowStatus Status, Guid? CountId, int? CountVersion, Guid? StocktakeId, int? Expected, int? Counted, int? Difference,
-    DateTime? CountedAtUtc, string? CountedBy, bool Conflicting, string? DismissNote);
+    DateTime? CountedAtUtc, string? CountedBy, bool Conflicting, string? DismissNote, bool NeedsRecount = false, bool IsExpired = false);
 
-public sealed record PeriodSummary(int NotCounted, int Pending, int Matched, int Discrepancy, int Adjusted, int Dismissed)
+// Recount و OpenMisplaced جزو Total نیستند: برچسب روی ردیف‌ها یا فهرست جدا هستند، نه وضعیت.
+public sealed record PeriodSummary(int NotCounted, int Pending, int Matched, int Discrepancy, int Adjusted, int Dismissed, int Recount = 0, int OpenMisplaced = 0)
 {
     public int Total => NotCounted + Pending + Matched + Discrepancy + Adjusted + Dismissed;
     public int Counted => Total - NotCounted;
@@ -44,6 +46,7 @@ public sealed class PeriodDetail
     public List<StocktakeListItem> Sessions { get; set; } = [];
     public List<PeriodRowItem> Rows { get; set; } = [];
     public PeriodSummary Summary { get; set; } = new(0, 0, 0, 0, 0, 0);
+    public List<MisplacedItem> Misplaced { get; set; } = [];
 }
 
 // رفع گروهی اختلاف: اصلاح (حرکت Adjustment) یا صرف‌نظر با یادداشت. نتیجه جزئی است، مثل تأیید گروهی برداشت.

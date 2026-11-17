@@ -36,6 +36,10 @@
             {
                 @Card("admin/import", "report", "ورود و خروج Excel", "ورود اولیه‌ی اقلام از Excel و گرفتن خروجی.")
             }
+            @if (Session.Can(Permissions.DataImport))
+            {
+                @Card("catalog", "list", "فهرست مرجع اقلام", "بارگذاری فایل CSV دانلودشده از TTAC برای پیشنهاد هنگام تعریف قلم.")
+            }
             @if (Session.Can(Permissions.BackupDownload))
             {
                 @Card("admin/data", "storage", "پشتیبان", "دانلود نسخه‌ی پشتیبان از پایگاه داده.")

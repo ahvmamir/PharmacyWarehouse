@@ -11,3 +11,6 @@ public enum StockMovementKind { Import, Receipt, Withdrawal, Reversal, Adjustmen
 public enum WithdrawalStatus { Pending, Approved, Rejected }
 
 public enum ReceiptStatus { Pending, Approved, Rejected }
+
+// رفع «پیدا شده در جای نادرست»: جعبه‌ها به جای بچ برگردانده شد، یا محل بچ به محل پیداشده تغییر کرد.
+public enum MisplacedResolution { Returned, Relocated }

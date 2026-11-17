@@ -23,7 +23,9 @@ public static class AuditLabels
         ["StocktakePeriodLocation"] = "محل دوره",
         ["StocktakePeriodCategory"] = "دسته‌ی دوره",
         ["Stocktake"] = "انبارگردانی",
-        ["StocktakeCount"] = "شمارش"
+        ["StocktakeCount"] = "شمارش",
+        ["MisplacedCount"] = "پیدا شده در جای نادرست",
+        ["CatalogImport"] = "بارگذاری فهرست مرجع"
     };
 
     private static readonly Dictionary<string, string> Actions = new()
@@ -85,7 +87,16 @@ public static class AuditLabels
         ["Position"] = "شماره‌ی ردیف",
         ["MovementId"] = "حرکت ورود",
         ["Quantity"] = "تعداد",
-        ["Note"] = "یادداشت"
+        ["Note"] = "یادداشت",
+        ["FoundAtLocationId"] = "محل پیداشده",
+        ["ResolvedAtUtc"] = "زمان رفع",
+        ["ResolvedById"] = "رفع‌کننده",
+        ["Resolution"] = "نحوه‌ی رفع",
+        ["FileName"] = "نام فایل",
+        ["Inserted"] = "ردیف درج‌شده",
+        ["Empty"] = "ردیف خالی",
+        ["Invalid"] = "ردیف نامعتبر",
+        ["DuplicateGtin"] = "GTIN تکراری"
     };
 
     public static string Entity(string? entityType) =>
@@ -117,6 +128,8 @@ public static class AuditLabels
                 return ExpiryDate.Gregorian(new ExpiryValue(date, ExpiryPrecision.Day, CalendarKind.Gregorian));
             case "Status" when Enum.TryParse<WithdrawalStatus>(raw, out var status):
                 return status switch { WithdrawalStatus.Pending => "تأییدنشده", WithdrawalStatus.Approved => "تأییدشده", _ => "ردشده" };
+            case "Resolution" when Enum.TryParse<MisplacedResolution>(raw, out var resolution):
+                return resolution == MisplacedResolution.Returned ? "برگردانده شد" : "محل بچ عوض شد";
             case "UnitCost" when long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var cost):
                 return cost.ToString("N0", CultureInfo.InvariantCulture);
             default:

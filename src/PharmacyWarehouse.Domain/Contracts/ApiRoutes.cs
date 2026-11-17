@@ -22,6 +22,10 @@ public static class ApiRoutes
     public const string ImportValidate = "/api/import/validate";
     public const string ImportCommit = "/api/import/commit";
     public const string ImportTemplate = "/api/import/template";
+    public const string Catalog = "/api/catalog";
+    public const string CatalogImport = "/api/catalog/import";
+    public const string CatalogStatus = "/api/catalog/status";
+    public static string CatalogSearch(string q) => $"/api/catalog/search?q={Uri.EscapeDataString(q)}";
     public const string Alerts = "/api/alerts";
     public const string AppInfo = "/api/app-info";
     public const string Dashboard = "/api/dashboard";
@@ -50,6 +54,9 @@ public static class ApiRoutes
     public static string StocktakeCounts(Guid id) => $"{Stocktakes}/{id}/counts";
     public static string StocktakeClose(Guid id) => $"{Stocktakes}/{id}/close";
     public static string StocktakeApprove(Guid id, Guid countId) => $"{Stocktakes}/{id}/counts/{countId}/approve";
+    public static string StocktakeMisplaced(Guid id) => $"{Stocktakes}/{id}/misplaced";
+    public static string StocktakeMisplacedResolve(Guid id, Guid misplacedId) => $"{Stocktakes}/{id}/misplaced/{misplacedId}/resolve";
+    public static string StocktakeNewBatch(Guid id) => $"{Stocktakes}/{id}/new-batch";
     public const string ReceiptsBulk = "/api/receipts/bulk";
     public const string ReceiptsQuick = "/api/receipts/quick";
     public const string ReceiptsPending = "/api/receipts/pending";

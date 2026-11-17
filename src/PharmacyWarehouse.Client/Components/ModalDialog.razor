@@ -1,5 +1,5 @@
 @* پنجره‌ی ساده بدون اسکریپت Bootstrap؛ حالت باز بودن را صفحه‌ی صاحب آن نگه می‌دارد.
-   Side: کشوی کناری برای فرم‌های بلند (تعریف قلم، ورود جنس، شروع نوبت)؛ بدون آن پنجره‌ی وسط برای تأیید و فرم کوتاه.
+   Side: فرم‌های بلند (تعریف قلم، ورود جنس، شروع نوبت)، وسط صفحه و پهن‌تر؛ بدون آن پنجره‌ی کوچک برای تأیید و فرم کوتاه.
    زیر ۷۶۸ پیکسل هر دو از پایین صفحه بالا می‌آیند (بخش ۱۵.۳ spec). *@
 <div class="modal-backdrop-emu" @onclick="OnBackdropClick"></div>
 <div class="modal-emu @(Side ? "modal-emu-side" : "") @(Wide ? "modal-emu-wide" : "") @(ExtraWide ? "modal-emu-xl" : "")" role="dialog" aria-modal="true" aria-label="@Title"

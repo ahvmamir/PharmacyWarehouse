@@ -43,6 +43,7 @@ builder.Services.AddScoped<DashboardClient>();
 builder.Services.AddScoped<StockClient>();
 builder.Services.AddScoped<BackupClient>();
 builder.Services.AddScoped<ImportClient>();
+builder.Services.AddScoped<CatalogClient>();
 builder.Services.AddScoped<UsersClient>();
 builder.Services.AddScoped<AlertsClient>();
 builder.Services.AddScoped<InboxClient>();

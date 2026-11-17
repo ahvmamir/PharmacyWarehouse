@@ -262,6 +262,7 @@ else
         var prefix = "new-" + row.Key.ToString("N");
 
         <h3>مشخصات قلم</h3>
+        <CatalogSuggest Barcode="@row.NewBarcode" Name="@np.Name" OnUse="item => UseCatalogAsync(row, item)" />
         @if (_similar.Count > 0)
         {
             <div class="form-alert warning">
@@ -411,6 +412,17 @@ else
         _openKey = row.Key;
         _focusNewName = true;
         _ = NewProductChangedAsync(row);
+    }
+
+    // فهرست مرجع فقط فیلدها را پر می‌کند؛ بارکدِ اسکن‌شده عوض نمی‌شود و ذخیره با کاربر است.
+    private async Task UseCatalogAsync(ReceiveRow row, CatalogSuggestion item)
+    {
+        var np = row.NewProduct!;
+        np.Name = item.Name;
+        np.Brand = item.Brand;
+        np.PackDescription = item.PackDescription;
+        if (string.IsNullOrWhiteSpace(row.NewBarcode)) row.NewBarcode = item.Gtin;
+        await NewProductChangedAsync(row);
     }
 
     private void SetNewLocation(ReceiveRow row, Guid? id)

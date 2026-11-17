@@ -166,7 +166,10 @@
             _batches[product.Id] = batches = result.Value!;
         }
 
-        if (batches.Count == 0) { await QueueAsync(text, $"«{product.Name}» در دامنه‌ی این نوبت بچی ندارد."); return; }
+        // بچ‌های بیرون از محل نوبت فقط با «جای نادرست» دستی ثبت می‌شوند؛ اسکن آن‌ها را نمی‌شمارد.
+        var elsewhere = batches.Where(b => !b.InScope).ToList();
+        batches = batches.Where(b => b.InScope).ToList();
+        if (batches.Count == 0 && elsewhere.Count == 0) { await QueueAsync(text, $"«{product.Name}» بچی در سامانه ندارد؛ با «بچ تازه» در شمارش دستی ثبت کنید."); return; }
 
         // GS1: از میان برداشت‌های ممکنِ کد، آنکه بچش در این نوبت هست؛ بارکد ساده فقط وقتی قلم یک بچ دارد.
         StocktakeBatchItem? batch = null;
@@ -187,9 +190,23 @@
             if (batch is null)
             {
                 var lot = candidates.FirstOrDefault(c => c.Serial?.Length == 20)?.Batch ?? candidates[0].Batch;
-                await QueueAsync(text, $"بچ {lot ?? "؟"} از «{product.Name}» در این نوبت ثبت نشده (شاید بچ تازه یا جابه‌جا).");
+                var lotKey = TextNormalizer.ScanKey(lot);
+                if (elsewhere.FirstOrDefault(b => lotKey is not null && TextNormalizer.ScanKey(b.BatchNumber) == lotKey) is { } away)
+                {
+                    await QueueAsync(text, $"بچ {away.BatchNumber} از «{product.Name}» جایش {away.LocationPath ?? "بدون محل"} است؛ با «ثبت جای نادرست» در شمارش دستی ثبت کنید.");
+                }
+                else
+                {
+                    await QueueAsync(text, $"بچ {lot ?? "؟"} از «{product.Name}» در سامانه نیست؛ با «بچ تازه» در شمارش دستی ثبت کنید.");
+                }
+
                 return;
             }
+        }
+        else if (batches.Count == 0)
+        {
+            await QueueAsync(text, $"«{product.Name}» جایش در این محل نیست؛ با «ثبت جای نادرست» در شمارش دستی ثبت کنید.");
+            return;
         }
         else if (batches.Count == 1)
         {
@@ -219,7 +236,9 @@
         tally.Count += quantity;
         if (serial is not null) _state.Serials.Add(serial);
         _state.History.Add(new ScanEvent { BatchId = batch.BatchId, Quantity = quantity, Serial = serial });
-        await FeedbackAsync(true, $"{product.Name} — {batch.BatchNumber}: {JalaliDate.ToPersianDigits(tally.Count.ToString())}");
+        // منقضی هم شمرده می‌شود (موجودی واقعی است)، ولی بوق خطا و پیام می‌دهد تا جعبه کنار گذاشته شود.
+        await FeedbackAsync(!batch.IsExpired, $"{product.Name} — {batch.BatchNumber}: {JalaliDate.ToPersianDigits(tally.Count.ToString())}"
+            + (batch.IsExpired ? " — منقضی؛ جدا کنید" : ""));
         await SaveAsync();
     }
 

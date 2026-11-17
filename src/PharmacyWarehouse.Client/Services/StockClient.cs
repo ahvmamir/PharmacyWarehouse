@@ -55,6 +55,16 @@ public sealed class StockClient
     public Task<ApiResult<StocktakeDetail>> CountAsync(Guid id, Guid batchId, int counted) =>
         ApiSender.SendAsync<StocktakeDetail>(ct => _http.PostAsJsonAsync(ApiRoutes.StocktakeCounts(id), new StocktakeCountRequest { BatchId = batchId, Counted = counted }, ct));
 
+    public Task<ApiResult<StocktakeDetail>> MisplacedAsync(Guid id, Guid batchId, int counted) =>
+        ApiSender.SendAsync<StocktakeDetail>(ct => _http.PostAsJsonAsync(ApiRoutes.StocktakeMisplaced(id), new MisplacedCountRequest { BatchId = batchId, Counted = counted }, ct));
+
+    public Task<ApiResult<StocktakeDetail>> ResolveMisplacedAsync(Guid id, Guid misplacedId, bool relocate, int version) =>
+        ApiSender.SendAsync<StocktakeDetail>(ct => _http.PostAsJsonAsync(ApiRoutes.StocktakeMisplacedResolve(id, misplacedId),
+            new ResolveMisplacedRequest { Relocate = relocate, Version = version }, ct));
+
+    public Task<ApiResult<StocktakeDetail>> NewBatchCountAsync(Guid id, NewBatchCountRequest request) =>
+        ApiSender.SendAsync<StocktakeDetail>(ct => _http.PostAsJsonAsync(ApiRoutes.StocktakeNewBatch(id), request, ct));
+
     public Task<ApiResult<StocktakeDetail>> CloseStocktakeAsync(Guid id, int version) =>
         ApiSender.SendAsync<StocktakeDetail>(ct => _http.PostAsJsonAsync(ApiRoutes.StocktakeClose(id), new VersionRequest { Version = version }, ct));
 

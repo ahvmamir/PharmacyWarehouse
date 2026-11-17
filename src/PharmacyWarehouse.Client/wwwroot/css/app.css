@@ -1077,13 +1077,11 @@ html:has(.app-shell), body:has(.app-shell) { overflow: hidden; }
 
 .modal-emu-body { padding: 16px 18px; overflow-y: auto; }
 
-/* کشوی کناری: از لبه‌ی چپ (منو سمت راست است)، تمام‌قد؛ فهرست پشت آن دیده می‌ماند. */
+/* فرم بلند (Side): به خواست امیر وسط صفحه، نه چسبیده به لبه؛ فقط پهن‌تر و بلندتر از پنجره‌ی تأیید. */
 .modal-emu.modal-emu-side {
-    top: 0; bottom: 0; left: 0; right: auto;
-    transform: none;
-    width: min(560px, calc(100vw - 32px));
-    max-height: none;
-    border-radius: 0 12px 12px 0;
+    top: 4vh;
+    width: min(620px, calc(100vw - 32px));
+    max-height: 92vh;
 }
 .modal-emu-side.modal-emu-wide { width: min(780px, calc(100vw - 32px)); }
 .modal-emu-side .modal-emu-body { flex: 1; }
@@ -1851,6 +1849,7 @@ a.bar-row:hover { background: var(--hover); color: inherit; }
 /* انتخاب گروهی در فهرست اقلام */
 .data-table .select-col { width: 36px; text-align: center; }
 .data-table tr.row-selected td { background: var(--accent-tint); }
+.data-table tr.row-muted td { color: var(--muted); background: var(--surface-sunk); }
 .bulk-bar {
     position: sticky; top: 8px; z-index: 5;
     display: flex; flex-wrap: wrap; align-items: center; gap: 10px;

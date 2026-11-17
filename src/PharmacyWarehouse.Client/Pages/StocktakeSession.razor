@@ -1,5 +1,6 @@
 @page "/stocktakes/{Id:guid}"
 @attribute [Authorize]
+@using PharmacyWarehouse.Domain.Stock
 @inject StockClient StockApi
 @inject ToastService Toasts
 @inject DraftStore Drafts
@@ -66,7 +67,7 @@ else
                 <h3 class="mt-3">@picked.Name <span class="cell-sub">@picked.Brand</span></h3>
                 @if (_entries.Count == 0)
                 {
-                    <p class="form-hint">این قلم در محل این نوبت بچی ندارد. بچ بدون محل قابل انبارگردانی نیست؛ اول محلش را مشخص کنید.</p>
+                    <p class="form-hint">این قلم بچی در سامانه ندارد. اگر جعبه‌ای از آن این‌جاست، «بچ تازه» را ثبت کنید.</p>
                 }
                 else
                 {
@@ -76,25 +77,76 @@ else
                             <tbody>
                                 @foreach (var entry in _entries)
                                 {
-                                    <tr @key="entry.Batch.BatchId">
+                                    <tr @key="entry.Batch.BatchId" class="@(entry.Batch.InScope ? null : "row-muted")">
                                         <td><bdi>@entry.Batch.BatchNumber</bdi></td>
-                                        <td><bdi>@(entry.Batch.ExpiryText ?? "—")</bdi></td>
-                                        <td><bdi>@(entry.Batch.LocationPath ?? "—")</bdi></td>
+                                        <td>
+                                            <bdi>@(entry.Batch.ExpiryText ?? "—")</bdi>
+                                            @if (entry.Batch.IsExpired)
+                                            {
+                                                <div><span class="status-badge status-expired">منقضی؛ جدا کنید</span></div>
+                                            }
+                                        </td>
+                                        <td>
+                                            <bdi>@(entry.Batch.LocationPath ?? "بدون محل")</bdi>
+                                            @if (!entry.Batch.InScope)
+                                            {
+                                                <div><span class="status-badge status-pending">جایش این‌جا نیست</span></div>
+                                            }
+                                        </td>
                                         <td>
                                             <input class="form-control" type="number" min="0" dir="ltr" style="max-width:7rem;" aria-label="تعداد شمرده‌شده‌ی بچ @entry.Batch.BatchNumber"
                                                    @bind="entry.Counted" @bind:event="oninput" @onkeydown="e => OnEntryKeyAsync(e, entry)" />
-                                            @if (LastCounted(entry.Batch.BatchId) is { } last)
+                                            @if (entry.Batch.InScope && LastCounted(entry.Batch.BatchId) is { } last)
                                             {
                                                 <div class="form-hint">شمارش قبلی: @Num(last)؛ ثبت دوباره جایگزین آن می‌شود.</div>
                                             }
                                         </td>
                                         <td>
-                                            <button type="button" class="btn btn-sm btn-primary" disabled="@(_busy || entry.Counted is null)" @onclick="() => SubmitCountAsync(entry)">ثبت</button>
+                                            @if (entry.Batch.InScope)
+                                            {
+                                                <button type="button" class="btn btn-sm btn-primary" disabled="@(_busy || entry.Counted is null)" @onclick="() => SubmitCountAsync(entry)">ثبت</button>
+                                            }
+                                            else
+                                            {
+                                                <button type="button" class="btn btn-sm btn-quiet" disabled="@(_busy || entry.Counted is not > 0)" @onclick="() => SubmitMisplacedAsync(entry)">ثبت جای نادرست</button>
+                                            }
                                         </td>
                                     </tr>
                                 }
                             </tbody>
                         </table>
+                    </div>
+                    @if (_entries.Any(e => !e.Batch.InScope))
+                    {
+                        <p class="form-hint">بچ‌های کم‌رنگ جای دیگری تعریف شده‌اند. «جای نادرست» در اختلاف حساب نمی‌شود؛ بعداً جعبه‌ها را برگردانید یا محل بچ را به این‌جا عوض کنید.</p>
+                    }
+                }
+
+                @if (_newBatch is null)
+                {
+                    <button type="button" class="btn btn-sm btn-quiet mt-2" @onclick="OpenNewBatch"><AppIcon Name="plus" Size="14" /> بچ تازه (در سامانه نیست)</button>
+                }
+                else
+                {
+                    <div class="card-emu mt-3">
+                        <h3>بچ تازه‌ی @picked.Name</h3>
+                        <p class="form-hint">برای جعبه‌ای که بچش در سامانه نیست (مثلاً بچ قدیمی). با موجودی ۰ ساخته می‌شود و پس از بستن نوبت، شمارش آن اصلاح مثبت می‌گیرد. تاریخ گذشته پذیرفته می‌شود.</p>
+                        <div class="form-grid">
+                            <div class="form-field">
+                                <label for="nb-number">بچ نامبر <span class="required">*</span></label>
+                                <input id="nb-number" class="form-control" dir="ltr" autocomplete="off" @bind="_newBatch.BatchNumber" />
+                            </div>
+                            <div class="form-field">
+                                <label for="nb-counted">تعداد شمرده‌شده <span class="required">*</span></label>
+                                <input id="nb-counted" class="form-control" type="number" min="1" dir="ltr" @bind="_newBatch.Counted" />
+                            </div>
+                        </div>
+                        @* ضرورت تاریخ را سرور از تعریف قلم می‌سنجد؛ فهرست قلم این فیلد را ندارد. *@
+                        <ExpiryFields IdPrefix="nb" @bind-Value="_newBatch.Expiry" />
+                        <div class="modal-actions">
+                            <button type="button" class="btn btn-primary" disabled="@(_busy || _newBatch.Counted <= 0)" @onclick="SubmitNewBatchAsync">ثبت بچ و شمارش</button>
+                            <button type="button" class="btn btn-quiet" @onclick="() => _newBatch = null">انصراف</button>
+                        </div>
                     </div>
                 }
             }
@@ -132,6 +184,8 @@ else
                 </div>
             }
         </section>
+
+        @MisplacedSection
 
         <section class="card-emu">
             <h2>جاافتاده‌ها (@Num(_detail.Missing.Count))</h2>
@@ -220,6 +274,8 @@ else
             }
         </section>
 
+        @MisplacedSection
+
         @if (_detail.Missing.Count > 0)
         {
             <section class="card-emu">
@@ -269,6 +325,14 @@ else
 
     [Parameter] public Guid Id { get; set; }
 
+    private sealed class NewBatchEntry
+    {
+        public string BatchNumber { get; set; } = "";
+        public string? Expiry { get; set; }
+        public int Counted { get; set; } = 1;
+    }
+
+    private NewBatchEntry? _newBatch;
     private StocktakeDetail? _detail;
     private ProductCombobox? _combo;
     private ProductListItem? _picked;
@@ -348,6 +412,7 @@ else
     private async Task PickProductAsync(ProductListItem product)
     {
         _countError = null;
+        _newBatch = null;
         _picked = product;
         _entries = [];
         var result = await StockApi.StocktakeBatchesAsync(Id, product.Id);
@@ -386,6 +451,124 @@ else
             _countError = result.ErrorMessage;
         }
     }
+
+    private async Task SubmitMisplacedAsync(CountEntry entry)
+    {
+        if (entry.Counted is not > 0 || _busy) return;
+
+        _busy = true;
+        _countError = null;
+        var result = await StockApi.MisplacedAsync(Id, entry.Batch.BatchId, entry.Counted.Value);
+        _busy = false;
+
+        if (result.IsSuccess)
+        {
+            _detail = result.Value;
+            entry.Counted = null;
+            Toasts.Show($"جای نادرست بچ {entry.Batch.BatchNumber} ثبت شد؛ جای آن: {entry.Batch.LocationPath ?? "بدون محل"}.");
+        }
+        else
+        {
+            _countError = result.ErrorMessage;
+        }
+    }
+
+    private void OpenNewBatch() => _newBatch = new NewBatchEntry();
+
+    private async Task SubmitNewBatchAsync()
+    {
+        if (_newBatch is null || _picked is null || _busy) return;
+
+        _busy = true;
+        _countError = null;
+        var result = await StockApi.NewBatchCountAsync(Id, new NewBatchCountRequest
+        {
+            ProductId = _picked.Id, BatchNumber = _newBatch.BatchNumber, Expiry = _newBatch.Expiry, Counted = _newBatch.Counted
+        });
+        _busy = false;
+
+        if (result.IsSuccess)
+        {
+            _detail = result.Value;
+            Toasts.Show($"بچ تازه‌ی {_newBatch.BatchNumber} با شمارش {Num(_newBatch.Counted)} ثبت شد.");
+            await PickProductAsync(_picked);
+        }
+        else
+        {
+            _countError = result.ErrorMessage;
+        }
+    }
+
+    private async Task ResolveMisplacedAsync(MisplacedItem item, bool relocate)
+    {
+        if (_busy) return;
+
+        _busy = true;
+        var result = await StockApi.ResolveMisplacedAsync(Id, item.Id, relocate, item.Version);
+        _busy = false;
+
+        if (result.IsSuccess)
+        {
+            _detail = result.Value;
+            Toasts.Show(relocate ? "محل بچ به محل پیداشده عوض شد." : "برگرداندن جعبه‌ها ثبت شد.");
+        }
+        else
+        {
+            Toasts.Show(result.ErrorMessage, isWarning: true);
+            await LoadAsync();
+        }
+    }
+
+    // «جای نادرست» هم در نوبت باز و هم بسته؛ رفع تا وقتی دوره باز است.
+    private RenderFragment MisplacedSection => __builder =>
+    {
+        if (_detail is null || _detail.Misplaced.Count == 0) return;
+
+        <section class="card-emu">
+            <h2>جای نادرست (@Num(_detail.Misplaced.Count))</h2>
+            <p class="form-hint">جعبه‌هایی که این‌جا پیدا شد ولی جایشان جای دیگری است. در اختلاف حساب نمی‌شوند. «برگرداندم» یعنی جعبه‌ها به جای بچ برگشت؛ «محل بچ همین‌جا» فقط وقتی درست است که همه‌ی جعبه‌های این بچ این‌جا باشند.</p>
+            <div class="table-card">
+                <table class="data-table">
+                    <thead><tr><th>قلم</th><th>بچ</th><th>جای تعریف‌شده</th><th>پیدا شده در</th><th>تعداد</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var item in _detail.Misplaced)
+                        {
+                            <tr @key="item.Id">
+                                <td>@item.ProductName <span class="cell-sub">@item.Brand</span></td>
+                                <td>
+                                    <bdi>@item.BatchNumber</bdi>
+                                    @if (item.IsExpired)
+                                    {
+                                        <div><span class="status-badge status-expired">منقضی</span></div>
+                                    }
+                                </td>
+                                <td><bdi>@(item.HomePath ?? "بدون محل")</bdi></td>
+                                <td><bdi>@item.FoundAtPath</bdi></td>
+                                <td>
+                                    @Num(item.Counted)
+                                    @if (item.OnHand == 0)
+                                    {
+                                        <div class="form-hint">موجودی سامانه ۰ است؛ برای ثبت این جعبه‌ها محل بچ را این‌جا کنید و دوباره بشمارید.</div>
+                                    }
+                                </td>
+                                <td>
+                                    @if (item.Resolution is { } resolution)
+                                    {
+                                        <span class="cell-sub">@(resolution == MisplacedResolution.Returned ? "برگردانده شد" : "محل بچ عوض شد")</span>
+                                    }
+                                    else if (_detail.PeriodOpen)
+                                    {
+                                        <button type="button" class="btn btn-sm btn-primary" disabled="@_busy" @onclick="() => ResolveMisplacedAsync(item, false)">برگرداندم</button>
+                                        <button type="button" class="btn btn-sm btn-quiet" disabled="@_busy" @onclick="() => ResolveMisplacedAsync(item, true)">محل بچ همین‌جا</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    };
 
     private async Task CloseSessionAsync()
     {
