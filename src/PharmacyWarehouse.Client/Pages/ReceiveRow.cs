@@ -39,7 +39,7 @@ public sealed class ReceiveRow
 
     // فقط برای نمایش «ناقص»؛ مرجع اعتبار، سرور است.
     [JsonIgnore]
-    public bool IsComplete => Detail is not null && Quantity >= 1 && (BatchId is not null
+    public bool IsComplete => Detail is not null && Quantity >= 1 && (NewProduct is null || !string.IsNullOrWhiteSpace(NewProduct.Name)) && (BatchId is not null
         || (!string.IsNullOrWhiteSpace(BatchNumber) && (!Detail.RequiresExpiry || !string.IsNullOrWhiteSpace(Expiry))));
 
     public void ClearErrors()

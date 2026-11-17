@@ -48,15 +48,9 @@ else
     @if (CanReceive)
     {
         <div style="@(Active == "in" ? null : "display:none")">
-            @* انباردار (stock.receive) ورود کامل با تعریف قلم تازه می‌بیند؛ پرسنل ورود ساده که انباردار بعداً تکمیل می‌کند. *@
-            @if (Session.Can(Permissions.StockReceive))
-            {
-                <Receive Embedded="true" />
-            }
-            else
-            {
-                <QuickReceiptForm DraftKey="quick-receipt" />
-            }
+            @* برای همه، حتی انباردار، فقط ورود ساده که انباردار بعداً تأیید و تکمیل می‌کند؛ ورود کامل در زبانه‌ی «ورود جنس» اقلام است
+               [تصمیم امیر ۲۰۲۶-۱۱-۱۷، بخش ۱۵.۳ spec]. *@
+            <QuickReceiptForm DraftKey="quick-receipt" />
         </div>
     }
     @if (CanWithdraw && Active == "mine")
@@ -71,7 +65,7 @@ else
     private string? _selected;
 
     private bool CanWithdraw => Session.Can(Permissions.WithdrawalCreate);
-    private bool CanReceive => Session.Can(Permissions.ReceiptSubmit) || Session.Can(Permissions.StockReceive);
+    private bool CanReceive => Session.Can(Permissions.ReceiptSubmit);
     private int TabCount => (CanWithdraw ? 2 : 0) + (CanReceive ? 1 : 0);
 
     // زبانه‌ی انتخاب‌شده، سپس query؛ زبانه‌ی غیرمجاز به اولین زبانه‌ی مجاز برمی‌گردد.

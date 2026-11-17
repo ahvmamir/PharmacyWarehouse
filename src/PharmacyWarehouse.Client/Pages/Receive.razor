@@ -8,9 +8,12 @@
 @inject ApiAuthenticationStateProvider Session
 @inject DraftStore Drafts
 @inject CategoriesClient CategoriesApi
+@inject CatalogClient CatalogApi
+@inject NavigationManager Navigation
 
-@* ورود جنس (بخش ۱۵.۳ spec): فهرست در صفحه، هر ردیف در کشوی کناری. قلم پیدانشده یا بارکد ناشناخته همین‌جا
-   «قلم تازه» می‌شود و سرور قلم، بارکد، بچ و حرکت را در یک تراکنش می‌سازد. در /stock-io با Embedded رندر می‌شود. *@
+@* ورود جنس کامل (بخش ۱۵.۳ spec): زبانه‌ی «ورود جنس» در اقلام (Embedded)؛ /receive فقط به آن‌جا می‌رود.
+   اول همه‌ی جعبه‌ها پشت‌سرهم اسکن می‌شوند و هیچ پنجره‌ای روند را قطع نمی‌کند؛ بارکد ناشناخته ردیف «قلم تازه» می‌شود.
+   بعد «تکمیل ردیف‌ها» ردیف‌های ناقص را یکی‌یکی باز می‌کند. سرور قلم، بارکد، بچ و حرکت را در یک تراکنش می‌سازد. *@
 
 @if (!Embedded)
 {
@@ -31,12 +34,13 @@
 <section class="card-emu">
     <div class="receive-search">
         <label for="receive-search" class="form-hint">قلم</label>
-        <ProductCombobox @ref="_search" InputId="receive-search" OnPick="OnPickAsync" AutoFocus="@(!Embedded)" OnEnterNoMatch="OnNoMatchAsync">
+        <ProductCombobox @ref="_search" InputId="receive-search" OnPick="OnPickAsync" AutoFocus="true" OnEnterNoMatch="OnNoMatchAsync"
+                         Placeholder="جعبه‌ها را پشت‌سرهم اسکن کنید یا نام قلم را بنویسید">
             <EmptyContent>
                 <span>قلمی پیدا نشد.</span>
                 @if (CanDefine)
                 {
-                    <button type="button" class="btn btn-sm btn-quiet ms-2" @onclick="() => StartNewProduct(_search?.Text)"><AppIcon Name="plus" Size="15" /> تعریف قلم تازه</button>
+                    <button type="button" class="btn btn-sm btn-quiet ms-2" @onclick="() => { StartNewProduct(_search?.Text); }"><AppIcon Name="plus" Size="15" /> تعریف قلم تازه</button>
                 }
             </EmptyContent>
         </ProductCombobox>
@@ -48,7 +52,8 @@
     @if (CanDefine)
     {
         <div class="form-hint mt-2">
-            قلم در فهرست نیست؟ <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="() => StartNewProduct(null)">همین‌جا تعریفش کنید</button>؛ بارکد ناشناخته با Enter هم همین کار را می‌کند.
+            بارکد ناشناخته بدون باز شدن پنجره ردیف «قلم تازه» می‌شود (نام از فهرست مرجع، اگر باشد). قلم بی‌بارکد؟
+            <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="() => { StartNewProduct(null); }">همین‌جا تعریفش کنید</button>.
         </div>
     }
 </section>
@@ -108,7 +113,13 @@ else
         }
 
         <div class="mt-3 d-flex gap-2 flex-wrap">
-            <button type="button" class="btn btn-primary" disabled="@(_busy || _rows.Count == 0)" @onclick="SubmitAsync">@(_busy ? "در حال ثبت…" : "ثبت نهایی")</button>
+            @if (NextIncomplete(null) is not null)
+            {
+                <button type="button" class="btn btn-primary" @onclick="() => OpenNextIncomplete(null)">
+                    <AppIcon Name="edit" Size="15" /> تکمیل ردیف‌ها (@JalaliDate.ToPersianDigits(_rows.Count(NeedsWork).ToString()) ناقص)
+                </button>
+            }
+            <button type="button" class="btn @(NextIncomplete(null) is null ? "btn-primary" : "btn-quiet")" disabled="@(_busy || _rows.Count == 0)" @onclick="SubmitAsync">@(_busy ? "در حال ثبت…" : "ثبت نهایی")</button>
         </div>
         <DraftBar State="_draft" OnClear="ClearDraftAsync" />
         <div class="form-hint mt-2">«ثبت نهایی» همه‌ی ردیف‌ها را با هم ثبت می‌کند؛ اگر یک ردیف خطا داشته باشد هیچ‌کدام ثبت نمی‌شود. این فهرست تا پیش از ثبت در همین مرورگر می‌ماند.</div>
@@ -124,7 +135,11 @@ else
         }
         @RowForm(openRow, openProduct)
         <div class="modal-actions">
-            <button type="button" class="btn btn-primary" @onclick="CloseRow">تمام؛ برگشت به فهرست</button>
+            @if (NextIncomplete(openRow) is not null)
+            {
+                <button type="button" class="btn btn-primary" @onclick="() => OpenNextIncomplete(openRow)">ردیف ناقص بعدی</button>
+            }
+            <button type="button" class="btn @(NextIncomplete(openRow) is null ? "btn-primary" : "btn-quiet")" @onclick="CloseRow">تمام؛ برگشت به فهرست</button>
             <button type="button" class="btn btn-danger-quiet" disabled="@_busy" @onclick="() => Remove(openRow)"><AppIcon Name="trash" Size="15" /> حذف ردیف</button>
         </div>
     </ModalDialog>
@@ -360,31 +375,105 @@ else
     private static bool LooksLikeBarcode(string text) =>
         text.Length >= 6 && !text.Contains(' ') && TextNormalizer.ToAsciiDigits(text).All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '.');
 
-    private Task OnNoMatchAsync(string text)
+    private async Task OnNoMatchAsync(string text)
     {
         var scan = Gs1Scan.Parse(text);
-        if (IsDuplicateBox(scan)) return Task.CompletedTask;
+        if (IsDuplicateBox(scan)) return;
 
-        // جعبه‌ی بعدیِ همان قلم تازه (همان GTIN و بچ): تعداد همان ردیف زیاد می‌شود، قلم تازه‌ی دوم ساخته نمی‌شود.
-        if (scan is not null && _rows.LastOrDefault(r => r.IsNewProduct && r.NewBarcode == scan.Gtin
-                && RowBatchKey(r) == TextNormalizer.ScanKey(scan.Batch)) is { } same)
+        // جعبه‌ی بعدیِ همان قلم تازه (همان GTIN و بچ، یا همان بارکد ساده): تعداد همان ردیف زیاد می‌شود، قلم تازه‌ی دوم ساخته نمی‌شود.
+        var code = scan?.Gtin ?? text.Trim();
+        if (_rows.LastOrDefault(r => r.IsNewProduct && r.NewBarcode == code
+                && (scan is null || RowBatchKey(r) == TextNormalizer.ScanKey(scan.Batch))) is { } same)
         {
             Count(same, scan);
             Toasts.Show($"قلم تازه: تعداد {JalaliDate.ToPersianDigits(same.Quantity.ToString())} جعبه شد.");
-            return Task.CompletedTask;
+            return;
         }
 
         if (!CanDefine)
         {
-            _scanError = $"«{scan?.Gtin ?? text}» پیدا نشد. با نام جست‌وجو کنید یا به انباردار بگویید.";
-            return Task.CompletedTask;
+            _scanError = $"«{code}» پیدا نشد. با نام جست‌وجو کنید یا به انباردار بگویید.";
+            return;
         }
 
-        StartNewProduct(text);
-        return Task.CompletedTask;
+        // متن نام‌مانند (نه بارکد) همان تعریف دستی با پنجره است؛ بارکد بی‌پنجره به فهرست می‌رود تا اسکن قطع نشود.
+        if (scan is null && !LooksLikeBarcode(text.Trim()))
+        {
+            StartNewProduct(text);
+            return;
+        }
+
+        var row = StartNewProduct(text, open: false);
+        await FillFromCatalogAsync(row);
+        Toasts.Show(string.IsNullOrWhiteSpace(row.ProductName)
+            ? "بارکد تازه به فهرست اضافه شد؛ در پایان «تکمیل ردیف‌ها» را بزنید."
+            : $"قلم تازه از فهرست مرجع: {row.ProductName}؛ در پایان تکمیلش کنید.");
     }
 
-    private void StartNewProduct(string? text)
+    // فقط وقتی فهرست مرجع دقیقاً یک قلمِ بی‌صاحب برای این GTIN دارد، نام و برند و بسته پر می‌شود؛ کاربر هنگام تکمیل می‌بیند و عوض می‌کند.
+    private async Task FillFromCatalogAsync(ReceiveRow row)
+    {
+        if (row.NewBarcode is not { } code || row.NewProduct is not { } np || !string.IsNullOrWhiteSpace(np.Name)) return;
+
+        var result = await CatalogApi.SearchAsync(code);
+        if (result.Value is not [{ ExistingProductId: null } item]) return;
+
+        np.Name = item.Name;
+        np.Brand = item.Brand;
+        np.PackDescription = item.PackDescription;
+        row.ProductName = item.Name;
+        row.Detail = NewDetail(row);
+    }
+
+    // ردیف ناقص: هنوز تکمیل نشده یا خطا دارد. «بعدی» بعد از ردیف جاری می‌گردد و از اول فهرست ادامه می‌دهد.
+    private static bool NeedsWork(ReceiveRow row) => row.HasError || !row.IsComplete;
+
+    private ReceiveRow? NextIncomplete(ReceiveRow? current)
+    {
+        var start = current is null ? 0 : _rows.IndexOf(current) + 1;
+        return _rows.Skip(start).Concat(_rows.Take(start)).FirstOrDefault(r => r != current && NeedsWork(r));
+    }
+
+    private void OpenNextIncomplete(ReceiveRow? current)
+    {
+        if (NextIncomplete(current) is { } next) Open(next);
+    }
+
+    // ---------- برای زبانه‌ی «ورود جنس» اقلام ----------
+
+    [Parameter] public EventCallback<int> OnCountChanged { get; set; }
+    private int _reportedCount = -1;
+
+    public ValueTask FocusAsync() => _search?.FocusAsync() ?? ValueTask.CompletedTask;
+
+    // «+ ورود» روی ردیف اقلام: ردیف تازه بی‌پنجره؛ اگر قلم از قبل در فهرست است فقط اعلام می‌شود (تعداد با اسکن زیاد می‌شود).
+    public async Task AddProductAsync(Guid productId)
+    {
+        if (_rows.Any(r => r.ProductId == productId && !r.IsNewProduct))
+        {
+            Toasts.Show("این قلم از قبل در فهرست ورود است.");
+            return;
+        }
+
+        var result = await ProductsApi.GetAsync(productId);
+        if (!result.IsSuccess)
+        {
+            _scanError = result.Outcome == ApiOutcome.NotFound ? "این قلم پیدا نشد." : result.ErrorMessage;
+            return;
+        }
+
+        AddRow(result.Value!);
+        StateHasChanged();
+    }
+
+    // «تعریف و ورود» از بارکد ناشناخته‌ی اقلام: همان مسیر اسکن ناشناخته.
+    public async Task AddCodeAsync(string code)
+    {
+        await OnNoMatchAsync(code);
+        StateHasChanged();
+    }
+
+    private ReceiveRow StartNewProduct(string? text, bool open = true)
     {
         _scanError = null;
         text = text?.Trim() ?? "";
@@ -409,9 +498,12 @@ else
         if (scan is not null) ApplyScan(row, scan);
         _rows.Add(row);
         _similar = [];
+        if (!open) return row;
+
         _openKey = row.Key;
         _focusNewName = true;
         _ = NewProductChangedAsync(row);
+        return row;
     }
 
     // فهرست مرجع فقط فیلدها را پر می‌کند؛ بارکدِ اسکن‌شده عوض نمی‌شود و ذخیره با کاربر است.
@@ -484,11 +576,15 @@ else
         if (row.IsNewProduct) _ = NewProductChangedAsync(row);
     }
 
+    // بعد از بستن، فوکوس به فیلد اسکن برمی‌گردد تا بارکدخوان بی‌کلیک ادامه دهد.
     private void CloseRow()
     {
         _openKey = null;
         _similar = [];
+        _focusSearch = true;
     }
+
+    private bool _focusSearch;
 
     private ProductCombobox? _search;
     private readonly List<ReceiveRow> _rows = [];
@@ -524,6 +620,13 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        // /receive قدیمی: ورود کامل حالا زبانه‌ی «ورود جنس» اقلام است.
+        if (!Embedded)
+        {
+            Navigation.NavigateTo("products?tab=receive" + (ProductId is { } pid ? $"&productId={pid}" : ""), replace: true);
+            return;
+        }
+
         var locations = await LocationsApi.ListAsync();
         if (locations.IsSuccess) _locations = locations.Value!.Where(l => l.IsActive && l.IsUsable).ToList();
         _categories = (await CategoriesApi.ListAsync()).Value ?? [];
@@ -532,7 +635,7 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
-        if (ProductId is not { } id || id == _loadedProductId) return;
+        if (!Embedded || ProductId is not { } id || id == _loadedProductId) return;
 
         // آمدن از جزئیات قلم: ردیف موجود باز می‌شود و تعدادش زیاد نمی‌شود.
         _loadedProductId = id;
@@ -560,6 +663,18 @@ else
         {
             _focusNewName = false;
             try { await _newNameInput.FocusAsync(); } catch (InvalidOperationException) { }
+        }
+
+        if (_focusSearch && OpenRow is null)
+        {
+            _focusSearch = false;
+            await FocusAsync();
+        }
+
+        if (_rows.Count != _reportedCount)
+        {
+            _reportedCount = _rows.Count;
+            await OnCountChanged.InvokeAsync(_rows.Count);
         }
 
         if (!_draftLoaded || _draft is null) return;

@@ -103,7 +103,8 @@
     private string? _organization;
     private readonly HashSet<string> _closedGroups = [];
 
-    private bool CanStockIo => Session.Can(Permissions.WithdrawalCreate) || Session.Can(Permissions.ReceiptSubmit) || Session.Can(Permissions.StockReceive);
+    // ورود کامل انباردار در زبانه‌ی «ورود جنس» اقلام است؛ «ورود و خروج» فقط ثبت ساده است.
+    private bool CanStockIo => Session.Can(Permissions.WithdrawalCreate) || Session.Can(Permissions.ReceiptSubmit);
 
     // در حالت جمع‌شده همه‌ی آیتم‌ها دیده می‌شوند (عنوان گروه نیست که بازش کنند).
     private bool IsOpen(string group) => _collapsed || !_closedGroups.Contains(group);

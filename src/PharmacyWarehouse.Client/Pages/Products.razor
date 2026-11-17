@@ -23,6 +23,22 @@
     }
 </div>
 
+@* ورود جنس کامل زبانه‌ی همین صفحه است (بخش ۱۵.۳ spec، تصمیم ۲۰۲۶-۱۱-۱۷): فهرست و ورود کنار هم، و هر دو همیشه رندر می‌شوند
+   تا فهرست ورود نیمه‌کاره با جابه‌جایی زبانه نماند. *@
+@if (CanReceive)
+{
+    <div class="tab-bar" role="tablist">
+        <button type="button" role="tab" aria-selected="@(!ReceiveActive ? "true" : "false")" class="tab @(!ReceiveActive ? "active" : "")" @onclick="() => SelectTabAsync(false)">فهرست</button>
+        <button type="button" role="tab" aria-selected="@(ReceiveActive ? "true" : "false")" class="tab @(ReceiveActive ? "active" : "")" @onclick="() => SelectTabAsync(true)">
+            ورود جنس@(_receiveCount > 0 ? $" ({JalaliDate.ToPersianDigits(_receiveCount.ToString())})" : "")
+        </button>
+    </div>
+    <div style="@(ReceiveActive ? null : "display:none")">
+        <Receive @ref="_receive" Embedded="true" OnCountChanged="n => _receiveCount = n" />
+    </div>
+}
+
+<div style="@(ReceiveActive ? "display:none" : null)">
 @* یک کادر برای نام و بارکد (بخش ۱۵.۳ spec): Enter روی بارکد کامل مستقیم به قلم می‌رود؛ بقیه فهرست را فیلتر می‌کند. *@
 <form class="filters" @onsubmit="SearchAsync" @onsubmit:preventDefault="true">
     <div class="filters-search">
@@ -129,6 +145,10 @@ else
                     }
                     <th>موجودی (جعبه)</th>
                     <th>نزدیک‌ترین انقضا</th>
+                    @if (CanReceive)
+                    {
+                        <th><span class="visually-hidden">ورود</span></th>
+                    }
                 </tr>
             </thead>
             <tbody>
@@ -177,12 +197,24 @@ else
                                 }
                             }
                         </td>
+                        @if (CanReceive)
+                        {
+                            <td>
+                                @if (item.IsActive)
+                                {
+                                    <button type="button" class="btn btn-sm btn-quiet row-link-above" title="افزودن به فهرست ورود جنس" @onclick="() => ReceiveProductAsync(item.Id)">
+                                        <AppIcon Name="plus" Size="14" /> ورود
+                                    </button>
+                                }
+                            </td>
+                        }
                     </tr>
                 }
             </tbody>
         </table>
     </section>
 }
+</div>
 
 @if (_creating)
 {
@@ -233,6 +265,10 @@ else
 
         <div class="modal-actions">
             <button type="button" class="btn btn-primary" disabled="@(_busy || _pickId is null)" @onclick="RegisterBarcodeAsync">@(_busy ? "در حال ثبت…" : "ثبت بارکد")</button>
+            @if (CanReceive)
+            {
+                <button type="button" class="btn btn-quiet" disabled="@_busy" @onclick="() => DefineAndReceiveAsync(unknown)"><AppIcon Name="plus" Size="15" /> قلم تازه است؛ تعریف و ورود جنس</button>
+            }
             <button type="button" class="btn btn-quiet" @onclick="CloseUnknown">انصراف</button>
         </div>
     </ModalDialog>
@@ -320,6 +356,44 @@ else
 
     private bool CanManage => Session.Can(Permissions.ProductsManage);
 
+    // ---------- زبانه‌ی «ورود جنس» ----------
+
+    [SupplyParameterFromQuery(Name = "tab")] public string? Tab { get; set; }
+    private bool? _receiveSelected;
+    private Receive? _receive;
+    private int _receiveCount;
+
+    private bool CanReceive => Session.Can(Permissions.StockReceive);
+    private bool ReceiveActive => CanReceive && (_receiveSelected ?? Tab == "receive");
+
+    private async Task SelectTabAsync(bool receive)
+    {
+        _receiveSelected = receive;
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameters(new Dictionary<string, object?>
+        {
+            ["tab"] = receive ? "receive" : null,
+            ["productId"] = null
+        }), replace: true);
+        await Task.Yield();
+        if (receive && _receive is not null) await _receive.FocusAsync();
+        else await _queryInput.FocusAsync();
+    }
+
+    private async Task ReceiveProductAsync(Guid productId)
+    {
+        if (_receive is null) return;
+        await _receive.AddProductAsync(productId);
+        await SelectTabAsync(true);
+    }
+
+    private async Task DefineAndReceiveAsync(string code)
+    {
+        _unknownCode = null;
+        if (_receive is null) return;
+        await SelectTabAsync(true);
+        await _receive.AddCodeAsync(code);
+    }
+
     private bool HasCriteria => !string.IsNullOrWhiteSpace(_query) || _locationId is not null || _categoryId is not null || _filter != "";
 
     private static DateOnly Today() => LocalDay.Today(DateTime.UtcNow);
@@ -363,7 +437,9 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender) await _queryInput.FocusAsync();
+        if (!firstRender) return;
+        if (ReceiveActive && _receive is not null) await _receive.FocusAsync();
+        else await _queryInput.FocusAsync();
     }
 
     private Task OnLocationChangedAsync(Guid? id)
