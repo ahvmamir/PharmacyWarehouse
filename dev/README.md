@@ -11,6 +11,7 @@
 | `run-dev.bat` | اجرای Api و Client در دو پنجره |
 | `run-tests.bat` | همه‌ی تست‌ها؛ با یک نام کلاس فقط همان، مثلاً `run-tests StocktakePeriodTests` |
 | `create-admin.bat` | ساخت کاربر مدیر در دیتابیس توسعه (Api بسته) |
+| `reset-password.bat` | رمز تازه برای یک کاربر موجود در دیتابیس توسعه (Api بسته) |
 | `seed-test-data.bat` | ۱۰۰ قلم آزمایشی ساختگی |
 | `verify-stock.bat` | بررسی برابری موجودی بچ با جمع حرکت‌ها (فقط گزارش) |
 
