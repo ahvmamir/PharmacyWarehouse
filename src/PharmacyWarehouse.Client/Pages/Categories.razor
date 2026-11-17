@@ -1,0 +1,200 @@
+@page "/categories"
+@attribute [Authorize]
+@using PharmacyWarehouse.Domain.Stock
+@inject CategoriesClient CategoriesApi
+@inject ApiAuthenticationStateProvider Session
+
+@* دسته‌های قلم (بخش ۱۵.۳ spec): فهرست تخت. فرم کوتاه است، پس پنجره‌ی وسط (نه کشوی کناری). *@
+
+<PageTitle>دسته‌ها | داروبار</PageTitle>
+
+<RequirePermission Permission="@Permissions.StockView">
+<div class="page-head">
+    <div>
+        <h1>دسته‌های قلم</h1>
+        <p>مثل «آنتی‌بیوتیک» یا «یخچالی». هر قلم حداکثر یک دسته دارد. دسته‌ای که قلم دارد حذف نمی‌شود؛ غیرفعالش کنید.</p>
+    </div>
+    @if (CanManage)
+    {
+        <button type="button" class="btn btn-primary" @onclick="OpenNew"><AppIcon Name="plus" Size="15" /> دسته‌ی تازه</button>
+    }
+</div>
+
+@if (_error is not null)
+{
+    <div class="form-alert" role="alert">
+        <AppIcon Name="warning" /> <span>@_error</span>
+        <button type="button" class="btn btn-sm btn-quiet" @onclick="LoadAsync">تازه‌سازی</button>
+    </div>
+}
+
+@if (_items is null)
+{
+    @if (_error is null)
+    {
+        <div class="loading-line">در حال بارگذاری…</div>
+    }
+}
+else if (_items.Count == 0)
+{
+    <div class="empty-state">
+        <AppIcon Name="list" Size="36" />
+        <p>هنوز دسته‌ای تعریف نشده.</p>
+    </div>
+}
+else
+{
+    <section class="table-card">
+        <table class="data-table">
+            <thead>
+                <tr><th>نام</th><th>تعداد قلم</th><th>وضعیت</th>@if (CanManage) { <th></th> }</tr>
+            </thead>
+            <tbody>
+                @foreach (var item in _items)
+                {
+                    <tr @key="item.Id">
+                        <td>
+                            @* پیوند به فهرست اقلام همین دسته *@
+                            <a href="products?categoryId=@item.Id"><bdi>@item.Name</bdi></a>
+                        </td>
+                        <td>@JalaliDate.ToPersianDigits(item.ProductCount.ToString())</td>
+                        <td>
+                            @if (!item.IsActive)
+                            {
+                                <span class="status-badge status-retired">غیرفعال</span>
+                            }
+                            else
+                            {
+                                <span>فعال</span>
+                            }
+                        </td>
+                        @if (CanManage)
+                        {
+                            <td class="text-start">
+                                <button type="button" class="icon-button" title="ویرایش" aria-label="ویرایش @item.Name" @onclick="() => OpenEdit(item)"><AppIcon Name="edit" Size="16" /></button>
+                                <button type="button" class="icon-button danger" title="حذف" aria-label="حذف @item.Name" @onclick="() => _delete = item"><AppIcon Name="trash" Size="16" /></button>
+                            </td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+}
+
+@if (_delete is { } toDelete)
+{
+    <DeleteDialog Title="حذف دسته" ItemName="@toDelete.Name"
+                  Load="() => CategoriesApi.DependenciesAsync(toDelete.Id)"
+                  Delete="() => CategoriesApi.DeleteAsync(toDelete.Id)"
+                  OnCancel="() => _delete = null"
+                  OnDeleted="OnDeletedAsync" />
+}
+
+@if (_dialogOpen)
+{
+    <ModalDialog Title="@(_editing is null ? "دسته‌ی تازه" : "ویرایش دسته")" OnClose="CloseDialog">
+        <EditForm Model="_request" OnSubmit="SaveAsync">
+            <div class="form-field">
+                <label for="category-name">نام <span class="required">*</span></label>
+                <input id="category-name" class="form-control" @bind="_request.Name" @ref="_nameInput" maxlength="@CategoryRules.MaxName" />
+                <FieldError Field="Name" Errors="_errors" />
+            </div>
+
+            <div class="form-check mt-3">
+                <input id="category-active" type="checkbox" class="form-check-input" @bind="_request.IsActive" />
+                <label for="category-active" class="form-check-label">فعال (در فرم قلم انتخاب‌پذیر است)</label>
+            </div>
+
+            @if (_dialogError is not null)
+            {
+                <div class="form-alert mt-3 mb-0" role="alert">@_dialogError</div>
+            }
+
+            <div class="modal-actions">
+                <button type="submit" class="btn btn-primary" disabled="@_busy">@(_busy ? "در حال ذخیره…" : "ذخیره")</button>
+                <button type="button" class="btn btn-quiet" @onclick="CloseDialog">انصراف</button>
+            </div>
+        </EditForm>
+    </ModalDialog>
+}
+</RequirePermission>
+
+@code {
+    private List<CategoryItem>? _items;
+    private string? _error;
+    private CategoryItem? _delete;
+
+    private bool _dialogOpen;
+    private CategoryItem? _editing;
+    private SaveCategoryRequest _request = new();
+    private Dictionary<string, string[]> _errors = [];
+    private string? _dialogError;
+    private bool _busy;
+    private bool _focusName;
+    private ElementReference _nameInput;
+
+    private bool CanManage => Session.Can(Permissions.ProductsManage);
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusName) return;
+        _focusName = false;
+        await _nameInput.FocusAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        var result = await CategoriesApi.ListAsync();
+        if (result.IsSuccess) _items = result.Value;
+        else _error = result.ErrorMessage;
+    }
+
+    private void OpenNew() => Open(null);
+
+    private void OpenEdit(CategoryItem item) => Open(item);
+
+    private void Open(CategoryItem? item)
+    {
+        _editing = item;
+        _request = item is null
+            ? new SaveCategoryRequest()
+            : new SaveCategoryRequest { Name = item.Name, IsActive = item.IsActive, Version = item.Version };
+        _errors = [];
+        _dialogError = null;
+        _dialogOpen = true;
+        _focusName = true;
+    }
+
+    private void CloseDialog() => _dialogOpen = false;
+
+    private async Task SaveAsync()
+    {
+        if (_busy) return;
+
+        _busy = true;
+        _errors = [];
+        _dialogError = null;
+        var result = await CategoriesApi.SaveAsync(_editing?.Id, _request);
+        _busy = false;
+
+        if (!result.IsSuccess)
+        {
+            if (result.Problem is { Errors.Count: > 0 } problem) _errors = problem.Errors;
+            else _dialogError = result.ErrorMessage;
+            return;
+        }
+
+        _dialogOpen = false;
+        await LoadAsync();
+    }
+
+    private async Task OnDeletedAsync()
+    {
+        _delete = null;
+        await LoadAsync();
+    }
+}

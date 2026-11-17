@@ -7,26 +7,36 @@
 @inject ToastService Toasts
 @inject ApiAuthenticationStateProvider Session
 @inject DraftStore Drafts
+@inject CategoriesClient CategoriesApi
 
-<PageTitle>ورود جنس | داروبار</PageTitle>
+@* ورود جنس (بخش ۱۵.۳ spec): فهرست در صفحه، هر ردیف در کشوی کناری. قلم پیدانشده یا بارکد ناشناخته همین‌جا
+   «قلم تازه» می‌شود و سرور قلم، بارکد، بچ و حرکت را در یک تراکنش می‌سازد. در /stock-io با Embedded رندر می‌شود. *@
+
+@if (!Embedded)
+{
+    <PageTitle>ورود جنس | داروبار</PageTitle>
+}
 
 <RequirePermission Permission="@Permissions.StockReceive">
-<div class="page-head">
-    <div>
-        <h1>ورود جنس</h1>
-        <p>قلم‌ها را اسکن یا جست‌وجو کنید تا به فهرست اضافه شوند؛ روی هر ردیف بزنید و بچ، تاریخ، تعداد و محل را کامل کنید. تعداد به «جعبه» است.</p>
+@if (!Embedded)
+{
+    <div class="page-head">
+        <div>
+            <h1>ورود جنس</h1>
+            <p>قلم‌ها را اسکن یا جست‌وجو کنید تا به فهرست اضافه شوند؛ روی هر ردیف بزنید و بچ، تاریخ، تعداد و محل را کامل کنید. تعداد به «جعبه» است.</p>
+        </div>
     </div>
-</div>
+}
 
 <section class="card-emu">
     <div class="receive-search">
         <label for="receive-search" class="form-hint">قلم</label>
-        <ProductCombobox @ref="_search" InputId="receive-search" OnPick="OnPickAsync">
+        <ProductCombobox @ref="_search" InputId="receive-search" OnPick="OnPickAsync" AutoFocus="@(!Embedded)" OnEnterNoMatch="OnNoMatchAsync">
             <EmptyContent>
                 <span>قلمی پیدا نشد.</span>
-                @if (Session.Can(Permissions.ProductsManage))
+                @if (CanDefine)
                 {
-                    <a class="btn btn-sm btn-quiet ms-2" href="products/new"><AppIcon Name="plus" Size="15" /> قلم جدید</a>
+                    <button type="button" class="btn btn-sm btn-quiet ms-2" @onclick="() => StartNewProduct(_search?.Text)"><AppIcon Name="plus" Size="15" /> تعریف قلم تازه</button>
                 }
             </EmptyContent>
         </ProductCombobox>
@@ -34,6 +44,12 @@
     @if (_scanError is not null)
     {
         <div class="form-alert mt-3 mb-0" role="alert">@_scanError</div>
+    }
+    @if (CanDefine)
+    {
+        <div class="form-hint mt-2">
+            قلم در فهرست نیست؟ <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="() => StartNewProduct(null)">همین‌جا تعریفش کنید</button>؛ بارکد ناشناخته با Enter هم همین کار را می‌کند.
+        </div>
     }
 </section>
 
@@ -50,15 +66,18 @@ else
         <h2>فهرست ورود (@JalaliDate.ToPersianDigits(_rows.Count.ToString()) ردیف)</h2>
         @foreach (var row in _rows)
         {
-            var isOpen = _openKey == row.Key;
-            <div class="receive-row @(isOpen ? "open" : "") @(row.HasError ? "has-error" : "")" @key="row.Key">
+            <div class="receive-row @(row.HasError ? "has-error" : "")" @key="row.Key">
                 <div class="receive-row-head">
-                    <button type="button" class="receive-row-toggle" aria-expanded="@(isOpen ? "true" : "false")" @onclick="() => Toggle(row)">
-                        <AppIcon Name="chevron" Size="16" Class="fold-chevron" />
+                    <button type="button" class="receive-row-toggle" aria-haspopup="dialog" @onclick="() => Open(row)">
+                        <AppIcon Name="edit" Size="16" />
                         <span class="combo-main">
-                            <strong>@row.ProductName</strong>
+                            <strong>@(string.IsNullOrWhiteSpace(row.ProductName) ? "قلم تازه (بی‌نام)" : row.ProductName)</strong>
                             <small class="cell-sub">@Summary(row)</small>
                         </span>
+                        @if (row.IsNewProduct)
+                        {
+                            <span class="status-badge status-pending">قلم تازه</span>
+                        }
                         @if (row.HasError)
                         {
                             <span class="status-badge status-expired">خطا</span>
@@ -76,17 +95,9 @@ else
                 {
                     <div class="form-alert mt-2 mb-0" role="alert"><AppIcon Name="warning" /> <span>@row.RowError</span></div>
                 }
-                @if (!isOpen)
+                @foreach (var message in row.Errors.Values.SelectMany(m => m))
                 {
-                    @foreach (var message in row.Errors.Values.SelectMany(m => m))
-                    {
-                        <div class="field-error">@message</div>
-                    }
-                }
-
-                @if (isOpen && row.Detail is { } product)
-                {
-                    <div class="receive-row-body">@RowForm(row, product)</div>
+                    <div class="field-error">@message</div>
                 }
             </div>
         }
@@ -98,11 +109,25 @@ else
 
         <div class="mt-3 d-flex gap-2 flex-wrap">
             <button type="button" class="btn btn-primary" disabled="@(_busy || _rows.Count == 0)" @onclick="SubmitAsync">@(_busy ? "در حال ثبت…" : "ثبت نهایی")</button>
-            <button type="button" class="btn btn-quiet" disabled="@_busy" @onclick="ClearDraftAsync">پاک کردن پیش‌نویس</button>
         </div>
         <DraftBar State="_draft" OnClear="ClearDraftAsync" />
         <div class="form-hint mt-2">«ثبت نهایی» همه‌ی ردیف‌ها را با هم ثبت می‌کند؛ اگر یک ردیف خطا داشته باشد هیچ‌کدام ثبت نمی‌شود. این فهرست تا پیش از ثبت در همین مرورگر می‌ماند.</div>
     </section>
+}
+
+@if (OpenRow is { Detail: { } openProduct } openRow)
+{
+    <ModalDialog Side="true" Title="@(openRow.IsNewProduct ? "قلم تازه و بچ" : openRow.ProductName)" OnClose="CloseRow" AutoFocus="@(!_focusNewName)">
+        @if (openRow.NewProduct is { } np)
+        {
+            @NewProductForm(openRow, np)
+        }
+        @RowForm(openRow, openProduct)
+        <div class="modal-actions">
+            <button type="button" class="btn btn-primary" @onclick="CloseRow">تمام؛ برگشت به فهرست</button>
+            <button type="button" class="btn btn-danger-quiet" disabled="@_busy" @onclick="() => Remove(openRow)"><AppIcon Name="trash" Size="15" /> حذف ردیف</button>
+        </div>
+    </ModalDialog>
 }
 </RequirePermission>
 
@@ -113,17 +138,20 @@ else
         var prefix = "row-" + row.Key.ToString("N");
         var radio = "batch-" + prefix;
 
-        <p class="form-hint">
-            @string.Join(" · ", new[] { summary.Brand, summary.PackDescription }.Where(s => !string.IsNullOrEmpty(s)))
-            — موجودی فعلی: @JalaliDate.ToPersianDigits(summary.OnHand.ToString()) جعبه
-        </p>
+        @if (!row.IsNewProduct)
+        {
+            <p class="form-hint">
+                @string.Join(" · ", new[] { summary.Brand, summary.PackDescription }.Where(s => !string.IsNullOrEmpty(s)))
+                — موجودی فعلی: @JalaliDate.ToPersianDigits(summary.OnHand.ToString()) جعبه
+            </p>
+        }
 
         @if (!summary.IsActive)
         {
             <div class="form-alert" role="alert">این قلم غیرفعال است.</div>
         }
 
-        <h3>بچ</h3>
+        <h3 class="mt-3">بچ</h3>
         @foreach (var batch in product.Batches)
         {
             <label class="linked-item" @key="batch.Id">
@@ -139,10 +167,13 @@ else
                 </span>
             </label>
         }
-        <label class="linked-item">
-            <input type="radio" name="@radio" class="form-check-input" checked="@(row.BatchId is null)" @onchange="() => SelectBatch(row, null)" />
-            <span style="flex:1;">بچ تازه</span>
-        </label>
+        @if (product.Batches.Count > 0)
+        {
+            <label class="linked-item">
+                <input type="radio" name="@radio" class="form-check-input" checked="@(row.BatchId is null)" @onchange="() => SelectBatch(row, null)" />
+                <span style="flex:1;">بچ تازه</span>
+            </label>
+        }
 
         <div class="mt-3">
             @if (row.BatchId is null)
@@ -171,7 +202,7 @@ else
                         <div class="form-hint">این قلم تاریخ انقضا لازم ندارد.</div>
                     }
                 </div>
-                <div class="form-field mt-3">
+                <div class="form-field mt-3" hidden="@row.IsNewProduct">
                     <label for="@(prefix)-location">محل</label>
                     @if (row.ChangingLocation)
                     {
@@ -226,7 +257,226 @@ else
         </div>
     };
 
+    private RenderFragment NewProductForm(ReceiveRow row, SaveProductRequest np) => __builder =>
+    {
+        var prefix = "new-" + row.Key.ToString("N");
+
+        <h3>مشخصات قلم</h3>
+        @if (_similar.Count > 0)
+        {
+            <div class="form-alert warning">
+                <AppIcon Name="warning" />
+                <div>
+                    <span>قلم‌های مشابه از قبل هست. اگر یکی از این‌هاست، همان را انتخاب کنید تا قلم تکراری ساخته نشود:</span>
+                    <ul class="similar-list">
+                        @foreach (var item in _similar)
+                        {
+                            <li @key="item.Id">
+                                <bdi>@item.Name</bdi>
+                                <small class="cell-sub">@string.Join(" · ", new[] { item.Brand, item.PackDescription }.Where(x => !string.IsNullOrEmpty(x)))</small>
+                                <button type="button" class="btn btn-sm btn-quiet" @onclick="() => UseExistingAsync(row, item)">همین است</button>
+                            </li>
+                        }
+                    </ul>
+                </div>
+            </div>
+        }
+        <div class="form-grid">
+            <div class="form-field">
+                <label for="@(prefix)-name">نام و دوز <span class="required">*</span></label>
+                <input id="@(prefix)-name" class="form-control" @ref="_newNameInput" @bind="np.Name" @bind:after="() => NewProductChangedAsync(row)" maxlength="@ProductRules.MaxName" />
+                <FieldError Field="NewProduct.Name" Errors="row.Errors" />
+            </div>
+            <div class="form-field">
+                <label for="@(prefix)-brand">برند</label>
+                <input id="@(prefix)-brand" class="form-control" @bind="np.Brand" @bind:after="() => NewProductChangedAsync(row)" maxlength="@ProductRules.MaxBrand" />
+                <FieldError Field="NewProduct.Brand" Errors="row.Errors" />
+            </div>
+            <div class="form-field">
+                <label for="@(prefix)-pack">محتوای بسته</label>
+                <input id="@(prefix)-pack" class="form-control" @bind="np.PackDescription" @bind:after="() => NewProductChangedAsync(row)" maxlength="@ProductRules.MaxPack" />
+                <div class="form-hint">مثلاً «۳۰ عدد».</div>
+                <FieldError Field="NewProduct.PackDescription" Errors="row.Errors" />
+            </div>
+            <div class="form-field">
+                <label for="@(prefix)-barcode">بارکد</label>
+                <input id="@(prefix)-barcode" class="form-control" dir="ltr" autocomplete="off" @bind="row.NewBarcode" />
+                <FieldError Field="NewBarcode" Errors="row.Errors" />
+            </div>
+            <div class="form-field">
+                <label for="@(prefix)-location">محل</label>
+                <LocationPicker InputId="@(prefix + "-location")" Items="_locations" Value="np.LocationId" ValueChanged="id => SetNewLocation(row, id)" />
+                <FieldError Field="NewProduct.LocationId" Errors="row.Errors" />
+            </div>
+            <div class="form-field">
+                <label for="@(prefix)-category">دسته</label>
+                <select id="@(prefix)-category" class="form-select" value="@(np.CategoryId?.ToString() ?? "")"
+                        @onchange="e => np.CategoryId = Guid.TryParse(e.Value?.ToString(), out var c) ? c : null">
+                    <option value="">— بدون دسته —</option>
+                    @foreach (var category in _categories.Where(c => c.IsActive))
+                    {
+                        <option value="@category.Id">@category.Name</option>
+                    }
+                </select>
+                <FieldError Field="NewProduct.CategoryId" Errors="row.Errors" />
+            </div>
+        </div>
+        <div class="form-check mt-2">
+            <input id="@(prefix)-expiry" type="checkbox" class="form-check-input" checked="@np.RequiresExpiry" @onchange="e => SetRequiresExpiry(row, e.Value is true)" />
+            <label for="@(prefix)-expiry" class="form-check-label">انقضا لازم است</label>
+        </div>
+        <FieldError Field="NewProduct" Errors="row.Errors" />
+        <div class="form-hint">حداقل موجودی و بقیه‌ی تنظیم‌ها بعداً از «ویرایش قلم».</div>
+    };
+
+    [Parameter] public bool Embedded { get; set; }
+
     [SupplyParameterFromQuery(Name = "productId")] public Guid? ProductId { get; set; }
+
+    private List<CategoryItem> _categories = [];
+    private List<ProductListItem> _similar = [];
+    private ElementReference _newNameInput;
+    private bool _focusNewName;
+    private int _similarSeq;
+
+    private bool CanDefine => Session.Can(Permissions.ProductsManage);
+    private ReceiveRow? OpenRow => _rows.FirstOrDefault(r => r.Key == _openKey);
+
+    // جزئیات ساختگی برای ردیف قلم تازه: بچی ندارد و محلش همان محل انتخاب‌شده‌ی قلم است.
+    private ProductDetail NewDetail(ReceiveRow row)
+    {
+        var np = row.NewProduct!;
+        var path = np.LocationId is { } id ? _locations.FirstOrDefault(l => l.Id == id)?.Path : null;
+        return new ProductDetail
+        {
+            Summary = new ProductListItem(Guid.Empty, np.Name, np.Brand, np.PackDescription, path, 0, 0, null, null, null, true, 0),
+            RequiresExpiry = np.RequiresExpiry,
+            LocationId = np.LocationId
+        };
+    }
+
+    // بارکدخوان: فقط رقم و حرف لاتین بدون فاصله، بارکد حساب می‌شود؛ بقیه نام قلم.
+    private static bool LooksLikeBarcode(string text) =>
+        text.Length >= 6 && !text.Contains(' ') && TextNormalizer.ToAsciiDigits(text).All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '.');
+
+    private Task OnNoMatchAsync(string text)
+    {
+        var scan = Gs1Scan.Parse(text);
+        if (IsDuplicateBox(scan)) return Task.CompletedTask;
+
+        // جعبه‌ی بعدیِ همان قلم تازه (همان GTIN و بچ): تعداد همان ردیف زیاد می‌شود، قلم تازه‌ی دوم ساخته نمی‌شود.
+        if (scan is not null && _rows.LastOrDefault(r => r.IsNewProduct && r.NewBarcode == scan.Gtin
+                && RowBatchKey(r) == TextNormalizer.ScanKey(scan.Batch)) is { } same)
+        {
+            Count(same, scan);
+            Toasts.Show($"قلم تازه: تعداد {JalaliDate.ToPersianDigits(same.Quantity.ToString())} جعبه شد.");
+            return Task.CompletedTask;
+        }
+
+        if (!CanDefine)
+        {
+            _scanError = $"«{scan?.Gtin ?? text}» پیدا نشد. با نام جست‌وجو کنید یا به انباردار بگویید.";
+            return Task.CompletedTask;
+        }
+
+        StartNewProduct(text);
+        return Task.CompletedTask;
+    }
+
+    private void StartNewProduct(string? text)
+    {
+        _scanError = null;
+        text = text?.Trim() ?? "";
+        var scan = Gs1Scan.Parse(text);
+        if (scan is not null) text = scan.Gtin;
+        var barcode = scan is not null || LooksLikeBarcode(text);
+        var last = _rows.LastOrDefault(r => r.NewProduct is not null)?.NewProduct;
+        var row = new ReceiveRow
+        {
+            NewProduct = new SaveProductRequest
+            {
+                Name = barcode ? "" : text,
+                RequiresExpiry = true,
+                // محل و دسته‌ی قلم تازه‌ی قبلی برای ورود پشت‌سرهم می‌ماند.
+                LocationId = last?.LocationId,
+                CategoryId = last?.CategoryId
+            },
+            NewBarcode = barcode ? text : null
+        };
+        row.ProductName = row.NewProduct.Name;
+        row.Detail = NewDetail(row);
+        if (scan is not null) ApplyScan(row, scan);
+        _rows.Add(row);
+        _similar = [];
+        _openKey = row.Key;
+        _focusNewName = true;
+        _ = NewProductChangedAsync(row);
+    }
+
+    private void SetNewLocation(ReceiveRow row, Guid? id)
+    {
+        row.NewProduct!.LocationId = id;
+        row.Detail = NewDetail(row);
+    }
+
+    private void SetRequiresExpiry(ReceiveRow row, bool value)
+    {
+        row.NewProduct!.RequiresExpiry = value;
+        row.Detail = NewDetail(row);
+    }
+
+    // مشابه‌ها با همان جست‌وجوی قلم (غلط املایی هم): قبل از ساختن قلم تازه، تا قلم تکراری ساخته نشود.
+    private async Task NewProductChangedAsync(ReceiveRow row)
+    {
+        if (row.NewProduct is not { } np) return;
+        row.ProductName = np.Name;
+        row.Detail = NewDetail(row);
+
+        var seq = ++_similarSeq;
+        var query = string.Join(' ', new[] { np.Name, np.Brand }.Where(x => !string.IsNullOrWhiteSpace(x)));
+        if (TextNormalizer.Clean(query) is not { Length: >= 2 })
+        {
+            _similar = [];
+            return;
+        }
+
+        var result = await ProductsApi.SearchAsync(query);
+        if (seq != _similarSeq) return;
+        _similar = result.Value?.Items.Where(i => i.IsActive).Take(5).ToList() ?? [];
+        StateHasChanged();
+    }
+
+    // «همین است»: ردیف به قلم موجود تبدیل می‌شود و بچ، تاریخ و تعدادِ واردشده می‌ماند.
+    private async Task UseExistingAsync(ReceiveRow row, ProductListItem item)
+    {
+        var result = await ProductsApi.GetAsync(item.Id);
+        if (!result.IsSuccess)
+        {
+            row.RowError = result.ErrorMessage;
+            return;
+        }
+
+        row.NewProduct = null;
+        row.NewBarcode = null;
+        row.ProductId = item.Id;
+        row.ProductName = item.Name;
+        row.Detail = result.Value!;
+        row.ClearErrors();
+        _similar = [];
+    }
+
+    private void Open(ReceiveRow row)
+    {
+        _openKey = row.Key;
+        _similar = [];
+        if (row.IsNewProduct) _ = NewProductChangedAsync(row);
+    }
+
+    private void CloseRow()
+    {
+        _openKey = null;
+        _similar = [];
+    }
 
     private ProductCombobox? _search;
     private readonly List<ReceiveRow> _rows = [];
@@ -264,6 +514,7 @@ else
     {
         var locations = await LocationsApi.ListAsync();
         if (locations.IsSuccess) _locations = locations.Value!.Where(l => l.IsActive && l.IsUsable).ToList();
+        _categories = (await CategoriesApi.ListAsync()).Value ?? [];
         await LoadDraftAsync();
     }
 
@@ -292,6 +543,13 @@ else
     // فهرست هر بار که عوض شود ذخیره می‌شود؛ مقایسه‌ی متن در Draft جلوی نوشتن بی‌دلیل را می‌گیرد.
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // قلم تازه: فوکوس از فیلد جست‌وجو به نام قلم در کشو می‌رود تا بارکدخوان چیزی را به جست‌وجو نچسباند.
+        if (_focusNewName && OpenRow is { IsNewProduct: true })
+        {
+            _focusNewName = false;
+            try { await _newNameInput.FocusAsync(); } catch (InvalidOperationException) { }
+        }
+
         if (!_draftLoaded || _draft is null) return;
 
         var before = _draft.Saved;
@@ -317,6 +575,12 @@ else
     // Version و موجودی بچ‌ها همیشه از سرور تازه می‌شود؛ پیش‌نویس فقط ورودی کاربر را نگه می‌دارد.
     private async Task RefreshRowAsync(ReceiveRow row)
     {
+        if (row.IsNewProduct)
+        {
+            row.Detail = NewDetail(row);
+            return;
+        }
+
         var result = await ProductsApi.GetAsync(row.ProductId);
         if (!result.IsSuccess)
         {
@@ -333,6 +597,7 @@ else
     {
         _scanError = null;
         _formError = null;
+        var scan = _search?.TakeScan(item.Id);
 
         if (!item.IsActive)
         {
@@ -340,10 +605,12 @@ else
             return;
         }
 
-        // اسکن پشت‌سرهم یک جعبه: تعداد ردیف همان قلم زیاد می‌شود. بچ دوم با «بچ دیگر» از داخل ردیف.
-        if (_rows.LastOrDefault(r => r.ProductId == item.Id) is { } existing)
+        if (IsDuplicateBox(scan)) return;
+
+        // اسکن پشت‌سرهم یک جعبه: تعداد ردیف همان قلم (و با کد GS1، همان بچ) زیاد می‌شود.
+        if (FindRow(item.Id, scan) is { } existing)
         {
-            existing.Quantity++;
+            Count(existing, scan);
             Toasts.Show($"{item.Name}: تعداد {JalaliDate.ToPersianDigits(existing.Quantity.ToString())} جعبه شد.");
             return;
         }
@@ -356,13 +623,67 @@ else
         }
 
         // میان این انتظار ممکن است اسکن دیگری همین قلم را اضافه کرده باشد.
-        if (_rows.LastOrDefault(r => r.ProductId == item.Id) is { } added)
+        if (FindRow(item.Id, scan) is { } added)
         {
-            added.Quantity++;
+            Count(added, scan);
             return;
         }
 
-        AddRow(result.Value!);
+        var row = AddRow(result.Value!);
+        if (scan is not null) ApplyScan(row, scan);
+    }
+
+    // UID تکراری: همان جعبه دوباره اسکن شده است (بخش ۹.۲ spec).
+    private bool IsDuplicateBox(Gs1Data? scan)
+    {
+        if (scan?.Serial is not { } serial || !_rows.Any(r => r.Serials.Contains(serial))) return false;
+        Toasts.Show("این جعبه (همین UID) قبلاً اسکن شده است و دوباره شمرده نشد.");
+        return true;
+    }
+
+    private static string? RowBatchKey(ReceiveRow row) =>
+        TextNormalizer.ScanKey(row.SelectedBatch?.BatchNumber ?? row.BatchNumber);
+
+    // بدون کد GS1 آخرین ردیف همان قلم؛ با کد GS1 فقط ردیفِ همان بچ.
+    private ReceiveRow? FindRow(Guid productId, Gs1Data? scan)
+    {
+        var rows = _rows.Where(r => r.ProductId == productId && !r.IsNewProduct);
+        if (scan?.Batch is { } batch)
+        {
+            var key = TextNormalizer.ScanKey(batch);
+            return rows.LastOrDefault(r => RowBatchKey(r) == key);
+        }
+
+        return rows.LastOrDefault();
+    }
+
+    private static void Count(ReceiveRow row, Gs1Data? scan)
+    {
+        row.Quantity++;
+        if (scan?.Serial is { } serial) row.Serials.Add(serial);
+    }
+
+    // بچ و انقضای خوانده‌شده از کد: بچ موجود انتخاب می‌شود؛ وگرنه «بچ تازه» با همان شماره و تاریخ پر می‌شود.
+    private void ApplyScan(ReceiveRow row, Gs1Data scan)
+    {
+        if (scan.Serial is { } serial) row.Serials.Add(serial);
+        if (scan.Batch is not { } batch) return;
+
+        var key = TextNormalizer.ScanKey(batch);
+        if (row.Detail?.Batches.FirstOrDefault(b => TextNormalizer.ScanKey(b.BatchNumber) == key) is { } existing)
+        {
+            row.BatchId = existing.Id;
+            if (scan.Expiry is { } expiry && existing.ExpiryDate is { } stored && stored != expiry && !scan.ExpiryMonthOnly)
+            {
+                Toasts.Show($"تاریخ روی کد ({scan.ExpiryText}) با تاریخ ثبت‌شده‌ی بچ {existing.BatchNumber} فرق دارد؛ بچ را بررسی کنید.");
+            }
+
+            return;
+        }
+
+        row.BatchId = null;
+        row.BatchNumber = batch;
+        row.Expiry = scan.ExpiryText;
     }
 
     private ReceiveRow AddRow(ProductDetail detail)
@@ -374,12 +695,15 @@ else
 
     private void AddSiblingBatch(ReceiveRow source)
     {
-        var row = new ReceiveRow { ProductId = source.ProductId, ProductName = source.ProductName, Detail = source.Detail };
+        // بچ دوم از قلم تازه همان مشخصات را دارد؛ سرور هر دو ردیف را یک قلم می‌کند.
+        var row = new ReceiveRow
+        {
+            ProductId = source.ProductId, ProductName = source.ProductName, Detail = source.Detail,
+            NewProduct = source.NewProduct, NewBarcode = source.NewBarcode, Quantity = 1
+        };
         _rows.Insert(_rows.IndexOf(source) + 1, row);
         _openKey = row.Key;
     }
-
-    private void Toggle(ReceiveRow row) => _openKey = _openKey == row.Key ? null : row.Key;
 
     private void SelectBatch(ReceiveRow row, Guid? id)
     {
@@ -405,10 +729,18 @@ else
     {
         request = new ReceiptRequest
         {
-            ProductId = row.ProductId,
+            ProductId = row.IsNewProduct ? Guid.Empty : row.ProductId,
+            NewProduct = row.NewProduct,
+            NewBarcode = row.IsNewProduct && !string.IsNullOrWhiteSpace(row.NewBarcode) ? row.NewBarcode : null,
             Quantity = row.Quantity,
             Note = string.IsNullOrWhiteSpace(row.Note) ? null : row.Note
         };
+
+        if (row.NewProduct is { } np && string.IsNullOrWhiteSpace(np.Name))
+        {
+            row.Errors["NewProduct.Name"] = ["نام قلم تازه را وارد کنید."];
+            return false;
+        }
 
         if (row.Detail is null)
         {

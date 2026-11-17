@@ -14,7 +14,7 @@ namespace PharmacyWarehouse.Api.Stock;
 // فهرست‌ها کوچک‌اند؛ فیلتر و ترتیب فارسی در حافظه انجام می‌شود، نه در SQLite.
 public static class ProductEndpoints
 {
-    private const string DuplicateProduct = "قلمی با همین نام، برند و بسته‌بندی وجود دارد.";
+    internal const string DuplicateProduct = "قلمی با همین نام، برند و بسته‌بندی وجود دارد.";
     private const int ExpiringDays = 180; // برش ۵ با تنظیمات جایگزین می‌شود
     private const int MaxSearchResults = 20;
 
@@ -45,13 +45,15 @@ public static class ProductEndpoints
     internal static string BuildSearchText(Product p, IEnumerable<string> codes) =>
         TextNormalizer.SearchKey(string.Join(' ', new[] { p.Name, p.Brand, p.PackDescription }.Concat(codes).Where(s => !string.IsNullOrEmpty(s))))!;
 
-    private sealed record Locations(IReadOnlyDictionary<Guid, string> Paths, List<StorageLocation> All);
+    // Categories: نام دسته‌ها برای ستون «دسته»؛ همراه محل‌ها بارگذاری می‌شود چون هر دو کوچک و همیشه لازم‌اند.
+    private sealed record Locations(IReadOnlyDictionary<Guid, string> Paths, List<StorageLocation> All, IReadOnlyDictionary<Guid, string> Categories);
 
     private static async Task<Locations> LoadLocationsAsync(WarehouseDbContext db)
     {
         var all = await db.StorageLocations.AsNoTracking().ToListAsync();
         var paths = LocationTree.Paths(all.Select(l => new LocationNode(l.Id, l.ParentId, l.Name, l.SortOrder)));
-        return new Locations(paths, all);
+        var categories = await db.ProductCategories.AsNoTracking().ToDictionaryAsync(c => c.Id, c => c.Name);
+        return new Locations(paths, all, categories);
     }
 
     private static string? PathOf(Locations l, Guid? id) => id is { } g && l.Paths.TryGetValue(g, out var p) ? p : null;
@@ -63,7 +65,8 @@ public static class ProductEndpoints
         var nearest = batches.Where(b => b.OnHand > 0 && b.ExpiryDate is not null).OrderBy(b => b.ExpiryDate).ThenBy(b => b.CreatedAtUtc).FirstOrDefault();
         var nearestText = nearest is null ? null : ExpiryDate.Display(new ExpiryValue(nearest.ExpiryDate!.Value, nearest.ExpiryPrecision, nearest.ExpiryCalendar));
         return new ProductListItem(p.Id, p.Name, p.Brand, p.PackDescription, PathOf(locations, p.LocationId),
-            onHand, usable, p.MinStock, nearest?.ExpiryDate, nearestText, p.IsActive, p.Version);
+            onHand, usable, p.MinStock, nearest?.ExpiryDate, nearestText, p.IsActive, p.Version,
+            p.CategoryId is { } c ? locations.Categories.GetValueOrDefault(c) : null);
     }
 
     private static async Task<ProductDetail> ToDetailAsync(WarehouseDbContext db, Product p)
@@ -79,6 +82,7 @@ public static class ProductEndpoints
             RequiresExpiry = p.RequiresExpiry,
             AllowExpiredWithdrawal = p.AllowExpiredWithdrawal,
             LocationId = p.LocationId,
+            CategoryId = p.CategoryId,
             Batches = batches
                 .OrderBy(b => b.ExpiryDate is null).ThenBy(b => b.ExpiryDate).ThenBy(b => b.BatchNumber, StringComparer.Ordinal)
                 .Select(b => BatchMapping.ToItem(b, locations.Paths, p.LocationId, today))
@@ -87,9 +91,12 @@ public static class ProductEndpoints
         };
     }
 
-    private static async Task<IResult> ListAsync(WarehouseDbContext db, string? q, Guid? locationId, string? filter, bool includeInactive = false)
+    private static async Task<IResult> ListAsync(WarehouseDbContext db, string? q, Guid? locationId, string? filter, Guid? categoryId, bool includeInactive = false)
     {
-        var products = await db.Products.AsNoTracking().Where(p => includeInactive || p.IsActive).ToListAsync();
+        var products = await db.Products.AsNoTracking()
+            .Where(p => includeInactive || p.IsActive)
+            .Where(p => categoryId == null || p.CategoryId == categoryId)
+            .ToListAsync();
 
         if (TextNormalizer.SearchKey(q) is { } key) products = products.Where(p => p.SearchText.Contains(key)).ToList();
 
@@ -136,10 +143,12 @@ public static class ProductEndpoints
     {
         if (TextNormalizer.SearchKey(q) is null) return Results.Ok(new ProductSearchResponse(null, []));
 
+        // بارکد دوبعدی GS1 با GTIN جست‌وجو می‌شود؛ GTIN-14 و EAN-13 یک کالا را یکی می‌دانیم (بخش ۹.۲ spec).
         Guid? exact = null;
-        if (TextNormalizer.ScanKey(q) is { } scanKey)
+        var keys = Gs1Scan.LookupKeys(q);
+        if (keys.Count > 0)
         {
-            exact = await db.ProductBarcodes.AsNoTracking().Where(b => b.CodeKey == scanKey).Select(b => (Guid?)b.ProductId).FirstOrDefaultAsync();
+            exact = await db.ProductBarcodes.AsNoTracking().Where(b => keys.Contains(b.CodeKey)).Select(b => (Guid?)b.ProductId).FirstOrDefaultAsync();
         }
 
         var candidates = await db.Products.AsNoTracking().Where(p => p.IsActive)
@@ -162,10 +171,10 @@ public static class ProductEndpoints
 
     private static async Task<IResult> ByCodeAsync(string code, WarehouseDbContext db)
     {
-        var key = TextNormalizer.ScanKey(code);
-        if (key is null) return ApiProblems.NotFound();
+        var keys = Gs1Scan.LookupKeys(code);
+        if (keys.Count == 0) return ApiProblems.NotFound();
 
-        var productId = await db.ProductBarcodes.AsNoTracking().Where(b => b.CodeKey == key).Select(b => (Guid?)b.ProductId).FirstOrDefaultAsync();
+        var productId = await db.ProductBarcodes.AsNoTracking().Where(b => keys.Contains(b.CodeKey)).Select(b => (Guid?)b.ProductId).FirstOrDefaultAsync();
         if (productId is null) return ApiProblems.NotFound();
 
         var product = await db.Products.AsNoTracking().FirstAsync(p => p.Id == productId);
@@ -240,7 +249,8 @@ public static class ProductEndpoints
     }
 
     // محل باید موجود و (همراه نیاکانش) فعال باشد؛ نگه داشتن محل غیرفعال فعلی در ویرایش ایرادی ندارد.
-    private static async Task<IResult?> ValidateAsync(WarehouseDbContext db, SaveProductRequest request, Guid? unchangedLocation = null)
+    // دسته هم مثل محل: باید موجود و فعال باشد، مگر همان دسته‌ی فعلی قلم در ویرایش.
+    private static async Task<IResult?> ValidateAsync(WarehouseDbContext db, SaveProductRequest request, Guid? unchangedLocation = null, Guid? unchangedCategory = null)
     {
         var errors = ProductRules.Validate(request);
         if (errors.Count > 0) return ApiProblems.Validation(errors);
@@ -254,10 +264,17 @@ public static class ProductEndpoints
             if (!usable.Contains(id) && id != unchangedLocation) return ApiProblems.Validation("LocationId", "این محل غیرفعال است.");
         }
 
+        if (request.CategoryId is { } categoryId)
+        {
+            var category = await db.ProductCategories.AsNoTracking().FirstOrDefaultAsync(c => c.Id == categoryId);
+            if (category is null) return ApiProblems.Validation("CategoryId", "دسته پیدا نشد.");
+            if (!category.IsActive && categoryId != unchangedCategory) return ApiProblems.Validation("CategoryId", "این دسته غیرفعال است.");
+        }
+
         return null;
     }
 
-    private static void Apply(Product p, SaveProductRequest r)
+    internal static void Apply(Product p, SaveProductRequest r)
     {
         p.Name = TextNormalizer.Clean(r.Name)!;
         p.NameKey = TextNormalizer.Key(p.Name)!;
@@ -266,6 +283,7 @@ public static class ProductEndpoints
         p.PackDescription = TextNormalizer.Clean(r.PackDescription);
         p.PackKey = TextNormalizer.Key(p.PackDescription) ?? "";
         p.LocationId = r.LocationId;
+        p.CategoryId = r.CategoryId;
         p.MinStock = r.MinStock;
         p.RequiresExpiry = r.RequiresExpiry;
         p.AllowExpiredWithdrawal = r.AllowExpiredWithdrawal;
@@ -288,8 +306,8 @@ public static class ProductEndpoints
         }
         catch (DbUpdateException)
         {
-            // محل بین اعتبارسنجی و ذخیره حذف شد؛ کلید خارجی جلوی ذخیره را گرفت.
-            return ApiProblems.Validation("LocationId", "محل پیدا نشد.");
+            // محل یا دسته بین اعتبارسنجی و ذخیره حذف شد؛ کلید خارجی جلوی ذخیره را گرفت.
+            return ApiProblems.Validation("LocationId", "محل یا دسته پیدا نشد.");
         }
     }
 
@@ -314,7 +332,7 @@ public static class ProductEndpoints
         var product = await db.Products.FirstOrDefaultAsync(p => p.Id == id);
         if (product is null) return ApiProblems.NotFound();
 
-        if (await ValidateAsync(db, request, product.LocationId) is { } invalid) return invalid;
+        if (await ValidateAsync(db, request, product.LocationId, product.CategoryId) is { } invalid) return invalid;
 
         Apply(product, request);
         if (await DuplicateExistsAsync(db, product, id)) return ApiProblems.Conflict(DuplicateProduct);
@@ -375,7 +393,8 @@ public static class ProductEndpoints
         var product = await db.Products.FirstOrDefaultAsync(p => p.Id == id);
         if (product is null) return ApiProblems.NotFound();
 
-        var code = TextNormalizer.Clean(request.Code);
+        // اسکن GS1 فقط GTIN را به‌عنوان بارکد قلم ذخیره می‌کند.
+        var code = Gs1Scan.StoredCode(request.Code);
         var key = TextNormalizer.ScanKey(code);
         if (code is null || key is null) return ApiProblems.Validation("Code", "بارکد را وارد کنید.");
         if (code.Length > ProductRules.MaxCode) return ApiProblems.Validation("Code", $"بارکد حداکثر {ProductRules.MaxCode} نویسه است.");
@@ -410,7 +429,9 @@ public static class ProductEndpoints
 
     private static async Task<string?> OwnerNameAsync(WarehouseDbContext db, string key)
     {
-        var owner = await db.ProductBarcodes.AsNoTracking().Where(b => b.CodeKey == key).Select(b => (Guid?)b.ProductId).FirstOrDefaultAsync();
+        // شکل ۱۳ و ۱۴ رقمی یک GTIN یک بارکدند؛ هر دو برای مالکیت سنجیده می‌شوند.
+        var keys = Gs1Scan.CodeVariants(key);
+        var owner = await db.ProductBarcodes.AsNoTracking().Where(b => keys.Contains(b.CodeKey)).Select(b => (Guid?)b.ProductId).FirstOrDefaultAsync();
         return owner is { } pid ? await db.Products.AsNoTracking().Where(p => p.Id == pid).Select(p => p.Name).FirstOrDefaultAsync() : null;
     }
 

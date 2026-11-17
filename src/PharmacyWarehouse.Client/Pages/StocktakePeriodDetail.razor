@@ -1,0 +1,356 @@
+@page "/stocktake-periods/{Id:guid}"
+@attribute [Authorize]
+@using PharmacyWarehouse.Domain.Stock
+@inject StockClient StockApi
+@inject ToastService Toasts
+
+@* آمار دوره (بخش ۱۵.۳ spec): همه‌ی بچ‌های دامنه با آخرین شمارش در کل دوره؛ رفع گروهی اختلاف (اصلاح یا صرف‌نظر) و بستن دوره.
+   کارت‌ها فیلتر جدول‌اند. *@
+
+<PageTitle>@(_detail?.Name ?? "دوره‌ی انبارگردانی") | داروبار</PageTitle>
+
+<RequirePermission Permission="@Permissions.StockAdjust">
+<p><a href="stocktake-periods" class="btn btn-sm btn-quiet">بازگشت به دوره‌ها</a></p>
+
+@if (_error is not null)
+{
+    <div class="form-alert" role="alert">
+        <AppIcon Name="warning" /> <span>@_error</span>
+        <button type="button" class="btn btn-sm btn-quiet" @onclick="LoadAsync">تازه‌سازی</button>
+    </div>
+}
+
+@if (_detail is { } d)
+{
+    var summary = d.Summary;
+    <div class="page-head">
+        <div>
+            <h1>
+                <bdi>@d.Name</bdi>
+                @if (d.IsOpen)
+                {
+                    <span class="status-badge status-pending">باز</span>
+                }
+                else
+                {
+                    <span class="status-badge status-retired">بسته</span>
+                }
+            </h1>
+            <p>
+                <AppIcon Name="location" Size="14" /> @(d.LocationPaths.Count == 0 ? "همه‌ی محل‌ها" : string.Join("، ", d.LocationPaths))
+                &nbsp;·&nbsp;
+                <AppIcon Name="list" Size="14" /> @(d.CategoryNames.Count == 0 ? "همه‌ی دسته‌ها" : string.Join("، ", d.CategoryNames))
+            </p>
+        </div>
+        @if (d.IsOpen)
+        {
+            <div class="device-actions">
+                <a class="btn btn-primary" href="stocktakes?period=@d.Id"><AppIcon Name="plus" Size="15" /> نوبت تازه</a>
+                @if (!d.IsLegacy)
+                {
+                    <button type="button" class="btn btn-quiet" @onclick="() => _editing = true"><AppIcon Name="edit" Size="15" /> ویرایش دامنه</button>
+                }
+                <button type="button" class="btn btn-quiet" @onclick="() => _confirmClose = true">بستن دوره</button>
+            </div>
+        }
+    </div>
+
+    <div class="period-progress" aria-label="پیشرفت شمارش">
+        <div class="prog"><i style="width:@Percent(summary.Counted, summary.Total)%"></i></div>
+        <span>@JalaliDate.ToPersianDigits(Percent(summary.Counted, summary.Total).ToString())٪ شمرده شد (@JalaliDate.ToPersianDigits(summary.Counted.ToString()) از @JalaliDate.ToPersianDigits(summary.Total.ToString()) بچ)</span>
+    </div>
+
+    <div class="dash-cards">
+        @Card("همه", summary.Total, null, null)
+        @Card("شمرده‌نشده", summary.NotCounted, PeriodRowStatus.NotCounted, null)
+        @Card("در نوبت باز", summary.Pending, PeriodRowStatus.Pending, null)
+        @Card("اختلاف", summary.Discrepancy, PeriodRowStatus.Discrepancy, "alert-danger-soft")
+        @Card("بی‌اختلاف", summary.Matched, PeriodRowStatus.Matched, null)
+        @Card("رفع‌شده", summary.Adjusted + summary.Dismissed, PeriodRowStatus.Adjusted, null)
+    </div>
+
+    @if (_selected.Count > 0)
+    {
+        <div class="bulk-bar" role="region" aria-label="رفع گروهی اختلاف">
+            <strong>@JalaliDate.ToPersianDigits(_selected.Count.ToString()) اختلاف انتخاب شد</strong>
+            <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="() => ResolveAsync(false, null)">اصلاح موجودی</button>
+            <button type="button" class="btn btn-quiet" disabled="@_busy" @onclick="() => _dismissing = true">صرف‌نظر با یادداشت</button>
+            <button type="button" class="btn btn-quiet" @onclick="() => _selected.Clear()">لغو انتخاب</button>
+        </div>
+    }
+
+    var rows = VisibleRows().ToList();
+    @if (rows.Count == 0)
+    {
+        <div class="empty-state"><p>در این فیلتر بچی نیست.</p></div>
+    }
+    else
+    {
+        <section class="table-card">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        @if (d.IsOpen)
+                        {
+                            <th class="select-col">
+                                <input type="checkbox" class="form-check-input" aria-label="انتخاب همه‌ی اختلاف‌ها" checked="@AllSelected(rows)" @onchange="() => ToggleAll(rows)" />
+                            </th>
+                        }
+                        <th>قلم / بچ</th><th>محل</th><th>موجودی</th><th>مورد انتظار</th><th>شمرده‌شده</th><th>تفاوت</th><th>وضعیت</th><th>شمارش</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in rows)
+                    {
+                        var selectable = d.IsOpen && row.Status == PeriodRowStatus.Discrepancy;
+                        <tr @key="row.BatchId" class="@(row.CountId is { } cid && _selected.Contains(cid) ? "row-selected" : null)">
+                            @if (d.IsOpen)
+                            {
+                                <td class="select-col">
+                                    @if (selectable)
+                                    {
+                                        <input type="checkbox" class="form-check-input" aria-label="انتخاب @row.ProductName @row.BatchNumber"
+                                               checked="@_selected.Contains(row.CountId!.Value)" @onchange="() => Toggle(row.CountId!.Value)" />
+                                    }
+                                </td>
+                            }
+                            <td>
+                                <a href="products/@row.ProductId"><bdi>@row.ProductName</bdi></a>
+                                <small class="cell-sub d-block"><bdi>@row.BatchNumber</bdi>@(row.ExpiryText is null ? "" : $" · {row.ExpiryText}")</small>
+                            </td>
+                            <td class="cell-sub"><bdi>@(row.LocationPath ?? "—")</bdi></td>
+                            <td>@Num(row.OnHand)</td>
+                            <td>@Num(row.Expected)</td>
+                            <td>@Num(row.Counted)</td>
+                            <td dir="ltr" style="text-align:right;">@(row.Difference is { } diff and not 0 ? (diff > 0 ? "+" : "−") + JalaliDate.ToPersianDigits(Math.Abs(diff).ToString()) : "—")</td>
+                            <td>
+                                <span class="status-badge @StatusClass(row.Status)">@StocktakeRules.Label(row.Status)</span>
+                                @if (row.Conflicting)
+                                {
+                                    <span class="status-badge status-pending" title="در دو نوبت مختلف دو عدد متفاوت شمرده شده؛ آخرین شمارش معتبر است.">ناهمخوان</span>
+                                }
+                                @if (row.DismissNote is { } note)
+                                {
+                                    <small class="cell-sub d-block">@note</small>
+                                }
+                            </td>
+                            <td class="cell-sub">
+                                @if (row.CountedAtUtc is { } at)
+                                {
+                                    <bdi>@JalaliDate.Format(at)</bdi> <bdi>@row.CountedBy</bdi>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+
+    <section class="card-emu mt-3">
+        <h2>نوبت‌های این دوره (@JalaliDate.ToPersianDigits(d.Sessions.Count.ToString()))</h2>
+        @if (d.Sessions.Count == 0)
+        {
+            <p class="form-hint">هنوز نوبتی شروع نشده.</p>
+        }
+        else
+        {
+            <table class="data-table">
+                <thead><tr><th>محل</th><th>دسته</th><th>شروع</th><th>شروع‌کننده</th><th>وضعیت</th><th>شمرده‌شده</th></tr></thead>
+                <tbody>
+                    @foreach (var s in d.Sessions)
+                    {
+                        <tr class="row-link" @key="s.Id">
+                            <td><a class="row-link-main" href="stocktakes/@s.Id"><bdi>@s.LocationPath</bdi></a></td>
+                            <td><bdi>@(s.CategoryName ?? "همه")</bdi></td>
+                            <td><bdi>@JalaliDate.Format(s.StartedAtUtc)</bdi></td>
+                            <td><bdi>@s.StartedByName</bdi></td>
+                            <td>@(s.ClosedAtUtc is null ? "باز" : "بسته")</td>
+                            <td>@JalaliDate.ToPersianDigits(s.CountedBatches.ToString())</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    @if (_editing)
+    {
+        <ModalDialog Side="true" Title="ویرایش دامنه‌ی دوره" OnClose="() => _editing = false">
+            <PeriodForm Existing="d" OnSaved="Saved" OnCancel="() => _editing = false" />
+        </ModalDialog>
+    }
+
+    @if (_dismissing)
+    {
+        <ModalDialog Title="صرف‌نظر از اختلاف" OnClose="() => _dismissing = false">
+            <p>موجودی عوض نمی‌شود؛ فقط اختلاف «رفع‌شده» علامت می‌خورد و دلیلش در تاریخچه می‌ماند.</p>
+            <div class="form-field">
+                <label for="dismiss-note">دلیل <span class="required">*</span></label>
+                <textarea id="dismiss-note" class="form-control" rows="3" @bind="_dismissNote" placeholder="مثلاً «خطای شمارش؛ دوباره شمرده شد و درست بود»"></textarea>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-primary" disabled="@(_busy || string.IsNullOrWhiteSpace(_dismissNote))" @onclick="() => ResolveAsync(true, _dismissNote)">صرف‌نظر از @JalaliDate.ToPersianDigits(_selected.Count.ToString()) مورد</button>
+                <button type="button" class="btn btn-quiet" @onclick="() => _dismissing = false">انصراف</button>
+            </div>
+        </ModalDialog>
+    }
+
+    @if (_confirmClose)
+    {
+        <ModalDialog Title="بستن دوره" OnClose="() => _confirmClose = false">
+            <p>بعد از بستن، نوبت تازه، شمارش و رفع اختلاف در این دوره ممکن نیست. همه‌ی نوبت‌ها باید بسته و همه‌ی اختلاف‌ها رفع شده باشند.</p>
+            @if (summary.NotCounted > 0)
+            {
+                <div class="form-alert warning"><AppIcon Name="warning" /> <span>@JalaliDate.ToPersianDigits(summary.NotCounted.ToString()) بچ دارای موجودی هنوز شمرده نشده است.</span></div>
+            }
+            <div class="modal-actions">
+                <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="CloseAsync">بستن دوره</button>
+                <button type="button" class="btn btn-quiet" @onclick="() => _confirmClose = false">انصراف</button>
+            </div>
+        </ModalDialog>
+    }
+}
+else if (_error is null)
+{
+    <div class="loading-line">در حال بارگذاری…</div>
+}
+</RequirePermission>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private PeriodDetail? _detail;
+    private string? _error;
+    private PeriodRowStatus? _filter = PeriodRowStatus.Discrepancy;
+    private bool _filterChosen;
+    private readonly HashSet<Guid> _selected = [];
+    private bool _busy;
+    private bool _editing;
+    private bool _dismissing;
+    private bool _confirmClose;
+    private string _dismissNote = "";
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        var result = await StockApi.PeriodAsync(Id);
+        if (!result.IsSuccess)
+        {
+            _error = result.Outcome == ApiOutcome.NotFound ? "این دوره پیدا نشد." : result.ErrorMessage;
+            return;
+        }
+
+        _detail = result.Value;
+        // پیش‌فرض: اگر اختلاف هست همان، وگرنه همه. انتخاب کاربر با تازه‌سازی عوض نمی‌شود.
+        if (!_filterChosen) _filter = _detail!.Summary.Discrepancy > 0 ? PeriodRowStatus.Discrepancy : null;
+        _selected.RemoveWhere(id => _detail!.Rows.All(r => r.CountId != id || r.Status != PeriodRowStatus.Discrepancy));
+    }
+
+    private IEnumerable<PeriodRowItem> VisibleRows() => _detail!.Rows.Where(r => _filter switch
+    {
+        null => true,
+        PeriodRowStatus.Adjusted => r.Status is PeriodRowStatus.Adjusted or PeriodRowStatus.Dismissed,
+        { } f => r.Status == f
+    });
+
+    private RenderFragment Card(string title, int value, PeriodRowStatus? filter, string? alertClass) => __builder =>
+    {
+        var active = _filter == filter;
+        <button type="button" class="dash-card @(value > 0 ? alertClass : null) @(active ? "dash-card-active" : null)" aria-pressed="@(active ? "true" : "false")"
+                @onclick="() => { _filter = filter; _filterChosen = true; }">
+            <strong>@JalaliDate.ToPersianDigits(value.ToString())</strong>
+            <span>@title</span>
+        </button>
+    };
+
+    private static int Percent(int part, int total) => total == 0 ? 0 : (int)Math.Round(100.0 * part / total);
+
+    private static string Num(int? value) => value is { } v ? JalaliDate.ToPersianDigits(v.ToString()) : "—";
+
+    private static string StatusClass(PeriodRowStatus status) => status switch
+    {
+        PeriodRowStatus.Discrepancy => "status-expired",
+        PeriodRowStatus.Pending or PeriodRowStatus.NotCounted => "status-pending",
+        PeriodRowStatus.Matched or PeriodRowStatus.Adjusted => "",
+        _ => "status-retired"
+    };
+
+    private void Toggle(Guid countId)
+    {
+        if (!_selected.Remove(countId)) _selected.Add(countId);
+    }
+
+    private bool AllSelected(List<PeriodRowItem> rows)
+    {
+        var ids = rows.Where(r => r.Status == PeriodRowStatus.Discrepancy && r.CountId is not null).Select(r => r.CountId!.Value).ToList();
+        return ids.Count > 0 && ids.All(_selected.Contains);
+    }
+
+    private void ToggleAll(List<PeriodRowItem> rows)
+    {
+        var ids = rows.Where(r => r.Status == PeriodRowStatus.Discrepancy && r.CountId is not null).Select(r => r.CountId!.Value).ToList();
+        if (ids.All(_selected.Contains)) _selected.ExceptWith(ids);
+        else _selected.UnionWith(ids);
+    }
+
+    private async Task ResolveAsync(bool dismiss, string? note)
+    {
+        if (_busy || _detail is null || _selected.Count == 0) return;
+
+        _busy = true;
+        var items = _detail.Rows
+            .Where(r => r.CountId is { } id && _selected.Contains(id))
+            .Select(r => new ResolveCountItem { CountId = r.CountId!.Value, Version = r.CountVersion!.Value, Dismiss = dismiss, Note = note })
+            .ToList();
+        var result = await StockApi.ResolveAsync(Id, new ResolveCountsRequest { Items = items });
+        _busy = false;
+
+        if (!result.IsSuccess)
+        {
+            Toasts.Show(result.ErrorMessage ?? "ثبت نشد.", isWarning: true);
+            return;
+        }
+
+        var r = result.Value!;
+        var message = dismiss
+            ? $"از {JalaliDate.ToPersianDigits(r.Done.Count.ToString())} اختلاف صرف‌نظر شد."
+            : $"{JalaliDate.ToPersianDigits(r.Done.Count.ToString())} اختلاف اصلاح شد.";
+        if (r.Failed.Count > 0) message += " " + string.Join(" ", r.Failed.Select(f => f.Message).Distinct());
+        Toasts.Show(message, isWarning: r.Failed.Count > 0);
+
+        _selected.Clear();
+        _dismissing = false;
+        _dismissNote = "";
+        await LoadAsync();
+    }
+
+    private async Task CloseAsync()
+    {
+        if (_busy || _detail is null) return;
+
+        _busy = true;
+        var result = await StockApi.ClosePeriodAsync(Id, _detail.Version);
+        _busy = false;
+        _confirmClose = false;
+
+        if (!result.IsSuccess)
+        {
+            Toasts.Show(result.ErrorMessage ?? "بسته نشد.", isWarning: true);
+            await LoadAsync();
+            return;
+        }
+
+        _detail = result.Value;
+        Toasts.Show("دوره بسته شد.");
+    }
+
+    private async Task Saved(PeriodDetail period)
+    {
+        _editing = false;
+        _detail = period;
+        await LoadAsync();
+    }
+}

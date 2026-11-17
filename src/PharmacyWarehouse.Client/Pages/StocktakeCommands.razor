@@ -1,0 +1,34 @@
+@page "/stocktakes/commands"
+@attribute [Authorize]
+
+@* برگه‌ی چاپی بارکد فرمان برای شمارش بی‌دست (بخش ۹.۲ spec). کنار قفسه گذاشته می‌شود. *@
+
+<PageTitle>بارکد فرمان | داروبار</PageTitle>
+
+<div class="page-head no-print">
+    <div>
+        <h1>برگه‌ی بارکد فرمان</h1>
+        <p>این برگه را چاپ کنید و هنگام انبارگردانی دم دست بگذارید. «تعداد ×n» فقط اسکن بعدی را n جعبه حساب می‌کند.</p>
+    </div>
+    <button type="button" class="btn btn-primary" onclick="window.print()"><AppIcon Name="print" Size="15" /> چاپ</button>
+</div>
+
+<div class="command-sheet">
+    @foreach (var (command, label) in Commands)
+    {
+        <div class="command-card">
+            <Barcode Value="@command" />
+            <strong>@label</strong>
+            <small class="mono">@command</small>
+        </div>
+    }
+</div>
+
+@code {
+    private static readonly (string Code, string Label)[] Commands =
+    [
+        ("CMD-QTY-2", "تعداد × ۲"), ("CMD-QTY-3", "تعداد × ۳"), ("CMD-QTY-5", "تعداد × ۵"), ("CMD-QTY-10", "تعداد × ۱۰"),
+        ("CMD-QTY-12", "تعداد × ۱۲"), ("CMD-QTY-20", "تعداد × ۲۰"), ("CMD-QTY-50", "تعداد × ۵۰"), ("CMD-QTY-100", "تعداد × ۱۰۰"),
+        ("CMD-UNDO", "برگرداندن آخرین اسکن"), ("CMD-DONE", "ثبت شمارش‌ها")
+    ];
+}

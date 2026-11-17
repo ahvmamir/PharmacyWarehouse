@@ -2,7 +2,8 @@
 
 @* جست‌وجوی قلم، مشترک ورود جنس و برداشت (بخش ۱۵.۱ spec). رتبه‌بندی با سرور است؛ بارکد دقیق هنگام Enter خودکار انتخاب می‌شود. *@
 <Combobox @ref="_combo" TItem="ProductListItem" InputId="@InputId" Placeholder="@Placeholder" AutoFocus="@AutoFocus"
-          ClearOnPick="true" DebounceMs="250" MinChars="2" Search="SearchAsync" OnPick="OnPick" EmptyContent="EmptyContent">
+          ClearOnPick="true" DebounceMs="250" MinChars="2" Search="SearchAsync" OnPick="OnPick" EmptyContent="EmptyContent"
+          OnEnterNoMatch="OnEnterNoMatch">
     <ItemTemplate Context="item">
         <span class="combo-main">
             <strong>@item.Name</strong>
@@ -18,8 +19,17 @@
     [Parameter] public bool AutoFocus { get; set; } = true;
     [Parameter] public EventCallback<ProductListItem> OnPick { get; set; }
     [Parameter] public RenderFragment? EmptyContent { get; set; }
+    [Parameter] public EventCallback<string> OnEnterNoMatch { get; set; }
+
+    public string Text => _combo?.Text ?? "";
 
     private Combobox<ProductListItem>? _combo;
+
+    // اسکن GS1 (بخش ۹.۲ spec): بچ، انقضا و UID همان جعبه برای قلمی که با GTIN پیدا شد نگه داشته می‌شود
+    // تا صاحب فیلد پس از OnPick بردارد. کلید قلم است، پس اسکن بعدی قلم دیگر آن را خراب نمی‌کند.
+    private readonly Dictionary<Guid, Gs1Data> _scans = [];
+
+    public Gs1Data? TakeScan(Guid productId) => _scans.Remove(productId, out var data) ? data : null;
 
     public ValueTask FocusAsync() => _combo?.FocusAsync() ?? ValueTask.CompletedTask;
 
@@ -30,6 +40,7 @@
 
         var response = result.Value!;
         var exact = response.ExactBarcodeId is { } id ? response.Items.FirstOrDefault(i => i.Id == id) : null;
+        if (exact is not null && Gs1Scan.Parse(text) is { } scan) _scans[exact.Id] = scan;
         return new(response.Items, exact);
     }
 }

@@ -11,6 +11,15 @@ public sealed class ReceiveRow
     public Guid ProductId { get; set; }
     public string ProductName { get; set; } = "";
 
+    // قلم تازه که در همین ورود تعریف می‌شود (بخش ۱۵.۳ spec): ProductId خالی است و سرور قلم را در همان تراکنش می‌سازد.
+    public SaveProductRequest? NewProduct { get; set; }
+    public string? NewBarcode { get; set; }
+
+    // UID جعبه‌هایی که با کد GS1 در این ردیف اسکن شدند؛ اسکن دوباره‌ی همان جعبه شمرده نمی‌شود.
+    public List<string> Serials { get; set; } = [];
+
+    [JsonIgnore] public bool IsNewProduct => NewProduct is not null;
+
     // null یعنی «بچ تازه».
     public Guid? BatchId { get; set; }
     public string BatchNumber { get; set; } = "";

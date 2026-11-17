@@ -1,0 +1,117 @@
+@page "/stocktake-periods"
+@attribute [Authorize]
+@inject StockClient StockApi
+@inject NavigationManager Navigation
+
+@* دوره‌های انبارگردانی (بخش ۱۵.۳ spec): اول دوره با دامنه ساخته می‌شود، بعد نوبت‌ها زیر آن. *@
+
+<PageTitle>دوره‌های انبارگردانی | داروبار</PageTitle>
+
+<RequirePermission Permission="@Permissions.StockAdjust">
+<div class="page-head">
+    <div>
+        <h1>دوره‌های انبارگردانی</h1>
+        <p>هر دوره همه یا بخشی از محل‌ها و دسته‌ها را می‌پوشاند. نوبت‌های شمارش زیر یک دوره شروع می‌شوند و اختلاف‌ها در صفحه‌ی دوره رفع می‌شوند.</p>
+    </div>
+    <button type="button" class="btn btn-primary" @onclick="() => _creating = true"><AppIcon Name="plus" Size="15" /> دوره‌ی تازه</button>
+</div>
+
+@if (_error is not null)
+{
+    <div class="form-alert" role="alert">
+        <AppIcon Name="warning" /> <span>@_error</span>
+        <button type="button" class="btn btn-sm btn-quiet" @onclick="LoadAsync">تازه‌سازی</button>
+    </div>
+}
+
+@if (_items is null)
+{
+    @if (_error is null)
+    {
+        <div class="loading-line">در حال بارگذاری…</div>
+    }
+}
+else if (_items.Count == 0)
+{
+    <div class="empty-state">
+        <AppIcon Name="list" Size="36" />
+        <p>هنوز دوره‌ای ساخته نشده. با «دوره‌ی تازه» محل‌ها و دسته‌های این انبارگردانی را انتخاب کنید.</p>
+    </div>
+}
+else
+{
+    <section class="table-card">
+        <table class="data-table">
+            <thead>
+                <tr><th>نام</th><th>دامنه</th><th>شروع</th><th>نوبت‌ها</th><th>اختلاف باز</th><th>وضعیت</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var item in _items)
+                {
+                    <tr class="row-link" @key="item.Id">
+                        <td><a class="row-link-main" href="stocktake-periods/@item.Id"><bdi>@item.Name</bdi></a></td>
+                        <td class="cell-sub"><bdi>@item.ScopeText</bdi></td>
+                        <td><bdi>@JalaliDate.Format(item.StartedAtUtc)</bdi></td>
+                        <td>
+                            @JalaliDate.ToPersianDigits(item.Sessions.ToString())
+                            @if (item.OpenSessions > 0)
+                            {
+                                <span class="cell-sub">(@JalaliDate.ToPersianDigits(item.OpenSessions.ToString()) باز)</span>
+                            }
+                        </td>
+                        <td>
+                            @if (item.Discrepancies > 0)
+                            {
+                                <span class="status-badge status-expired">@JalaliDate.ToPersianDigits(item.Discrepancies.ToString())</span>
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </td>
+                        <td>
+                            @if (item.IsOpen)
+                            {
+                                <span class="status-badge status-pending">باز</span>
+                            }
+                            else
+                            {
+                                <span>بسته: <bdi>@JalaliDate.Format(item.ClosedAtUtc!.Value)</bdi></span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+}
+
+@if (_creating)
+{
+    <ModalDialog Side="true" Title="دوره‌ی تازه" OnClose="() => _creating = false">
+        <PeriodForm OnSaved="Created" OnCancel="() => _creating = false" />
+    </ModalDialog>
+}
+</RequirePermission>
+
+@code {
+    private List<PeriodListItem>? _items;
+    private string? _error;
+    private bool _creating;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        var result = await StockApi.PeriodsAsync();
+        if (result.IsSuccess) _items = result.Value;
+        else _error = result.ErrorMessage;
+    }
+
+    private void Created(PeriodDetail period)
+    {
+        _creating = false;
+        Navigation.NavigateTo($"stocktake-periods/{period.Id}");
+    }
+}

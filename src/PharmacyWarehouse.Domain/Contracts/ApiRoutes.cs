@@ -26,6 +26,12 @@ public static class ApiRoutes
     public const string AppInfo = "/api/app-info";
     public const string Dashboard = "/api/dashboard";
     public const string Settings = "/api/settings";
+    public const string Inbox = "/api/inbox";
+    public const string Categories = "/api/categories";
+    public const string ProductsBulkCategory = "/api/products/bulk-category";
+    public const string StocktakePeriods = "/api/stocktake-periods";
+    public static string PeriodClose(Guid id) => $"{StocktakePeriods}/{id}/close";
+    public static string PeriodResolve(Guid id) => $"{StocktakePeriods}/{id}/resolve";
 
     // مسیرهای ساخته‌شده برای کلاینت
     public static string ById(string collection, Guid id) => $"{collection}/{id}";

@@ -4,6 +4,7 @@
 @using PharmacyWarehouse.Domain.Stock
 @inject ProductsClient ProductsApi
 @inject LocationsClient LocationsApi
+@inject CategoriesClient CategoriesApi
 @inject ToastService Toasts
 @inject NavigationManager Navigation
 @inject ApiAuthenticationStateProvider Session
@@ -18,25 +19,37 @@
     </div>
     @if (CanManage)
     {
-        <a class="btn btn-primary" href="products/new"><AppIcon Name="plus" Size="15" /> قلم جدید</a>
+        <button type="button" class="btn btn-primary" @onclick="() => _creating = true"><AppIcon Name="plus" Size="15" /> قلم جدید</button>
     }
 </div>
 
-<div class="search-row">
-    <div style="flex:1;min-width:240px;">
-        <ScanInput @ref="_scan" OnScan="OnScanAsync" Placeholder="اسکن بارکد (یا نام قلم و Enter)" />
-    </div>
-</div>
-
+@* یک کادر برای نام و بارکد (بخش ۱۵.۳ spec): Enter روی بارکد کامل مستقیم به قلم می‌رود؛ بقیه فهرست را فیلتر می‌کند. *@
 <form class="filters" @onsubmit="SearchAsync" @onsubmit:preventDefault="true">
-    <div>
-        <label for="product-q">جست‌وجو</label>
-        <input id="product-q" class="form-control" @bind="_query" @bind:event="oninput" placeholder="نام، برند، بسته یا بارکد" />
+    <div class="filters-search">
+        <label for="product-q">جست‌وجو یا اسکن</label>
+        <div class="d-flex gap-2">
+            <input id="product-q" class="form-control" dir="auto" autocomplete="off" @ref="_queryInput" @bind="_query" @bind:event="oninput"
+                   placeholder="نام، برند، بسته یا بارکد؛ بارکدخوان هم همین‌جا" />
+            <button type="submit" class="btn btn-primary"><AppIcon Name="search" Size="15" /> جست‌وجو</button>
+        </div>
     </div>
     <div>
         <label for="product-location">محل</label>
         <LocationPicker InputId="product-location" Items="_locations" EmptyLabel="— همه‌ی محل‌ها —" Value="_locationId" ValueChanged="OnLocationChangedAsync" />
     </div>
+    @if (_categories.Count > 0)
+    {
+        <div>
+            <label for="product-category-filter">دسته</label>
+            <select id="product-category-filter" class="form-select" value="@(_categoryId?.ToString() ?? "")" @onchange="OnCategoryChangedAsync">
+                <option value="">— همه‌ی دسته‌ها —</option>
+                @foreach (var category in _categories)
+                {
+                    <option value="@category.Id">@category.Name</option>
+                }
+            </select>
+        </div>
+    }
     <div>
         <label for="product-filter">وضعیت موجودی</label>
         <select id="product-filter" class="form-select" @bind="_filter" @bind:after="LoadAsync">
@@ -47,7 +60,6 @@
         </select>
     </div>
     <div class="filters-actions">
-        <button type="submit" class="btn btn-primary">جست‌وجو</button>
         @if (CanManage)
         {
             <label class="d-flex align-items-center gap-2 mb-0">
@@ -78,14 +90,43 @@ else if (_items.Count == 0)
 }
 else
 {
-    <section class="table-card">
+    @if (CanBulk && _selected.Count > 0)
+{
+    @* دسته‌بندی سریع اقلام فعلی (بخش ۱۵.۳ spec): چند قلم انتخاب، یک دسته، یک کلیک. *@
+    <div class="bulk-bar" role="region" aria-label="کار گروهی">
+        <strong>@JalaliDate.ToPersianDigits(_selected.Count.ToString()) قلم انتخاب شد</strong>
+        <label for="bulk-category" class="visually-hidden">دسته</label>
+        <select id="bulk-category" class="form-select" @bind="_bulkCategory">
+            <option value="">— بدون دسته —</option>
+            @foreach (var category in _categories.Where(c => c.IsActive))
+            {
+                <option value="@category.Id">@category.Name</option>
+            }
+        </select>
+        <button type="button" class="btn btn-primary" disabled="@_bulkBusy" @onclick="AssignCategoryAsync">@(_bulkBusy ? "در حال ثبت…" : "تعیین دسته")</button>
+        <button type="button" class="btn btn-quiet" @onclick="() => _selected.Clear()">لغو انتخاب</button>
+    </div>
+}
+
+<section class="table-card">
         <table class="data-table">
             <thead>
                 <tr>
+                    @if (CanBulk)
+                    {
+                        <th class="select-col">
+                            <input type="checkbox" class="form-check-input" aria-label="انتخاب همه"
+                                   checked="@(_selected.Count > 0 && _selected.Count == _items.Count)" @onchange="ToggleAll" />
+                        </th>
+                    }
                     <th>نام</th>
                     <th>برند</th>
                     <th>بسته</th>
                     <th>محل</th>
+                    @if (_categories.Count > 0)
+                    {
+                        <th>دسته</th>
+                    }
                     <th>موجودی (جعبه)</th>
                     <th>نزدیک‌ترین انقضا</th>
                 </tr>
@@ -93,7 +134,14 @@ else
             <tbody>
                 @foreach (var item in _items)
                 {
-                    <tr class="row-link" @key="item.Id">
+                    <tr class="row-link @(_selected.Contains(item.Id) ? "row-selected" : null)" @key="item.Id">
+                        @if (CanBulk)
+                        {
+                            <td class="select-col">
+                                <input type="checkbox" class="form-check-input row-link-above" aria-label="انتخاب @item.Name"
+                                       checked="@_selected.Contains(item.Id)" @onchange="() => ToggleOne(item.Id)" />
+                            </td>
+                        }
                         <td>
                             <a class="row-link-main" href="products/@item.Id">@item.Name</a>
                             @if (!item.IsActive)
@@ -104,6 +152,10 @@ else
                         <td>@item.Brand</td>
                         <td>@item.PackDescription</td>
                         <td><bdi>@item.LocationPath</bdi></td>
+                        @if (_categories.Count > 0)
+                        {
+                            <td><bdi>@item.CategoryName</bdi></td>
+                        }
                         <td>
                             @JalaliDate.ToPersianDigits(item.OnHand.ToString())
                             @if (item.MinStock is { } min && item.UsableOnHand < min)
@@ -130,6 +182,13 @@ else
             </tbody>
         </table>
     </section>
+}
+
+@if (_creating)
+{
+    <ModalDialog Side="true" Title="تعریف قلم" OnClose="() => _creating = false">
+        <ProductForm OnSaved="Created" OnCancel="() => _creating = false" OnAnySaved="_ => LoadAsync()" />
+    </ModalDialog>
 }
 
 @if (_unknownCode is { } unknown)
@@ -181,6 +240,60 @@ else
 </RequirePermission>
 
 @code {
+    // انتخاب گروهی برای تعیین دسته؛ فقط برای products.manage و وقتی دسته‌ای تعریف شده.
+    private readonly HashSet<Guid> _selected = [];
+    private string _bulkCategory = "";
+    private bool _bulkBusy;
+
+    private bool CanBulk => CanManage && _categories.Count > 0;
+
+    private void ToggleOne(Guid id)
+    {
+        if (!_selected.Remove(id)) _selected.Add(id);
+    }
+
+    private void ToggleAll()
+    {
+        if (_selected.Count == _items.Count) _selected.Clear();
+        else foreach (var item in _items) _selected.Add(item.Id);
+    }
+
+    private async Task AssignCategoryAsync()
+    {
+        if (_bulkBusy || _selected.Count == 0) return;
+
+        _bulkBusy = true;
+        var request = new BulkCategoryRequest
+        {
+            CategoryId = Guid.TryParse(_bulkCategory, out var id) ? id : null,
+            Items = _items.Where(i => _selected.Contains(i.Id)).Select(i => new ReviewTarget { Id = i.Id, Version = i.Version }).ToList()
+        };
+        var result = await CategoriesApi.AssignAsync(request);
+        _bulkBusy = false;
+
+        if (!result.IsSuccess)
+        {
+            Toasts.Show(result.ErrorMessage ?? "ثبت نشد.", isWarning: true);
+            return;
+        }
+
+        var done = result.Value!;
+        var message = $"دسته‌ی {JalaliDate.ToPersianDigits(done.Updated.Count.ToString())} قلم تعیین شد.";
+        if (done.Failed.Count > 0) message += " " + string.Join(" ", done.Failed.Select(f => f.Message));
+        Toasts.Show(message, isWarning: done.Failed.Count > 0);
+        _selected.Clear();
+        await LoadAsync();
+    }
+
+    // پنجره‌ی «تعریف قلم» (بخش ۱۵.۳ spec)؛ «ذخیره» به جزئیات قلم تازه می‌رود، «ثبت و قلم بعدی» پنجره را باز نگه می‌دارد.
+    private bool _creating;
+
+    private void Created(ProductDetail detail)
+    {
+        _creating = false;
+        Navigation.NavigateTo($"products/{detail.Summary.Id}");
+    }
+
     private List<ProductListItem> _items = [];
     private List<StorageLocationItem> _locations = [];
     private bool _loaded;
@@ -188,10 +301,14 @@ else
 
     private string _query = "";
     private Guid? _locationId;
+    private List<CategoryItem> _categories = [];
+    // از /products?categoryId=… (پیوند صفحه‌ی دسته‌ها) هم پر می‌شود.
+    [SupplyParameterFromQuery(Name = "categoryId")] public Guid? CategoryQuery { get; set; }
+    private Guid? _categoryId;
     private string _filter = "";
     private bool _includeInactive;
 
-    private ScanInput? _scan;
+    private ElementReference _queryInput;
 
     // جریان بارکد ناشناخته
     private string? _unknownCode;
@@ -203,7 +320,7 @@ else
 
     private bool CanManage => Session.Can(Permissions.ProductsManage);
 
-    private bool HasCriteria => !string.IsNullOrWhiteSpace(_query) || _locationId is not null || _filter != "";
+    private bool HasCriteria => !string.IsNullOrWhiteSpace(_query) || _locationId is not null || _categoryId is not null || _filter != "";
 
     private static DateOnly Today() => LocalDay.Today(DateTime.UtcNow);
 
@@ -219,10 +336,35 @@ else
 
         var locations = await LocationsApi.ListAsync();
         if (locations.IsSuccess) _locations = locations.Value!;
+        _categories = (await CategoriesApi.ListAsync()).Value ?? [];
+        _categoryId = CategoryQuery;
         await LoadAsync();
     }
 
-    private Task SearchAsync() => LoadAsync();
+    private Task OnCategoryChangedAsync(ChangeEventArgs e)
+    {
+        _categoryId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        return LoadAsync();
+    }
+
+    // متن بی‌فاصله‌ی بلند (بارکد یا کد GS1) اول با کد جست‌وجو می‌شود؛ تکه‌ی کوتاه بارکد همان فیلتر عادی است.
+    private async Task SearchAsync()
+    {
+        var text = _query.Trim();
+        if (text.Length >= 8 && !ProductLookup.LooksLikeName(text))
+        {
+            _query = "";
+            await OnScanAsync(text);
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await _queryInput.FocusAsync();
+    }
 
     private Task OnLocationChangedAsync(Guid? id)
     {
@@ -234,7 +376,7 @@ else
     {
         _error = null;
         var result = await ProductsApi.ListAsync(
-            _query, _locationId, _filter, CanManage && _includeInactive);
+            _query, _locationId, _filter, CanManage && _includeInactive, _categoryId);
         if (!result.IsSuccess)
         {
             _error = result.ErrorMessage;
@@ -323,7 +465,7 @@ else
     private async Task CloseUnknownAsync()
     {
         _unknownCode = null;
-        if (_scan is not null) await _scan.FocusAsync();
+        await _queryInput.FocusAsync();
     }
 
     private void CloseUnknown() => _ = CloseUnknownAsync();

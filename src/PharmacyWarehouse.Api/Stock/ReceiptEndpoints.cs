@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using PharmacyWarehouse.Api.Auth;
 using PharmacyWarehouse.Api.Data;
 using PharmacyWarehouse.Domain.Auth;
 using PharmacyWarehouse.Domain.Contracts;
@@ -33,9 +34,14 @@ public static class ReceiptEndpoints
     private sealed record AppliedLine(Batch Batch, Guid? ProductLocationId, bool Created, IReadOnlyList<ExpiryWarning> Warnings);
 
     // آنچه در یک درخواست بین ردیف‌ها مشترک است. NewBatches لازم است چون بچ تازه تا SaveChanges در دیتابیس نیست.
-    private sealed class ReceiptSession(WarehouseDbContext db, StockLedger ledger, List<StorageLocation> locations)
+    // CanDefineProducts: تعریف قلم تازه داخل ورود همان مجوز «تعریف قلم» (products.manage) را می‌خواهد.
+    private sealed class ReceiptSession(WarehouseDbContext db, StockLedger ledger, List<StorageLocation> locations, bool canDefineProducts)
     {
         public WarehouseDbContext Db { get; } = db;
+        public bool CanDefineProducts { get; } = canDefineProducts;
+        // قلم‌های تازه‌ی همین درخواست با کلید «نام|برند|بسته»، و بارکدهای تازه با ScanKey → قلم.
+        public Dictionary<string, Product> NewProducts { get; } = [];
+        public Dictionary<string, Product> NewBarcodes { get; } = [];
         public StockLedger Ledger { get; } = ledger;
         public List<StorageLocation> Locations { get; } = locations;
         public HashSet<Guid> Usable { get; } =
@@ -47,8 +53,79 @@ public static class ReceiptEndpoints
             LocationTree.Paths(Locations.Select(l => new LocationNode(l.Id, l.ParentId, l.Name, l.SortOrder)));
     }
 
-    private static async Task<ReceiptSession> OpenSessionAsync(WarehouseDbContext db, StockLedger ledger) =>
-        new(db, ledger, await db.StorageLocations.AsNoTracking().ToListAsync());
+    private static async Task<ReceiptSession> OpenSessionAsync(WarehouseDbContext db, StockLedger ledger, AuditContext audit, PermissionService permissions) =>
+        new(db, ledger, await db.StorageLocations.AsNoTracking().ToListAsync(),
+            await permissions.HasAsync(audit.UserId, Permissions.ProductsManage));
+
+    // قلم تازه‌ی یک ردیف. خطاها با پیشوند «NewProduct.» برمی‌گردند تا کلاینت کنار همان فیلد نشان دهد.
+    private static async Task<(Product? Product, LineFailure? Failure)> NewProductAsync(SaveProductRequest request, string? barcode, ReceiptSession session)
+    {
+        static (Product?, LineFailure?) Fail(FailureKind kind, string field, string message) => (null, new LineFailure(kind, field, message));
+
+        if (!session.CanDefineProducts) return Fail(FailureKind.Validation, "NewProduct", "اجازه‌ی تعریف قلم تازه را ندارید؛ قلم را از جست‌وجو انتخاب کنید.");
+        if (ProductRules.Validate(request) is [var first, ..]) return Fail(FailureKind.Validation, $"NewProduct.{first.Field}", first.Message);
+
+        var db = session.Db;
+        if (request.LocationId is { } locationId)
+        {
+            if (session.Locations.All(l => l.Id != locationId)) return Fail(FailureKind.Validation, "NewProduct.LocationId", "محل پیدا نشد.");
+            if (!session.Usable.Contains(locationId)) return Fail(FailureKind.Validation, "NewProduct.LocationId", "این محل غیرفعال است.");
+        }
+
+        if (request.CategoryId is { } categoryId)
+        {
+            var category = await db.ProductCategories.AsNoTracking().FirstOrDefaultAsync(c => c.Id == categoryId);
+            if (category is null) return Fail(FailureKind.Validation, "NewProduct.CategoryId", "دسته پیدا نشد.");
+            if (!category.IsActive) return Fail(FailureKind.Validation, "NewProduct.CategoryId", "این دسته غیرفعال است.");
+        }
+
+        var candidate = new Product { Id = Guid.NewGuid(), CreatedAtUtc = session.Now };
+        ProductEndpoints.Apply(candidate, request);
+        var key = $"{candidate.NameKey}|{candidate.BrandKey}|{candidate.PackKey}";
+
+        // همان قلم تازه در ردیف دیگرِ همین درخواست (مثلاً بچ دوم) یک قلم است، نه دو قلم.
+        var isNew = !session.NewProducts.TryGetValue(key, out var product);
+        if (isNew)
+        {
+            if (await db.Products.AnyAsync(p => p.NameKey == candidate.NameKey && p.BrandKey == candidate.BrandKey && p.PackKey == candidate.PackKey))
+            {
+                return Fail(FailureKind.Conflict, "NewProduct.Name", ProductEndpoints.DuplicateProduct + " آن را از جست‌وجو انتخاب کنید.");
+            }
+
+            product = candidate;
+        }
+
+        var code = Gs1Scan.StoredCode(barcode);
+        if (code is not null && TextNormalizer.ScanKey(code) is { } codeKey)
+        {
+            var variants = Gs1Scan.CodeVariants(codeKey);
+            if (code.Length > ProductRules.MaxCode) return Fail(FailureKind.Validation, "NewBarcode", $"بارکد حداکثر {ProductRules.MaxCode} نویسه است.");
+
+            var owner = await db.ProductBarcodes.AsNoTracking().Where(b => variants.Contains(b.CodeKey))
+                .Join(db.Products, b => b.ProductId, p => p.Id, (b, p) => p.Name).FirstOrDefaultAsync();
+            if (owner is not null) return Fail(FailureKind.Conflict, "NewBarcode", $"این بارکد مال «{owner}» است.");
+
+            if (session.NewBarcodes.TryGetValue(codeKey, out var holder))
+            {
+                if (holder != product) return Fail(FailureKind.Conflict, "NewBarcode", $"این بارکد در ردیف دیگر برای «{holder.Name}» آمده است.");
+            }
+            else
+            {
+                db.ProductBarcodes.Add(new ProductBarcode { Id = Guid.NewGuid(), ProductId = product!.Id, Code = code, CodeKey = codeKey });
+                session.NewBarcodes[codeKey] = product;
+            }
+        }
+
+        if (isNew)
+        {
+            db.Products.Add(product!);
+            session.NewProducts[key] = product!;
+        }
+
+        product!.SearchText = ProductEndpoints.BuildSearchText(product,
+            db.ProductBarcodes.Local.Where(b => b.ProductId == product.Id).Select(b => b.Code));
+        return (product, null);
+    }
 
     private static async Task<(AppliedLine? Line, LineFailure? Failure)> ApplyLineAsync(ReceiptRequest request, ReceiptSession session)
     {
@@ -67,9 +144,20 @@ public static class ReceiptEndpoints
         if (expiry.Error is { } error) return Fail(FailureKind.Validation, "Expiry", error);
 
         var db = session.Db;
-        var product = await db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == request.ProductId);
-        if (product is null) return Fail(FailureKind.NotFound, "ProductId", "این قلم پیدا نشد.");
-        if (!product.IsActive) return Fail(FailureKind.Validation, "ProductId", "این قلم غیرفعال است.");
+        Product product;
+        if (request.ProductId == Guid.Empty && request.NewProduct is { } newProduct)
+        {
+            var (newOne, failure) = await NewProductAsync(newProduct, request.NewBarcode, session);
+            if (failure is not null) return (null, failure);
+            product = newOne!;
+        }
+        else
+        {
+            var found = await db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == request.ProductId);
+            if (found is null) return Fail(FailureKind.NotFound, "ProductId", "این قلم پیدا نشد.");
+            if (!found.IsActive) return Fail(FailureKind.Validation, "ProductId", "این قلم غیرفعال است.");
+            product = found;
+        }
 
         if (request.LocationId is { } locationId)
         {
@@ -123,9 +211,9 @@ public static class ReceiptEndpoints
         return (new AppliedLine(batch, product.LocationId, created, expiry.Warnings), null);
     }
 
-    private static async Task<IResult> ReceiveAsync(ReceiptRequest request, WarehouseDbContext db, StockLedger ledger)
+    private static async Task<IResult> ReceiveAsync(ReceiptRequest request, WarehouseDbContext db, StockLedger ledger, AuditContext audit, PermissionService permissions)
     {
-        var session = await OpenSessionAsync(db, ledger);
+        var session = await OpenSessionAsync(db, ledger, audit, permissions);
         var (line, failure) = await ApplyLineAsync(request, session);
         if (failure is not null)
         {
@@ -143,12 +231,12 @@ public static class ReceiptEndpoints
         return Results.Ok(new ReceiptResult(ToItem(line!, session.Paths()), line!.Created, line.Warnings));
     }
 
-    private static async Task<IResult> ReceiveBulkAsync(BulkReceiptRequest request, WarehouseDbContext db, StockLedger ledger)
+    private static async Task<IResult> ReceiveBulkAsync(BulkReceiptRequest request, WarehouseDbContext db, StockLedger ledger, AuditContext audit, PermissionService permissions)
     {
         if (request.Lines is not { Count: > 0 } lines) return ApiProblems.Validation("Lines", "هیچ ردیفی برای ثبت نیست.");
         if (lines.Count > BulkReceiptRequest.MaxLines) return ApiProblems.Validation("Lines", $"حداکثر {BulkReceiptRequest.MaxLines} ردیف در یک ثبت ممکن است.");
 
-        var session = await OpenSessionAsync(db, ledger);
+        var session = await OpenSessionAsync(db, ledger, audit, permissions);
         var applied = new List<AppliedLine>(lines.Count);
         var errors = new List<ValidationError>();
         var conflict = false;

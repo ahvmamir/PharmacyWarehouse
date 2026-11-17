@@ -1,0 +1,85 @@
+@page "/inbox"
+@attribute [Authorize]
+@inject ApiAuthenticationStateProvider Session
+@inject NavigationManager Navigation
+@inject InboxClient InboxApi
+
+@* کارتابل (بخش ۱۵.۳ spec): دو صف بررسی در یک صفحه. صفحه‌های /review و /receipts/review سر جایشان می‌مانند
+   (پیوندهای داشبورد و اعلان‌ها به آن‌ها می‌روند)؛ اینجا همان کامپوننت‌ها بدون عنوان صفحه رندر می‌شوند. *@
+
+<PageTitle>کارتابل | داروبار</PageTitle>
+
+@if (!CanWithdrawals && !CanReceipts)
+{
+    <div class="empty-state">
+        <h2>اجازه‌ی دیدن این صفحه را ندارید</h2>
+        <p>برای دسترسی به این بخش با مدیر سیستم صحبت کنید.</p>
+    </div>
+}
+else
+{
+    <div class="page-head">
+        <div>
+            <h1>کارتابل</h1>
+            <p>کارهایی که منتظر بررسی شماست: برداشت‌های ثبت‌شده و ورودهای پرسنل.</p>
+        </div>
+    </div>
+
+    @if (CanWithdrawals && CanReceipts)
+    {
+        <div class="tab-bar" role="tablist">
+            <button type="button" role="tab" aria-selected="@(Active == "out" ? "true" : "false")" class="tab @(Active == "out" ? "active" : "")" @onclick='() => SelectTab("out")'>
+                برداشت‌ها @Count(_counts?.PendingWithdrawals)
+            </button>
+            <button type="button" role="tab" aria-selected="@(Active == "in" ? "true" : "false")" class="tab @(Active == "in" ? "active" : "")" @onclick='() => SelectTab("in")'>
+                ورودها @Count(_counts?.PendingReceipts)
+            </button>
+        </div>
+    }
+
+    @if (Active == "out")
+    {
+        <ReviewWithdrawals Embedded="true" />
+    }
+    else
+    {
+        <ReviewReceipts Embedded="true" />
+    }
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "tab")] public string? Tab { get; set; }
+
+    private string? _selected;
+    private InboxCounts? _counts;
+
+    private bool CanWithdrawals => Session.Can(Permissions.WithdrawalReview);
+    private bool CanReceipts => Session.Can(Permissions.StockReceive);
+
+    private string Active
+    {
+        get
+        {
+            var wanted = _selected ?? (Tab == "in" ? "in" : "out");
+            if (wanted == "in" && CanReceipts) return "in";
+            return CanWithdrawals ? "out" : "in";
+        }
+    }
+
+    protected override async Task OnInitializedAsync() => _counts = (await InboxApi.CountsAsync()).Value;
+
+    private async Task SelectTab(string tab)
+    {
+        _selected = tab;
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("tab", tab == "in" ? "in" : null), replace: true);
+        _counts = (await InboxApi.CountsAsync()).Value;
+    }
+
+    private static RenderFragment Count(int? value) => __builder =>
+    {
+        if (value is > 0)
+        {
+            <span class="nav-badge">@JalaliDate.ToPersianDigits(value.Value > 99 ? "99+" : value.Value.ToString())</span>
+        }
+    };
+}

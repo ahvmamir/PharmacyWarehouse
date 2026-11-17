@@ -44,203 +44,246 @@ else
         <div class="device-actions">
             @if (Session.Can(Permissions.StockReceive))
             {
-                <a class="btn btn-primary" href="receive?productId=@summary.Id"><AppIcon Name="plus" Size="15" /> ورود جنس</a>
+                <a class="btn btn-primary" href="stock-io?tab=in&productId=@summary.Id"><AppIcon Name="plus" Size="15" /> ورود جنس</a>
             }
             @if (CanManage)
             {
-                <a class="btn btn-quiet" href="products/@summary.Id/edit"><AppIcon Name="edit" Size="15" /> ویرایش</a>
+                <button type="button" class="btn btn-quiet" @onclick="() => _editing = true"><AppIcon Name="edit" Size="15" /> ویرایش</button>
                 <button type="button" class="btn btn-quiet" disabled="@_busy" @onclick="ToggleActiveAsync">@(summary.IsActive ? "غیرفعال کن" : "فعال کن")</button>
                 <button type="button" class="btn btn-danger-quiet" @onclick="() => _showDelete = true"><AppIcon Name="trash" Size="15" /> حذف</button>
             }
         </div>
     </div>
 
-    <section class="card-emu">
-        <dl class="spec-list">
-            <div><dt>موجودی</dt><dd>@JalaliDate.ToPersianDigits(summary.OnHand.ToString()) جعبه</dd></div>
-            <div><dt>موجودی منقضی‌نشده</dt><dd>@JalaliDate.ToPersianDigits(summary.UsableOnHand.ToString()) جعبه</dd></div>
-            <div><dt>حداقل موجودی</dt><dd>@(summary.MinStock is { } min ? JalaliDate.ToPersianDigits(min.ToString()) + " جعبه" : "—")</dd></div>
-            <div><dt>محل</dt><dd><bdi>@(summary.LocationPath ?? "—")</bdi></dd></div>
-            <div><dt>انقضا لازم است</dt><dd>@(_detail.RequiresExpiry ? "بله" : "خیر")</dd></div>
-            <div>
-                <dt>برداشت از بچ منقضی</dt>
-                <dd>
-                    @if (_detail.AllowExpiredWithdrawal)
-                    {
-                        <span class="status-badge status-expired">مجاز</span>
-                    }
-                    else
-                    {
-                        <span>مجاز نیست</span>
-                    }
-                </dd>
-            </div>
-        </dl>
-    </section>
+    @* خلاصه بالا، جزئیات زیر زبانه‌ها (بخش ۱۵.۳ spec). زبانه در آدرس می‌ماند (?tab=) تا پیوند مستقیم کار کند. *@
+    <div class="dash-cards product-tiles">
+        <div class="dash-card @(summary.OnHand == 0 ? "alert-warning-soft" : null)">
+            <strong>@JalaliDate.ToPersianDigits(summary.OnHand.ToString())</strong>
+            <span>موجودی (جعبه)</span>
+        </div>
+        <div class="dash-card @(summary.UsableOnHand < summary.OnHand ? "alert-danger-soft" : null)">
+            <strong>@JalaliDate.ToPersianDigits(summary.UsableOnHand.ToString())</strong>
+            <span>منقضی‌نشده</span>
+        </div>
+        <div class="dash-card">
+            <strong>@JalaliDate.ToPersianDigits(_detail.Batches.Count(b => b.OnHand > 0).ToString())</strong>
+            <span>بچ دارای موجودی</span>
+        </div>
+        <div class="dash-card">
+            <strong class="tile-text">@(summary.NearestExpiryText ?? "—")</strong>
+            <span>نزدیک‌ترین انقضا</span>
+        </div>
+        <div class="dash-card @(summary.MinStock is { } m && summary.UsableOnHand < m ? "alert-warning-soft" : null)">
+            <strong>@(summary.MinStock is { } min ? JalaliDate.ToPersianDigits(min.ToString()) : "—")</strong>
+            <span>حداقل موجودی</span>
+        </div>
+    </div>
 
-    <section class="card-emu">
-        <h2>بچ‌ها</h2>
-        @if (_detail.Batches.Count == 0)
+    <p class="product-facts">
+        <span><AppIcon Name="location" Size="15" /> <bdi>@(summary.LocationPath ?? "بدون محل")</bdi></span>
+        <span><AppIcon Name="list" Size="15" /> <bdi>@(summary.CategoryName ?? "بدون دسته")</bdi></span>
+        <span>@(_detail.RequiresExpiry ? "انقضا لازم است" : "بدون تاریخ انقضا")</span>
+        @if (_detail.AllowExpiredWithdrawal)
         {
-            <div class="empty-state"><p>هنوز بچی ثبت نشده. با «ورود جنس» اضافه می‌شود.</p></div>
+            <span class="status-badge status-expired">برداشت از بچ منقضی مجاز</span>
         }
-        else
-        {
-            <div class="table-card">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>شماره‌ی بچ</th><th>محل</th><th>انقضا</th><th>موجودی (جعبه)</th>
-                            @if (CanAdjust)
-                            {
-                                <th></th>
-                            }
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var batch in _detail.Batches)
-                        {
-                            <tr @key="batch.Id">
-                                <td><bdi>@batch.BatchNumber</bdi></td>
-                                <td><bdi>@(batch.LocationPath ?? "—")</bdi></td>
-                                <td>
-                                    @(batch.ExpiryText ?? "—")
-                                    @if (batch.IsExpired)
-                                    {
-                                        <span class="status-badge status-expired">منقضی</span>
-                                    }
-                                </td>
-                                <td>@JalaliDate.ToPersianDigits(batch.OnHand.ToString())</td>
-                                @if (CanAdjust)
-                                {
-                                    <td>
-                                        <button type="button" class="btn btn-sm btn-quiet" @onclick="() => OpenAdjust(batch)">اصلاح</button>
-                                        <button type="button" class="btn btn-sm btn-danger-quiet" disabled="@(batch.OnHand == 0)" @onclick="() => OpenDispose(batch)">اسقاط</button>
-                                    </td>
-                                }
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-        }
-    </section>
+    </p>
 
-    <section class="card-emu">
-        <h2>بارکدها</h2>
-        @if (_detail.Barcodes.Count == 0)
+    <div class="tab-bar" role="tablist">
+        @foreach (var (key, label) in Tabs)
         {
-            <div class="form-hint">بارکدی ثبت نشده.</div>
-        }
-        @foreach (var barcode in _detail.Barcodes)
-        {
-            <div class="linked-item" @key="barcode.Id">
-                <span style="flex:1;"><bdi class="mono">@barcode.Code</bdi></span>
-                @if (CanManage)
+            <button type="button" role="tab" class="tab @(ActiveTab == key ? "active" : "")" aria-selected="@(ActiveTab == key ? "true" : "false")" @onclick="() => SelectTab(key)">
+                @label
+                @if (key == "batches")
                 {
-                    <button type="button" class="icon-button danger" title="حذف بارکد" aria-label="حذف بارکد @barcode.Code" disabled="@_busy" @onclick="() => RemoveBarcodeAsync(barcode)"><AppIcon Name="trash" Size="16" /></button>
+                    <span class="tab-count">@JalaliDate.ToPersianDigits(_detail.Batches.Count.ToString())</span>
                 }
-            </div>
-        }
-
-        @if (CanManage)
-        {
-            <div class="mt-3" style="max-width:420px;">
-                <label for="barcode-add" class="form-hint">افزودن بارکد: با بارکدخوان اسکن کنید یا تایپ کنید و Enter بزنید</label>
-                <ScanInput @ref="_scan" OnScan="AddBarcodeAsync" Placeholder="بارکد جدید" AutoFocus="false" />
-                @if (_barcodeError is not null)
+                else if (key == "barcodes")
                 {
-                    <div class="form-alert mt-2 mb-0" role="alert">@_barcodeError</div>
+                    <span class="tab-count">@JalaliDate.ToPersianDigits(_detail.Barcodes.Count.ToString())</span>
                 }
-            </div>
+            </button>
         }
-    </section>
+    </div>
 
-    <section class="card-emu">
-        <h2>حرکت‌ها</h2>
-        @if (_historyError is not null)
-        {
-            <div class="form-alert" role="alert"><span>@_historyError</span></div>
-        }
-        else if (_history is null)
-        {
-            <div class="loading-line">در حال بارگذاری…</div>
-        }
-        else if (_history.Movements.Count == 0)
-        {
-            <div class="empty-state"><p>هنوز حرکتی ثبت نشده.</p></div>
-        }
-        else
-        {
-            <div class="toolbar">
-                <div>
-                    <label for="movement-kind">نوع حرکت</label>
-                    <select id="movement-kind" class="form-select" value="@_kindFilter?.ToString()" @onchange="OnKindFilterChanged">
-                        <option value="">همه</option>
-                        @foreach (var kind in Enum.GetValues<StockMovementKind>())
-                        {
-                            <option value="@kind">@MovementLabels.Kind(kind)</option>
-                        }
-                    </select>
-                </div>
-                <div>
-                    <label for="movement-sort">ترتیب</label>
-                    <select id="movement-sort" class="form-select" value="@(_newestFirst ? "new" : "old")" @onchange="OnSortChanged">
-                        <option value="new">جدیدترین اول</option>
-                        <option value="old">قدیمی‌ترین اول</option>
-                    </select>
-                </div>
-            </div>
-            @if (VisibleMovements().Count == 0)
+    @if (ActiveTab == "batches")
+    {
+        <section class="card-emu">
+            @if (_detail.Batches.Count == 0)
             {
-                <div class="empty-state"><p>با این فیلتر حرکتی نیست.</p></div>
+                <div class="empty-state"><p>هنوز بچی ثبت نشده. با «ورود جنس» اضافه می‌شود.</p></div>
             }
             else
             {
-            <div class="table-card">
-                <table class="data-table">
-                    <thead>
-                        <tr><th>زمان</th><th>نوع</th><th>بچ</th><th>تعداد</th><th>موجودی قلم بعد از حرکت</th><th>موجودی بچ بعد از حرکت</th><th>کاربر</th><th>یادداشت</th></tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var movement in VisibleMovements())
-                        {
-                            <tr @key="movement.Id">
-                                <td>@JalaliDate.Format(movement.OccurredAtUtc)</td>
-                                <td>@MovementLabels.Kind(movement.Kind)</td>
-                                <td><bdi>@movement.BatchNumber</bdi></td>
-                                <td dir="ltr" style="text-align:right;">@Signed(movement.Quantity)</td>
-                                <td dir="ltr" style="text-align:right;">@Num(movement.BalanceAfter)</td>
-                                <td dir="ltr" style="text-align:right;">@Num(movement.BatchBalanceAfter)</td>
-                                <td>@movement.UserName</td>
-                                <td>@movement.Note</td>
+                <div class="table-card">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>شماره‌ی بچ</th><th>محل</th><th>انقضا</th><th>موجودی (جعبه)</th>
+                                @if (CanAdjust)
+                                {
+                                    <th></th>
+                                }
                             </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
+                        </thead>
+                        <tbody>
+                            @foreach (var batch in _detail.Batches)
+                            {
+                                <tr @key="batch.Id">
+                                    <td><bdi>@batch.BatchNumber</bdi></td>
+                                    <td><bdi>@(batch.LocationPath ?? "—")</bdi></td>
+                                    <td>
+                                        @(batch.ExpiryText ?? "—")
+                                        @if (batch.IsExpired)
+                                        {
+                                            <span class="status-badge status-expired">منقضی</span>
+                                        }
+                                    </td>
+                                    <td>@JalaliDate.ToPersianDigits(batch.OnHand.ToString())</td>
+                                    @if (CanAdjust)
+                                    {
+                                        <td>
+                                            <button type="button" class="btn btn-sm btn-quiet" @onclick="() => OpenAdjust(batch)">اصلاح</button>
+                                            <button type="button" class="btn btn-sm btn-danger-quiet" disabled="@(batch.OnHand == 0)" @onclick="() => OpenDispose(batch)">اسقاط</button>
+                                        </td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
             }
-        }
-    </section>
+        </section>
+    }
 
-    <section class="card-emu">
-        <h2>تغییرات</h2>
-        @if (_history is null)
-        {
-            @if (_historyError is null)
+    @if (ActiveTab == "barcodes")
+    {
+        <section class="card-emu">
+            @if (_detail.Barcodes.Count == 0)
+            {
+                <div class="form-hint">بارکدی ثبت نشده.</div>
+            }
+            @foreach (var barcode in _detail.Barcodes)
+            {
+                <div class="linked-item" @key="barcode.Id">
+                    <span style="flex:1;"><bdi class="mono">@barcode.Code</bdi></span>
+                    @if (CanManage)
+                    {
+                        <button type="button" class="icon-button danger" title="حذف بارکد" aria-label="حذف بارکد @barcode.Code" disabled="@_busy" @onclick="() => RemoveBarcodeAsync(barcode)"><AppIcon Name="trash" Size="16" /></button>
+                    }
+                </div>
+            }
+
+            @if (CanManage)
+            {
+                <div class="mt-3" style="max-width:420px;">
+                    <label for="barcode-add" class="form-hint">افزودن بارکد: با بارکدخوان اسکن کنید یا تایپ کنید و Enter بزنید</label>
+                    <ScanInput @ref="_scan" OnScan="AddBarcodeAsync" Placeholder="بارکد جدید" AutoFocus="false" />
+                    @if (_barcodeError is not null)
+                    {
+                        <div class="form-alert mt-2 mb-0" role="alert">@_barcodeError</div>
+                    }
+                </div>
+            }
+        </section>
+    }
+
+    @if (ActiveTab == "movements")
+    {
+        <section class="card-emu">
+            @if (_historyError is not null)
+            {
+                <div class="form-alert" role="alert"><span>@_historyError</span></div>
+            }
+            else if (_history is null)
             {
                 <div class="loading-line">در حال بارگذاری…</div>
             }
-        }
-        else if (_history.Changes.Count == 0)
-        {
-            <div class="empty-state"><p>تغییری ثبت نشده.</p></div>
-        }
-        else
-        {
-            <ChangeList Changes="_history.Changes" />
-        }
-    </section>
+            else if (_history.Movements.Count == 0)
+            {
+                <div class="empty-state"><p>هنوز حرکتی ثبت نشده.</p></div>
+            }
+            else
+            {
+                <div class="toolbar">
+                    <div>
+                        <label for="movement-kind">نوع حرکت</label>
+                        <select id="movement-kind" class="form-select" value="@_kindFilter?.ToString()" @onchange="OnKindFilterChanged">
+                            <option value="">همه</option>
+                            @foreach (var kind in Enum.GetValues<StockMovementKind>())
+                            {
+                                <option value="@kind">@MovementLabels.Kind(kind)</option>
+                            }
+                        </select>
+                    </div>
+                    <div>
+                        <label for="movement-sort">ترتیب</label>
+                        <select id="movement-sort" class="form-select" value="@(_newestFirst ? "new" : "old")" @onchange="OnSortChanged">
+                            <option value="new">جدیدترین اول</option>
+                            <option value="old">قدیمی‌ترین اول</option>
+                        </select>
+                    </div>
+                </div>
+                @if (VisibleMovements().Count == 0)
+                {
+                    <div class="empty-state"><p>با این فیلتر حرکتی نیست.</p></div>
+                }
+                else
+                {
+                <div class="table-card">
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>زمان</th><th>نوع</th><th>بچ</th><th>تعداد</th><th>موجودی قلم بعد از حرکت</th><th>موجودی بچ بعد از حرکت</th><th>کاربر</th><th>یادداشت</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var movement in VisibleMovements())
+                            {
+                                <tr @key="movement.Id">
+                                    <td>@JalaliDate.Format(movement.OccurredAtUtc)</td>
+                                    <td>@MovementLabels.Kind(movement.Kind)</td>
+                                    <td><bdi>@movement.BatchNumber</bdi></td>
+                                    <td dir="ltr" style="text-align:right;">@Signed(movement.Quantity)</td>
+                                    <td dir="ltr" style="text-align:right;">@Num(movement.BalanceAfter)</td>
+                                    <td dir="ltr" style="text-align:right;">@Num(movement.BatchBalanceAfter)</td>
+                                    <td>@movement.UserName</td>
+                                    <td>@movement.Note</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                }
+            }
+        </section>
+    }
+
+    @if (ActiveTab == "changes")
+    {
+        <section class="card-emu">
+            @if (_history is null)
+            {
+                @if (_historyError is null)
+                {
+                    <div class="loading-line">در حال بارگذاری…</div>
+                }
+            }
+            else if (_history.Changes.Count == 0)
+            {
+                <div class="empty-state"><p>تغییری ثبت نشده.</p></div>
+            }
+            else
+            {
+                <ChangeList Changes="_history.Changes" />
+            }
+        </section>
+    }
+
+    @if (_editing)
+    {
+        <ModalDialog Side="true" Title="ویرایش قلم" OnClose="() => _editing = false">
+            <ProductForm Id="Id" OnSaved="EditedAsync" OnCancel="() => _editing = false" />
+        </ModalDialog>
+    }
 
     @if (_showDelete)
     {
@@ -313,6 +356,28 @@ else
 </RequirePermission>
 
 @code {
+    private static readonly (string Key, string Label)[] Tabs =
+        [("batches", "بچ‌ها"), ("movements", "حرکت‌ها"), ("barcodes", "بارکدها"), ("changes", "تغییرات")];
+
+    [SupplyParameterFromQuery(Name = "tab")] public string? TabQuery { get; set; }
+    private string? _tab;
+
+    private string ActiveTab => _tab ?? (Tabs.Any(t => t.Key == TabQuery) ? TabQuery! : "batches");
+
+    private void SelectTab(string key)
+    {
+        _tab = key;
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("tab", key == "batches" ? null : key), replace: true);
+    }
+
+    private bool _editing;
+
+    private async Task EditedAsync(ProductDetail _)
+    {
+        _editing = false;
+        await LoadAsync();
+    }
+
     [Parameter] public Guid Id { get; set; }
 
     private ProductDetail? _detail;

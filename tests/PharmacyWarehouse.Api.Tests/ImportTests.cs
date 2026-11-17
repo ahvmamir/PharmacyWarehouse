@@ -475,6 +475,28 @@ public class ImportTests : ApiTestBase
         Assert.True(watch.Elapsed < TimeSpan.FromSeconds(30), $"too slow: {watch.Elapsed}");
     }
 
+    // ستون «دسته» (بخش ۱۵.۳ spec): دسته‌ی ناموجود ساخته می‌شود، هم‌کلید موجود دوباره ساخته نمی‌شود، خروجی آن را دارد.
+    [Fact]
+    public async Task Commit_CategoryColumn_CreatesOrReusesCategory_AndExportsIt()
+    {
+        await Keeper.PostAsJsonAsync(ApiRoutes.Categories, new SaveCategoryRequest { Name = "TEST-CAT-I1" });
+
+        var response = await CommitRowsAsync(
+            new ImportRowInput { Sheet = "شیت", Name = "TEST-DRUG-I1", Quantity = "1", BatchNumber = "TEST-BI1", Expiry = "31/05/2030", Category = "test-cat-i1" },
+            new ImportRowInput { Sheet = "شیت", Name = "TEST-DRUG-I2", Quantity = "1", BatchNumber = "TEST-BI2", Expiry = "31/05/2030", Category = "TEST-CAT-I2" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var categories = (await Keeper.GetFromJsonAsync<List<CategoryItem>>(ApiRoutes.Categories))!;
+        Assert.Equal(2, categories.Count);
+        Assert.All(categories, c => Assert.Equal(1, c.ProductCount));
+
+        var bytes = await (await Keeper.GetAsync(ApiRoutes.DataExport)).Content.ReadAsByteArrayAsync();
+        var rows = XlsxReader.ReadAllSheets(new MemoryStream(bytes)).Single().Rows;
+        var column = Array.IndexOf(rows[0], "دسته");
+        Assert.True(column >= 0);
+        Assert.Contains(rows.Skip(1), r => r[column] == "TEST-CAT-I2");
+    }
+
     [Fact]
     public async Task Parse_HeaderWithoutVavInName_IsRecognised()
     {

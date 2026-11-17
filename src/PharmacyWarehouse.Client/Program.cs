@@ -45,6 +45,8 @@ builder.Services.AddScoped<BackupClient>();
 builder.Services.AddScoped<ImportClient>();
 builder.Services.AddScoped<UsersClient>();
 builder.Services.AddScoped<AlertsClient>();
+builder.Services.AddScoped<InboxClient>();
+builder.Services.AddScoped<CategoriesClient>();
 builder.Services.AddScoped<AppInfoState>();
 
 // وضعیت رابط کاربری

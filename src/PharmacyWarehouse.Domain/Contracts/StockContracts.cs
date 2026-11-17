@@ -18,9 +18,12 @@ public sealed class DisposeBatchRequest
     public int Version { get; set; }
 }
 
+// PeriodId اجباری است (بخش ۱۵.۳ spec)؛ CategoryId اختیاری دامنه را به یک دسته‌ی دوره باریک می‌کند.
 public sealed class StartStocktakeRequest
 {
     public Guid LocationId { get; set; }
+    public Guid? PeriodId { get; set; }
+    public Guid? CategoryId { get; set; }
 }
 
 public sealed class StocktakeCountRequest
@@ -31,7 +34,7 @@ public sealed class StocktakeCountRequest
 
 public sealed record StocktakeListItem(
     Guid Id, Guid LocationId, string LocationPath, string StartedByName, DateTime StartedAtUtc, DateTime? ClosedAtUtc,
-    int CountedBatches, int Differences, int Version);
+    int CountedBatches, int Differences, int Version, Guid? PeriodId = null, string? PeriodName = null, string? CategoryName = null);
 
 // آخرین شمارش هر بچ در نوبت. Difference همان Counted - ExpectedOnHand در لحظه‌ی شمارش است.
 public sealed record StocktakeCountItem(
@@ -50,6 +53,10 @@ public sealed class StocktakeDetail
     public DateTime StartedAtUtc { get; set; }
     public DateTime? ClosedAtUtc { get; set; }
     public int Version { get; set; }
+    public Guid PeriodId { get; set; }
+    public string PeriodName { get; set; } = "";
+    public bool PeriodOpen { get; set; }
+    public string? CategoryName { get; set; }
     public List<StocktakeCountItem> Counts { get; set; } = [];
 
     // بچ‌های دارای موجودی در این محل که هنوز شمرده نشده‌اند (احتمال جا افتادن).

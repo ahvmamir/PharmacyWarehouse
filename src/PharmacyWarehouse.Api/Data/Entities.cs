@@ -38,6 +38,7 @@ public class Product : IAudited
     public string? PackDescription { get; set; }
     public string PackKey { get; set; } = "";
     public Guid? LocationId { get; set; }
+    public Guid? CategoryId { get; set; }
     public int? MinStock { get; set; }
     public int UnitsPerPack { get; set; } = 1;
     public bool RequiresExpiry { get; set; } = true;
@@ -47,6 +48,17 @@ public class Product : IAudited
     public bool IsProvisional { get; set; }
     public string SearchText { get; set; } = "";
     public DateTime CreatedAtUtc { get; set; }
+    public int Version { get; set; } = 1;
+}
+
+// دسته‌ی قلم، تعریف‌شده توسط کاربر (بخش ۱۵.۳ spec). تخت، نه درختی؛ هر قلم حداکثر یک دسته.
+// فقط وقتی حذف می‌شود که قلمی به آن وصل نباشد.
+public class ProductCategory : IAudited
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = "";
+    public string NameKey { get; set; } = "";
+    public bool IsActive { get; set; } = true;
     public int Version { get; set; } = 1;
 }
 
@@ -141,10 +153,44 @@ public class ReceiptLine : IAudited
     public int Version { get; set; } = 1;
 }
 
-// نوبت انبارگردانی برای یک محل و زیرشاخه‌هایش (بخش ۷.۶ spec). حذف ندارد.
+// دوره‌ی انبارگردانی (بخش ۱۵.۳ spec): دامنه = محل‌ها (و زیرشاخه‌هایشان) و دسته‌ها؛ فهرست خالی یعنی «همه».
+// اختلاف‌ها در سطح دوره رفع می‌شوند. حذف ندارد.
+public class StocktakePeriod : IAudited
+{
+    // دوره‌ی ساختگیِ نوبت‌های پیش از دوره‌بندی؛ migration آن را می‌سازد.
+    public static readonly Guid LegacyId = new("B0000000-0000-0000-0000-000000000001");
+
+    public Guid Id { get; set; }
+    public string Name { get; set; } = "";
+    public Guid StartedById { get; set; }
+    public DateTime StartedAtUtc { get; set; }
+    public DateTime? ClosedAtUtc { get; set; }
+    public Guid? ClosedById { get; set; }
+    public int Version { get; set; } = 1;
+}
+
+public class StocktakePeriodLocation : IAudited
+{
+    public Guid Id { get; set; }
+    public Guid PeriodId { get; set; }
+    public Guid LocationId { get; set; }
+    public int Version { get; set; } = 1;
+}
+
+public class StocktakePeriodCategory : IAudited
+{
+    public Guid Id { get; set; }
+    public Guid PeriodId { get; set; }
+    public Guid CategoryId { get; set; }
+    public int Version { get; set; } = 1;
+}
+
+// نوبت انبارگردانی برای یک محل و زیرشاخه‌هایش (بخش ۷.۶ spec)، همیشه زیر یک دوره؛ CategoryId اختیاری دامنه را باریک‌تر می‌کند. حذف ندارد.
 public class Stocktake : IAudited
 {
     public Guid Id { get; set; }
+    public Guid PeriodId { get; set; }
+    public Guid? CategoryId { get; set; }
     public Guid LocationId { get; set; }
     public Guid StartedById { get; set; }
     public DateTime StartedAtUtc { get; set; }
@@ -165,6 +211,10 @@ public class StocktakeCount : IAudited
     public DateTime AtUtc { get; set; }
     public Guid UserId { get; set; }
     public Guid? AdjustmentId { get; set; }
+    // «صرف‌نظر» از اختلاف با یادداشت (مثلاً خطای شمارش)؛ موجودی عوض نمی‌شود.
+    public DateTime? DismissedAtUtc { get; set; }
+    public Guid? DismissedById { get; set; }
+    public string? DismissNote { get; set; }
     public int Version { get; set; } = 1;
 }
 

@@ -28,7 +28,7 @@ public class AlertTests : ApiTestBase
             .Content.ReadFromJsonAsync<StorageLocationItem>();
         Assert.DoesNotContain(await AlertsAsync(Staff), a => a.Key == AlertKeys.Stocktake);
 
-        var stocktake = await (await Admin.PostAsJsonAsync(ApiRoutes.Stocktakes, new StartStocktakeRequest { LocationId = location!.Id }))
+        var stocktake = await (await Admin.PostAsJsonAsync(ApiRoutes.Stocktakes, new StartStocktakeRequest { LocationId = location!.Id, PeriodId = await App.PeriodIdAsync(Admin) }))
             .Content.ReadFromJsonAsync<StocktakeDetail>();
 
         var alert = Assert.Single(await AlertsAsync(Staff), a => a.Key == AlertKeys.Stocktake);

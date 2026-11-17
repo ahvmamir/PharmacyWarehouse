@@ -65,6 +65,11 @@
     [Parameter, EditorRequired] public RenderFragment<TItem> ItemTemplate { get; set; } = null!;
     [Parameter] public EventCallback<TItem> OnPick { get; set; }
     [Parameter] public RenderFragment? EmptyContent { get; set; }
+    // Enter روی متنی که هیچ نتیجه‌ای ندارد (مثلاً بارکد ناشناخته از بارکدخوان). متن بریده‌شده را می‌گیرد.
+    [Parameter] public EventCallback<string> OnEnterNoMatch { get; set; }
+
+    // متن فعلی فیلد، برای «تعریف قلم تازه با همین نام».
+    public string Text => _text;
 
     private readonly string _listId = "combo-" + Guid.NewGuid().ToString("N");
     private ElementReference _input;
@@ -202,7 +207,17 @@
 
         if (seq != _seq) return;
 
+        if (result.Error is null && !result.Items.Any() && OnEnterNoMatch.HasDelegate)
+        {
+            // فیلد خالی می‌ماند تا اسکن بعدی به این متن نچسبد؛ متن به صاحب فیلد سپرده می‌شود.
+            _open = false;
+            _items = [];
+            await OnEnterNoMatch.InvokeAsync(text);
+            return;
+        }
+
         if (ClearOnPick && _text.Length == 0) _text = text;
+
         _error = result.Error;
         _items = result.Items.ToList();
         _active = -1;

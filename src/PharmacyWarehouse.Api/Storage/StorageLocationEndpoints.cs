@@ -190,6 +190,10 @@ public static class StorageLocationEndpoints
         var stocktakes = await db.Stocktakes.AsNoTracking().Where(s => s.LocationId == id).Select(s => s.StartedAtUtc).ToListAsync();
         items.AddRange(stocktakes.Order().Select(at => new DependencyItem("انبارگردانی", PharmacyWarehouse.Domain.Time.JalaliDate.Format(at))));
 
+        var periods = await db.StocktakePeriodLocations.AsNoTracking().Where(l => l.LocationId == id)
+            .Join(db.StocktakePeriods, l => l.PeriodId, p => p.Id, (l, p) => p.Name).ToListAsync();
+        items.AddRange(periods.Order(StringComparer.Ordinal).Select(n => new DependencyItem("دوره‌ی انبارگردانی", n)));
+
         return new DependencyList { Items = items, Total = items.Count };
     }
 

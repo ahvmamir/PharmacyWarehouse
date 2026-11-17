@@ -69,7 +69,7 @@ public static class ImportValidator
     private static readonly HashSet<string> ExcelErrors = ["#REF!", "#N/A", "#VALUE!", "#DIV/0!", "#NAME?", "#NUM!", "#NULL!"];
 
     private static bool HasExcelError(ImportRowInput row) =>
-        new[] { row.Name, row.Brand, row.Quantity, row.UnitsPerPack, row.BatchNumber, row.Expiry, row.Location, row.Barcode, row.MinStock, row.UnitCost }
+        new[] { row.Name, row.Brand, row.Quantity, row.UnitsPerPack, row.BatchNumber, row.Expiry, row.Location, row.Barcode, row.MinStock, row.UnitCost, row.Category }
             .Any(c => c is not null && ExcelErrors.Contains(c.Trim().ToUpperInvariant()));
 
     // خود مسیر یا یکی از نیاکانش غیرفعال است؟ (زیرشاخه‌ی تازه زیر محل غیرفعال هم مجاز نیست.)
@@ -223,6 +223,9 @@ public static class ImportValidator
                 else Error("حداقل موجودی باید عدد صحیح باشد.");
             }
 
+            var category = TextNormalizer.Clean(Strip(row.Category));
+            if (category is { Length: > CategoryRules.MaxName }) Error($"نام دسته حداکثر {CategoryRules.MaxName} نویسه است.");
+
             long? unitCost = null;
             if (Strip(row.UnitCost) is { } costText)
             {
@@ -243,6 +246,7 @@ public static class ImportValidator
             // تعریف قلم موجود عوض نمی‌شود؛ کاربر باید بداند این دو ستون اثری ندارند.
             if (exists && barcodeKey is not null && !context.ExistingBarcodes.ContainsKey(barcodeKey)) Warn("بارکد روی قلم موجود اعمال نمی‌شود؛ از صفحه‌ی قلم اضافه کنید.");
             if (exists && minStock is not null) Warn("حداقل موجودی روی قلم موجود اعمال نمی‌شود؛ از صفحه‌ی قلم ویرایش کنید.");
+            if (exists && category is not null) Warn("دسته روی قلم موجود اعمال نمی‌شود؛ از «انتخاب گروهی» در فهرست اقلام تعیین کنید.");
 
             var severity = errors > 0 ? ImportSeverity.Error : warnings > 0 ? ImportSeverity.Warning : ImportSeverity.Ok;
             statuses.Add(new ImportRowStatus(i, severity, messages));
@@ -252,7 +256,7 @@ public static class ImportValidator
             if (quantity > 0) batchesNew++;
             plan.Add(new ImportPlanRow(i, TextNormalizer.Clean(row.Sheet) ?? "", locationPath, name, brand, pack, productKey, requiresExpiry,
                 quantity.Value, quantity > 0 ? batchNumber : null, quantity > 0 ? batchKey : null, quantity > 0 ? expiry : null,
-                barcode, barcodeKey, minStock, unitCost));
+                barcode, barcodeKey, minStock, unitCost, category));
         }
 
         var summary = new ImportSummary(

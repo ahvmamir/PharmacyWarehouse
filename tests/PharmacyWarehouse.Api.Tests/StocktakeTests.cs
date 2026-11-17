@@ -29,8 +29,8 @@ public class StocktakeTests : ApiTestBase
         return (product, await App.AddBatchRawAsync(product, lot, location, onHand: onHand));
     }
 
-    private Task<HttpResponseMessage> StartRawAsync(Guid location) =>
-        Keeper.PostAsJsonAsync(ApiRoutes.Stocktakes, new StartStocktakeRequest { LocationId = location });
+    private async Task<HttpResponseMessage> StartRawAsync(Guid location) =>
+        await Keeper.PostAsJsonAsync(ApiRoutes.Stocktakes, new StartStocktakeRequest { LocationId = location, PeriodId = await App.PeriodIdAsync(Keeper) });
 
     private async Task<StocktakeDetail> StartAsync(Guid location)
     {

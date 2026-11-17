@@ -4,22 +4,31 @@
 @inject WithdrawalsClient WithdrawalsApi
 @inject ToastService Toasts
 
-<PageTitle>بررسی برداشت‌ها | داروبار</PageTitle>
+@if (!Embedded)
+{
+    <PageTitle>بررسی برداشت‌ها | داروبار</PageTitle>
+}
 
 <RequirePermission Permission="@Permissions.WithdrawalReview">
-<div class="page-head">
-    <div>
-        <h1>بررسی برداشت‌ها</h1>
-        <p>برداشت‌های ثبت‌شده را تأیید کنید یا با یادداشت رد کنید. رد کردن موجودی را برمی‌گرداند.</p>
+@if (!Embedded)
+{
+    <div class="page-head">
+        <div>
+            <h1>بررسی برداشت‌ها</h1>
+            <p>برداشت‌های ثبت‌شده را تأیید کنید یا با یادداشت رد کنید. رد کردن موجودی را برمی‌گرداند.</p>
+        </div>
     </div>
-    <button type="button" class="btn btn-quiet" disabled="@_loading" @onclick="LoadAsync"><AppIcon Name="history" /> تازه‌سازی</button>
-</div>
+}
 
-<div class="d-flex gap-2 mb-3 flex-wrap" role="tablist" aria-label="وضعیت">
-    @foreach (var (value, label) in Tabs)
-    {
-        <button type="button" role="tab" class="btn @(_status == value ? "btn-primary" : "btn-quiet")" aria-selected="@(_status == value)" @onclick="() => SwitchAsync(value)">@label</button>
-    }
+@* فیلتر وضعیت و تازه‌سازی در یک ردیف (بازخورد امیر ۲۰۲۶-۱۱-۱۶). *@
+<div class="list-toolbar">
+    <div class="seg-tabs" role="tablist" aria-label="وضعیت">
+        @foreach (var (value, label) in Tabs)
+        {
+            <button type="button" role="tab" class="@(_status == value ? "active" : null)" aria-selected="@(_status == value ? "true" : "false")" @onclick="() => SwitchAsync(value)">@label</button>
+        }
+    </div>
+    <button type="button" class="btn btn-sm btn-quiet" disabled="@_loading" @onclick="LoadAsync"><AppIcon Name="history" Size="15" /> تازه‌سازی</button>
 </div>
 
 @if (_error is not null)
@@ -127,6 +136,9 @@ else
 </RequirePermission>
 
 @code {
+    // در «کارتابل» یا زبانه‌ی «سابقه‌ی من» بدون عنوان صفحه نمایش داده می‌شود.
+    [Parameter] public bool Embedded { get; set; }
+
     private static readonly (string Value, string Label)[] Tabs =
         [("Pending", "در انتظار"), ("Approved", "تأییدشده"), ("Rejected", "ردشده")];
 

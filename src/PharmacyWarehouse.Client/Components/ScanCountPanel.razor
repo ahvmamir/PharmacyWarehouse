@@ -1,0 +1,277 @@
+@inject ProductsClient ProductsApi
+@inject StockClient StockApi
+@inject DraftStore Drafts
+@inject IJSRuntime JS
+
+@* شمارش بی‌دست (بخش ۹.۲ spec): هر اسکن = یک جعبه (یا n جعبه پس از بارکد فرمان CMD-QTY-n).
+   بچ از کد GS1 خوانده می‌شود؛ UID تکراری شمرده نمی‌شود؛ اسکنِ نامعلوم کار را نمی‌بندد و به صف «حل بعدی» می‌رود.
+   شمار هر بچ تجمعی است و «ثبت» عدد کل را می‌فرستد (شمارش نوبت عدد مطلق است و جایگزین شمارش قبلی همان بچ می‌شود). *@
+
+<section class="card-emu scan-panel">
+    <div class="scan-panel-head">
+        <h2>شمارش با اسکن پیوسته</h2>
+        @if (_qty > 1)
+        {
+            <span class="status-badge status-pending">اسکن بعدی × @JalaliDate.ToPersianDigits(_qty.ToString())</span>
+        }
+    </div>
+    <p class="form-hint">
+        بارکدخوان را روی جعبه‌ها بزنید؛ لازم نیست به صفحه‌کلید دست بزنید. برای چند جعبه‌ی یکسان، اول بارکد «تعداد» از
+        <a href="stocktakes/commands" target="_blank">برگه‌ی بارکد فرمان</a> را بزنید.
+    </p>
+    <ScanInput @ref="_scan" OnScan="OnScanAsync" Placeholder="اسکن جعبه یا بارکد فرمان" />
+
+    @if (_last is not null)
+    {
+        <div class="scan-last @(_lastOk ? "ok" : "bad")" role="status">@_last</div>
+    }
+
+    @if (_state.Tallies.Count > 0)
+    {
+        <div class="table-card mt-3">
+            <table class="data-table">
+                <thead><tr><th>قلم</th><th>بچ</th><th>شمرده‌شده</th><th>ثبت‌شده</th></tr></thead>
+                <tbody>
+                    @foreach (var t in _state.Tallies)
+                    {
+                        <tr @key="t.BatchId" class="@(t.Count != t.Submitted ? "row-selected" : null)">
+                            <td><bdi>@t.ProductName</bdi></td>
+                            <td><bdi>@t.BatchNumber</bdi></td>
+                            <td><strong>@JalaliDate.ToPersianDigits(t.Count.ToString())</strong></td>
+                            <td>@(t.Submitted is { } s ? JalaliDate.ToPersianDigits(s.ToString()) : "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    @if (_state.Queue.Count > 0)
+    {
+        <h3 class="mt-3">حل بعدی (@JalaliDate.ToPersianDigits(_state.Queue.Count.ToString()))</h3>
+        <p class="form-hint">این اسکن‌ها شمرده نشدند؛ با شمارش دستی پایین همین صفحه ثبتشان کنید.</p>
+        <ul class="scan-queue">
+            @foreach (var q in _state.Queue)
+            {
+                <li><bdi class="mono">@Short(q.Raw)</bdi> — @q.Reason</li>
+            }
+        </ul>
+    }
+
+    <div class="modal-actions">
+        <button type="button" class="btn btn-primary" disabled="@(_busy || !HasPending)" @onclick="CommitAsync">@(_busy ? "در حال ثبت…" : "ثبت شمارش‌ها")</button>
+        <button type="button" class="btn btn-quiet" disabled="@(_busy || _state.History.Count == 0)" @onclick="Undo">برگرداندن آخرین اسکن</button>
+        <button type="button" class="btn btn-quiet" disabled="@_busy" @onclick="ResetAsync">شروع دور تازه</button>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public Guid StocktakeId { get; set; }
+    [Parameter] public EventCallback OnCommitted { get; set; }
+
+    public sealed class Tally
+    {
+        public Guid BatchId { get; set; }
+        public string ProductName { get; set; } = "";
+        public string BatchNumber { get; set; } = "";
+        public int Count { get; set; }
+        public int? Submitted { get; set; }
+    }
+
+    public sealed class Unresolved
+    {
+        public string Raw { get; set; } = "";
+        public string Reason { get; set; } = "";
+    }
+
+    public sealed class ScanEvent
+    {
+        public Guid BatchId { get; set; }
+        public int Quantity { get; set; }
+        public string? Serial { get; set; }
+    }
+
+    // پیش‌نویس: با reload یا خاموش شدن تبلت شمارش گم نمی‌شود.
+    public sealed class ScanState
+    {
+        public List<Tally> Tallies { get; set; } = [];
+        public List<string> Serials { get; set; } = [];
+        public List<Unresolved> Queue { get; set; } = [];
+        public List<ScanEvent> History { get; set; } = [];
+    }
+
+    private ScanState _state = new();
+    private Draft<ScanState>? _draft;
+    private ScanInput? _scan;
+    private readonly Dictionary<Guid, List<StocktakeBatchItem>> _batches = [];
+    private int _qty = 1;
+    private string? _last;
+    private bool _lastOk;
+    private bool _busy;
+
+    private bool HasPending => _state.Tallies.Any(t => t.Count != t.Submitted);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _draft = Drafts.Open<ScanState>($"scan-count-{StocktakeId}");
+        if (await _draft.LoadAsync() is { } saved) _state = saved;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_draft is not null) await _draft.SaveAsync(_state.Tallies.Count == 0 && _state.Queue.Count == 0 ? null : _state);
+    }
+
+    private static string Short(string raw) => raw.Length > 32 ? raw[..32] + "…" : raw;
+
+    private async Task FeedbackAsync(bool ok, string message)
+    {
+        _lastOk = ok;
+        _last = message;
+        try { await JS.InvokeVoidAsync("pwBeep", ok); } catch (JSException) { }
+    }
+
+    private async Task OnScanAsync(string raw)
+    {
+        var text = raw.Trim();
+        var upper = TextNormalizer.ScanKey(text) ?? "";
+
+        if (upper.StartsWith("CMD-QTY-", StringComparison.Ordinal) && int.TryParse(upper["CMD-QTY-".Length..], out var n) && n is > 0 and <= 500)
+        {
+            _qty = n;
+            await FeedbackAsync(true, $"اسکن بعدی {JalaliDate.ToPersianDigits(n.ToString())} جعبه حساب می‌شود.");
+            return;
+        }
+
+        if (upper == "CMD-UNDO") { Undo(); await FeedbackAsync(true, _last ?? "برگردانده شد."); return; }
+        if (upper == "CMD-DONE") { await CommitAsync(); return; }
+        if (upper.StartsWith("LOC-", StringComparison.Ordinal))
+        {
+            await FeedbackAsync(false, "برچسب محل است؛ این نوبت یک محل دارد. برای محل دیگر نوبت دیگری شروع کنید.");
+            return;
+        }
+
+        var lookup = await ProductLookup.ByCodeAsync(ProductsApi, text);
+        if (lookup.Kind != LookupKind.Found)
+        {
+            await QueueAsync(text, lookup.Kind == LookupKind.Error ? lookup.Error ?? "خطا" : "قلم با این بارکد پیدا نشد.");
+            return;
+        }
+
+        var product = lookup.Product!.Summary;
+        if (!_batches.TryGetValue(product.Id, out var batches))
+        {
+            var result = await StockApi.StocktakeBatchesAsync(StocktakeId, product.Id);
+            if (!result.IsSuccess) { await QueueAsync(text, result.ErrorMessage ?? "بچ‌ها خوانده نشد."); return; }
+            _batches[product.Id] = batches = result.Value!;
+        }
+
+        if (batches.Count == 0) { await QueueAsync(text, $"«{product.Name}» در دامنه‌ی این نوبت بچی ندارد."); return; }
+
+        // GS1: از میان برداشت‌های ممکنِ کد، آنکه بچش در این نوبت هست؛ بارکد ساده فقط وقتی قلم یک بچ دارد.
+        StocktakeBatchItem? batch = null;
+        string? serial = null;
+        var candidates = Gs1Scan.ParseAll(text);
+        if (candidates.Count > 0)
+        {
+            foreach (var c in candidates.OrderByDescending(c => c.Serial?.Length == 20))
+            {
+                var key = TextNormalizer.ScanKey(c.Batch);
+                if (key is null) continue;
+                batch = batches.FirstOrDefault(b => TextNormalizer.ScanKey(b.BatchNumber) == key);
+                if (batch is null) continue;
+                serial = c.Serial;
+                break;
+            }
+
+            if (batch is null)
+            {
+                var lot = candidates.FirstOrDefault(c => c.Serial?.Length == 20)?.Batch ?? candidates[0].Batch;
+                await QueueAsync(text, $"بچ {lot ?? "؟"} از «{product.Name}» در این نوبت ثبت نشده (شاید بچ تازه یا جابه‌جا).");
+                return;
+            }
+        }
+        else if (batches.Count == 1)
+        {
+            batch = batches[0];
+        }
+        else
+        {
+            await QueueAsync(text, $"«{product.Name}» چند بچ دارد و بارکد ساده بچ را نمی‌گوید.");
+            return;
+        }
+
+        if (serial is not null && _state.Serials.Contains(serial))
+        {
+            await FeedbackAsync(false, "این جعبه (همین UID) قبلاً اسکن شده است.");
+            return;
+        }
+
+        var quantity = _qty;
+        _qty = 1;
+        var tally = _state.Tallies.FirstOrDefault(t => t.BatchId == batch.BatchId);
+        if (tally is null)
+        {
+            tally = new Tally { BatchId = batch.BatchId, ProductName = product.Name, BatchNumber = batch.BatchNumber };
+            _state.Tallies.Insert(0, tally);
+        }
+
+        tally.Count += quantity;
+        if (serial is not null) _state.Serials.Add(serial);
+        _state.History.Add(new ScanEvent { BatchId = batch.BatchId, Quantity = quantity, Serial = serial });
+        await FeedbackAsync(true, $"{product.Name} — {batch.BatchNumber}: {JalaliDate.ToPersianDigits(tally.Count.ToString())}");
+        await SaveAsync();
+    }
+
+    private async Task QueueAsync(string raw, string reason)
+    {
+        _qty = 1;
+        _state.Queue.Insert(0, new Unresolved { Raw = raw, Reason = reason });
+        await FeedbackAsync(false, reason);
+        await SaveAsync();
+    }
+
+    private void Undo()
+    {
+        if (_state.History.Count == 0) return;
+        var last = _state.History[^1];
+        _state.History.RemoveAt(_state.History.Count - 1);
+        if (_state.Tallies.FirstOrDefault(t => t.BatchId == last.BatchId) is { } tally)
+        {
+            tally.Count = Math.Max(0, tally.Count - last.Quantity);
+            _last = $"برگردانده شد: {tally.BatchNumber} حالا {JalaliDate.ToPersianDigits(tally.Count.ToString())}";
+        }
+
+        if (last.Serial is not null) _state.Serials.Remove(last.Serial);
+        _ = SaveAsync();
+    }
+
+    private async Task CommitAsync()
+    {
+        if (_busy || !HasPending) return;
+
+        _busy = true;
+        var failed = 0;
+        foreach (var tally in _state.Tallies.Where(t => t.Count != t.Submitted).ToList())
+        {
+            var result = await StockApi.CountAsync(StocktakeId, tally.BatchId, tally.Count);
+            if (result.IsSuccess) tally.Submitted = tally.Count;
+            else { failed++; _last = $"{tally.BatchNumber}: {result.ErrorMessage}"; }
+        }
+
+        _busy = false;
+        await FeedbackAsync(failed == 0, failed == 0 ? "شمارش‌ها ثبت شد." : $"{JalaliDate.ToPersianDigits(failed.ToString())} بچ ثبت نشد. {_last}");
+        await SaveAsync();
+        await OnCommitted.InvokeAsync();
+        if (_scan is not null) await _scan.FocusAsync();
+    }
+
+    // دور تازه: شمار محلی پاک می‌شود؛ شمارش‌های ثبت‌شده در نوبت می‌مانند.
+    private async Task ResetAsync()
+    {
+        _state = new ScanState();
+        _qty = 1;
+        _last = null;
+        if (_draft is not null) await _draft.ClearAsync();
+    }
+}

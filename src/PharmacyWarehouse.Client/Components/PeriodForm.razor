@@ -1,0 +1,134 @@
+@using PharmacyWarehouse.Domain.Stock
+@inject StockClient StockApi
+@inject LocationsClient LocationsApi
+@inject CategoriesClient CategoriesApi
+
+@* ساخت و ویرایش دوره‌ی انبارگردانی (بخش ۱۵.۳ spec)، داخل کشوی کناری. محل و دسته‌ی خالی یعنی «همه». *@
+
+@if (!_ready)
+{
+    <div class="loading-line">در حال بارگذاری…</div>
+}
+else
+{
+    <EditForm Model="_request" OnSubmit="SaveAsync">
+        <div class="form-field">
+            <label for="period-name">نام دوره <span class="required">*</span></label>
+            <input id="period-name" class="form-control" @bind="_request.Name" maxlength="@StocktakeRules.MaxPeriodName" placeholder="مثلاً «پاییز ۱۴۰۵»" />
+            <FieldError Field="Name" Errors="_errors" />
+        </div>
+
+        <h3 class="mt-3">محل‌ها</h3>
+        <p class="form-hint">هر محل با همه‌ی زیرشاخه‌هایش. بدون انتخاب یعنی همه‌ی محل‌ها.</p>
+        <div class="chip-list">
+            @foreach (var id in _request.LocationIds)
+            {
+                <span class="chip" @key="id">
+                    <bdi>@(_locations.FirstOrDefault(l => l.Id == id)?.Path ?? "—")</bdi>
+                    <button type="button" class="chip-remove" aria-label="برداشتن محل" @onclick="() => _request.LocationIds.Remove(id)"><AppIcon Name="close" Size="13" /></button>
+                </span>
+            }
+            @if (_request.LocationIds.Count == 0)
+            {
+                <span class="chip chip-all">همه‌ی محل‌ها</span>
+            }
+        </div>
+        <div class="form-field mt-2">
+            <label for="period-location">افزودن محل</label>
+            <LocationPicker InputId="period-location" Items="LocationOptions()" EmptyLabel="محل را انتخاب کنید" Value="_pick" ValueChanged="AddLocation" />
+        </div>
+        <FieldError Field="LocationIds" Errors="_errors" />
+
+        <h3 class="mt-3">دسته‌ها</h3>
+        @if (_categories.Count == 0)
+        {
+            <p class="form-hint">دسته‌ای تعریف نشده؛ دوره همه‌ی اقلام را می‌پوشاند.</p>
+        }
+        else
+        {
+            <p class="form-hint">بدون انتخاب یعنی همه‌ی دسته‌ها (و اقلام بی‌دسته).</p>
+            <div class="check-grid">
+                @foreach (var category in _categories.Where(c => c.IsActive || _request.CategoryIds.Contains(c.Id)))
+                {
+                    <label class="form-check" @key="category.Id">
+                        <input type="checkbox" class="form-check-input" checked="@_request.CategoryIds.Contains(category.Id)" @onchange="() => ToggleCategory(category.Id)" />
+                        <span class="form-check-label">@category.Name</span>
+                    </label>
+                }
+            </div>
+        }
+        <FieldError Field="CategoryIds" Errors="_errors" />
+
+        @if (_formError is not null)
+        {
+            <div class="form-alert mt-3 mb-0" role="alert">@_formError</div>
+        }
+
+        <div class="modal-actions">
+            <button type="submit" class="btn btn-primary" disabled="@_busy">@(_busy ? "در حال ذخیره…" : Existing is null ? "ساخت دوره" : "ذخیره")</button>
+            <button type="button" class="btn btn-quiet" @onclick="() => OnCancel.InvokeAsync()">انصراف</button>
+        </div>
+    </EditForm>
+}
+
+@code {
+    [Parameter] public PeriodDetail? Existing { get; set; }
+    [Parameter] public EventCallback<PeriodDetail> OnSaved { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private SavePeriodRequest _request = new();
+    private List<StorageLocationItem> _locations = [];
+    private List<CategoryItem> _categories = [];
+    private Dictionary<string, string[]> _errors = [];
+    private string? _formError;
+    private Guid? _pick;
+    private bool _ready;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locations = (await LocationsApi.ListAsync()).Value ?? [];
+        _categories = (await CategoriesApi.ListAsync()).Value ?? [];
+        if (Existing is { } e)
+        {
+            _request = new SavePeriodRequest { Name = e.Name, LocationIds = [.. e.LocationIds], CategoryIds = [.. e.CategoryIds], Version = e.Version };
+        }
+
+        _ready = true;
+    }
+
+    private IEnumerable<StorageLocationItem> LocationOptions() =>
+        _locations.Where(l => l.IsUsable && !_request.LocationIds.Contains(l.Id));
+
+    // انتخاب محل در فهرست اضافه می‌شود و فیلد برای محل بعدی خالی می‌ماند.
+    private void AddLocation(Guid? id)
+    {
+        if (id is { } g && !_request.LocationIds.Contains(g)) _request.LocationIds.Add(g);
+        _pick = null;
+    }
+
+    private void ToggleCategory(Guid id)
+    {
+        if (!_request.CategoryIds.Remove(id)) _request.CategoryIds.Add(id);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_busy) return;
+
+        _busy = true;
+        _errors = [];
+        _formError = null;
+        var result = await StockApi.SavePeriodAsync(Existing?.Id, _request);
+        _busy = false;
+
+        if (!result.IsSuccess)
+        {
+            if (result.Problem is { Errors.Count: > 0 } problem) _errors = problem.Errors;
+            else _formError = result.ErrorMessage;
+            return;
+        }
+
+        await OnSaved.InvokeAsync(result.Value!);
+    }
+}

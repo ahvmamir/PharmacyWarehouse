@@ -276,6 +276,19 @@ public sealed class TestApp : IAsyncDisposable
     }
 
     // For every batch OnHand must equal the sum of its movements.
+    // هر نوبت زیر یک دوره‌ی باز است (بخش ۱۵.۳ spec). تست‌های قدیمی نوبت را روی یک دوره‌ی «همه‌چیز» شروع می‌کنند.
+    private Guid? _periodId;
+
+    public async Task<Guid> PeriodIdAsync(HttpClient client)
+    {
+        if (_periodId is { } id) return id;
+
+        var response = await client.PostAsJsonAsync(ApiRoutes.StocktakePeriods, new SavePeriodRequest { Name = "TEST-PERIOD" });
+        if (response.StatusCode != HttpStatusCode.OK) throw new InvalidOperationException($"period: {response.StatusCode}");
+        _periodId = (await response.Content.ReadFromJsonAsync<PeriodDetail>())!.Id;
+        return _periodId.Value;
+    }
+
     public async Task AssertLedgerConsistentAsync()
     {
         using var scope = _factory.Services.CreateScope();

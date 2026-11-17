@@ -20,7 +20,7 @@ public static class ImportEndpoints
 
     // سرستون‌های قالب؛ ترتیب همین است. قیمت فقط برای reports.view.
     private static readonly string[] Columns =
-        ["نام دارو و دوز", "نام تجاری", "تعداد", "تعداد در بسته", "بچ نامبر", "تاریخ انقضا", "محل", "بارکد", "حداقل موجودی", "قیمت"];
+        ["نام دارو و دوز", "نام تجاری", "تعداد", "تعداد در بسته", "بچ نامبر", "تاریخ انقضا", "محل", "بارکد", "حداقل موجودی", "دسته", "قیمت"];
 
     public static void MapImportEndpoints(this WebApplication app)
     {
@@ -78,7 +78,7 @@ public static class ImportEndpoints
                 {
                     Sheet = sheet.Name, RowNumber = r + 1, Name = Cell("name"), Brand = Cell("brand"), Quantity = Cell("quantity"),
                     UnitsPerPack = Cell("pack"), BatchNumber = Cell("batch"), Expiry = Cell("expiry"), Location = Cell("location"),
-                    Barcode = Cell("barcode"), MinStock = Cell("minstock"), UnitCost = Cell("cost")
+                    Barcode = Cell("barcode"), MinStock = Cell("minstock"), UnitCost = Cell("cost"), Category = Cell("category")
                 });
                 if (rows.Count > ImportValidator.MaxRows) return ApiProblems.Validation("File", $"بیش از {ImportValidator.MaxRows} ردیف؛ فایل را تقسیم کنید.");
             }
@@ -115,7 +115,8 @@ public static class ImportEndpoints
         ("location", ["محل"]),
         ("barcode", ["بارکد"]),
         ("minstock", ["حداقلموجودی", "حداقل"]),
-        ("cost", ["قیمت", "قیمتواحد"])
+        ("cost", ["قیمت", "قیمتواحد"]),
+        ("category", ["دسته", "دستهبندی", "گروه"])
     ];
 
     private static string HeaderKey(string? text) =>
@@ -245,6 +246,17 @@ public static class ImportEndpoints
         string KeyOf(Product p) => ImportValidator.ProductKeyOf(p.Name, p.Brand, p.PackDescription);
         var existingProducts = await db.Products.AsNoTracking().ToListAsync();
         var productIds = existingProducts.ToDictionary(KeyOf, p => p.Id);
+
+        // دسته با کلید یکدست‌شده پیدا می‌شود؛ دسته‌ی ناموجود همین‌جا ساخته می‌شود (مثل محل).
+        var categories = await db.ProductCategories.ToDictionaryAsync(c => c.NameKey, c => c.Id);
+        Guid? ResolveCategory(string? name)
+        {
+            if (TextNormalizer.Key(name) is not { } key) return null;
+            if (categories.TryGetValue(key, out var found)) return found;
+            var created = new ProductCategory { Id = Guid.NewGuid(), Name = name!, NameKey = key };
+            db.ProductCategories.Add(created);
+            return categories[key] = created.Id;
+        }
         // محل قلم، برای اینکه بچِ هم‌محل LocationId خودش را نگیرد (مثل ورود جنس: خالی = محل قلم).
         var productLocations = existingProducts.ToDictionary(p => p.Id, p => p.LocationId);
         var newProducts = new HashSet<Guid>();
@@ -287,6 +299,7 @@ public static class ImportEndpoints
             if (newProductDrafts.TryGetValue(productId, out var draft))
             {
                 draft.Product.MinStock ??= row.MinStock;
+                draft.Product.CategoryId ??= ResolveCategory(row.Category);
                 if (row.Barcode is not null && row.BarcodeKey is not null && seenBarcodes.Add(row.BarcodeKey))
                 {
                     db.ProductBarcodes.Add(new ProductBarcode { Id = Guid.NewGuid(), ProductId = productId, Code = row.Barcode, CodeKey = row.BarcodeKey });
@@ -334,8 +347,8 @@ public static class ImportEndpoints
     private static IResult Template()
     {
         var bytes = XlsxWriter.Write(
-            new XlsxSheet("اقلام", Columns, [["داروی آزمایشی 10mg", "برند آزمایشی", "5", "30", "TEST-B1", "31/05/2028", "", "TEST-0001", "2", ""]],
-                NumericColumns: new HashSet<int> { 2, 8, 9 }),
+            new XlsxSheet("اقلام", Columns, [["داروی آزمایشی 10mg", "برند آزمایشی", "5", "30", "TEST-B1", "31/05/2028", "", "TEST-0001", "2", "", ""]],
+                NumericColumns: new HashSet<int> { 2, 8, 10 }),
             new XlsxSheet("راهنما", ["راهنما"], GuideLines().Select(l => new string?[] { l })));
         return Results.File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "pharmacywarehouse-import-template.xlsx");
     }
@@ -358,6 +371,7 @@ public static class ImportEndpoints
         var paths = LocationTree.Paths(locations.Select(l => new LocationNode(l.Id, l.ParentId, l.Name, l.SortOrder)));
         string? PathOf(Guid? id) => id is { } g && paths.TryGetValue(g, out var p) ? p : null;
 
+        var categoryNames = await db.ProductCategories.AsNoTracking().ToDictionaryAsync(c => c.Id, c => c.Name);
         var products = (await db.Products.AsNoTracking().ToListAsync()).OrderBy(p => p.Name, StringComparer.Ordinal).ThenBy(p => p.Brand, StringComparer.Ordinal).ThenBy(p => p.Id).ToList();
         var batches = (await db.Batches.AsNoTracking().ToListAsync()).ToLookup(b => b.ProductId);
         var codes = (await db.ProductBarcodes.AsNoTracking().ToListAsync()).ToLookup(c => c.ProductId);
@@ -375,14 +389,15 @@ public static class ImportEndpoints
                 {
                     p.Name, p.Brand, (b?.OnHand ?? 0).ToString(), p.PackDescription, b?.BatchNumber,
                     b?.ExpiryDate is { } d ? ExpiryDate.Display(new ExpiryValue(d, b.ExpiryPrecision, b.ExpiryCalendar)) : null,
-                    PathOf(b?.LocationId ?? p.LocationId), code, p.MinStock?.ToString()
+                    PathOf(b?.LocationId ?? p.LocationId), code, p.MinStock?.ToString(),
+                    p.CategoryId is { } c ? categoryNames.GetValueOrDefault(c) : null
                 };
                 if (withPrice) row.Add(b?.UnitCost?.ToString());
                 rows.Add(row.ToArray());
             }
         }
 
-        var numeric = withPrice ? new HashSet<int> { 2, 8, 9 } : new HashSet<int> { 2, 8 };
+        var numeric = withPrice ? new HashSet<int> { 2, 8, 10 } : new HashSet<int> { 2, 8 };
         var bytes = XlsxWriter.Write(new XlsxSheet("موجودی", columns, rows, numeric));
         return Results.File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"pharmacywarehouse-export-{DateTime.UtcNow:yyyyMMdd-HHmmss}.xlsx");
     }

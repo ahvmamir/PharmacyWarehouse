@@ -18,6 +18,8 @@ public sealed class ImportRowInput
     public string? Barcode { get; set; }
     public string? MinStock { get; set; }
     public string? UnitCost { get; set; }
+    // نام دسته‌ی قلم (بخش ۱۵.۳ spec)؛ دسته‌ی ناموجود هنگام ثبت ساخته می‌شود.
+    public string? Category { get; set; }
     // «انقضا لازم نیست» برای این قلم.
     public bool ExpiryNotRequired { get; set; }
 }
@@ -30,7 +32,7 @@ public sealed record ImportRowStatus(int Index, ImportSeverity Severity, IReadOn
 public sealed record ImportPlanRow(
     int Index, string Sheet, string? LocationPath, string Name, string? Brand, string? Pack, string ProductKey, bool RequiresExpiry,
     int Quantity, string? BatchNumber, string? BatchKey, ExpiryValue? Expiry,
-    string? Barcode, string? BarcodeKey, int? MinStock, long? UnitCost);
+    string? Barcode, string? BarcodeKey, int? MinStock, long? UnitCost, string? Category = null);
 
 public sealed record ImportSummary(
     int TotalRows, int IgnoredRows, int ErrorRows, int WarningRows,

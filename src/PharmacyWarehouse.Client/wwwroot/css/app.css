@@ -305,6 +305,19 @@ html:has(.app-shell), body:has(.app-shell) { overflow: hidden; }
 .sidebar-link:hover { background: var(--hover); color: var(--ink); }
 .sidebar-link.active { background: var(--accent-tint); color: var(--accent-strong); font-weight: 600; }
 .sidebar-link.active .icon { color: var(--accent); }
+/* شمارنده‌ی کارتابل؛ در منوی جمع‌شده روی گوشه‌ی آیکون می‌نشیند. */
+.sidebar-link { position: relative; }
+.nav-badge {
+    margin-inline-start: auto;
+    min-width: 20px; height: 20px; padding: 0 6px;
+    border-radius: 10px;
+    background: var(--badge-bg); color: #fff;
+    font-size: .72rem; font-weight: 700; line-height: 20px; text-align: center;
+}
+.sidebar.collapsed .nav-badge {
+    position: absolute; top: 2px; left: 4px;
+    min-width: 16px; height: 16px; padding: 0 4px; font-size: .62rem; line-height: 16px;
+}
 
 .sidebar-collapse-btn {
     display: flex;
@@ -1064,6 +1077,30 @@ html:has(.app-shell), body:has(.app-shell) { overflow: hidden; }
 
 .modal-emu-body { padding: 16px 18px; overflow-y: auto; }
 
+/* کشوی کناری: از لبه‌ی چپ (منو سمت راست است)، تمام‌قد؛ فهرست پشت آن دیده می‌ماند. */
+.modal-emu.modal-emu-side {
+    top: 0; bottom: 0; left: 0; right: auto;
+    transform: none;
+    width: min(560px, calc(100vw - 32px));
+    max-height: none;
+    border-radius: 0 12px 12px 0;
+}
+.modal-emu-side.modal-emu-wide { width: min(780px, calc(100vw - 32px)); }
+.modal-emu-side .modal-emu-body { flex: 1; }
+.modal-emu .card-emu { border: 0; box-shadow: none; padding: 0; margin: 0; background: none; }
+
+/* گوشی: هر پنجره از پایین بالا می‌آید و دکمه‌ها زیر انگشت‌اند. */
+@media (max-width: 767.98px) {
+    .modal-emu, .modal-emu.modal-emu-side, .modal-emu-wide, .modal-emu-xl {
+        top: auto; bottom: 0; left: 0; right: 0;
+        transform: none;
+        width: 100%;
+        max-height: 92vh;
+        border-radius: 16px 16px 0 0;
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+}
+
 .modal-actions {
     display: flex;
     justify-content: flex-start;
@@ -1729,3 +1766,123 @@ a.bar-row:hover { background: var(--hover); color: inherit; }
 .bar-fill.warning { background: var(--warning); }
 .bar-value { font-variant-numeric: tabular-nums; font-weight: 600; }
 .dash-more { display: inline-block; margin-top: 8px; font-size: .88rem; }
+
+/* زبانه‌های صفحه (ورود و خروج، کارتابل): خط زیرین، نه دکمه‌ی پررنگ؛ تا با دکمه‌های کار اشتباه نشوند. */
+.tab-bar {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 16px;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+.tab-bar .tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 14px;
+    margin-bottom: -1px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: none;
+    color: var(--muted);
+    font: inherit;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.tab-bar .tab:hover { color: var(--ink); }
+.tab-bar .tab.active { color: var(--accent-strong); border-bottom-color: var(--accent); }
+.tab-bar .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px 6px 0 0; }
+.tab-bar .nav-badge { margin: 0; }
+
+/* نوار بالای فهرست: فیلتر وضعیت (کنترل تکه‌ای) در یک سو و تازه‌سازی در سوی دیگر، در یک ردیف. */
+.list-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+.list-toolbar-note { color: var(--muted); font-size: .9rem; }
+.seg-tabs {
+    display: inline-flex;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 9px;
+    background: var(--surface-sunk);
+    border: 1px solid var(--line);
+}
+.seg-tabs button {
+    padding: 5px 14px;
+    border: 0;
+    border-radius: 7px;
+    background: none;
+    color: var(--muted);
+    font: inherit;
+    font-size: .9rem;
+    cursor: pointer;
+}
+.seg-tabs button:hover { color: var(--ink); }
+/* Blazor برای aria-selected=true فقط نام ویژگی را می‌نویسد؛ پس حالت انتخاب با کلاس است، نه انتخابگر ویژگی. */
+.seg-tabs button.active { background: var(--accent-tint); color: var(--accent-strong); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, .08); }
+.seg-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* فوکوس برنامه‌ای پنجره (برای Esc) حلقه‌ی فوکوس نشان نمی‌دهد. */
+.modal-emu:focus { outline: none; }
+
+/* قلم‌های مشابه هنگام تعریف قلم تازه در ورود جنس */
+.similar-list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
+.similar-list li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.similar-list li .btn { margin-inline-start: auto; }
+
+/* جزئیات قلم: کاشی‌های خلاصه، یک خط مشخصات، زبانه‌ها */
+.product-tiles { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+.product-tiles .dash-card .tile-text { font-size: 1.1rem; }
+.product-facts { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; color: var(--muted); margin: 0 0 14px; }
+.product-facts > span { display: inline-flex; align-items: center; gap: 5px; }
+.tab-count { min-width: 20px; padding: 0 6px; border-radius: 10px; background: var(--surface-sunk); border: 1px solid var(--line); font-size: .75rem; line-height: 18px; text-align: center; color: var(--muted); }
+.tab-bar .tab.active .tab-count { color: var(--accent-strong); border-color: var(--accent); }
+
+/* کادر جست‌وجوی اقلام تمام عرض ردیف اول فیلترها را می‌گیرد. */
+.filters .filters-search { grid-column: 1 / -1; }
+
+/* انتخاب گروهی در فهرست اقلام */
+.data-table .select-col { width: 36px; text-align: center; }
+.data-table tr.row-selected td { background: var(--accent-tint); }
+.bulk-bar {
+    position: sticky; top: 8px; z-index: 5;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+    padding: 10px 14px; margin-bottom: 10px;
+    background: var(--surface); border: 1px solid var(--accent); border-radius: var(--radius);
+    box-shadow: var(--shadow-raised);
+}
+.bulk-bar .form-select { width: auto; min-width: 180px; }
+
+/* فهرست تراشه (محل‌های دوره) */
+.chip-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px 3px 10px; border-radius: 999px; background: var(--surface-sunk); border: 1px solid var(--line); font-size: .86rem; }
+.chip-all { color: var(--muted); padding-inline-start: 10px; }
+.chip-remove { display: inline-grid; place-items: center; width: 20px; height: 20px; border: 0; border-radius: 50%; background: none; color: var(--muted); cursor: pointer; }
+.chip-remove:hover { background: var(--hover); color: var(--ink); }
+.check-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 4px 12px; }
+
+/* آمار دوره: نوار پیشرفت و کارت‌های فیلتر */
+.period-progress { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; color: var(--muted); }
+.period-progress .prog { flex: 1; max-width: 420px; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.period-progress .prog i { display: block; height: 100%; background: var(--accent); }
+button.dash-card { font: inherit; text-align: start; cursor: pointer; width: 100%; }
+.dash-card.dash-card-active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+
+/* شمارش بی‌دست */
+.scan-panel-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.scan-last { margin-top: 10px; padding: 10px 14px; border-radius: var(--radius-small); font-size: 1.1rem; font-weight: 700; }
+.scan-last.ok { background: var(--accent-tint); color: var(--accent-strong); }
+.scan-last.bad { background: var(--danger-tint); color: var(--danger); }
+.scan-queue { margin: 6px 0 0; padding-inline-start: 18px; color: var(--muted); }
+
+/* برگه‌ی بارکد فرمان */
+.command-sheet { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+.command-card { display: grid; gap: 6px; justify-items: center; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; color: #000; break-inside: avoid; }
+.command-card .barcode { width: 100%; height: 60px; }

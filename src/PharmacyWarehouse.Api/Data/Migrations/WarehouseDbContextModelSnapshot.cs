@@ -404,6 +404,9 @@ namespace PharmacyWarehouse.Api.Data.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("CategoryId")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("TEXT");
 
@@ -454,6 +457,8 @@ namespace PharmacyWarehouse.Api.Data.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CategoryId");
+
                     b.HasIndex("LocationId");
 
                     b.HasIndex("NameKey", "BrandKey", "PackKey")
@@ -493,6 +498,37 @@ namespace PharmacyWarehouse.Api.Data.Migrations
                     b.HasIndex("ProductId");
 
                     b.ToTable("ProductBarcodes");
+                });
+
+            modelBuilder.Entity("PharmacyWarehouse.Api.Data.ProductCategory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NameKey")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NameKey")
+                        .IsUnique();
+
+                    b.ToTable("ProductCategories");
                 });
 
             modelBuilder.Entity("PharmacyWarehouse.Api.Data.Receipt", b =>
@@ -642,6 +678,9 @@ namespace PharmacyWarehouse.Api.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("CategoryId")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime?>("ClosedAtUtc")
                         .HasColumnType("TEXT");
 
@@ -650,6 +689,11 @@ namespace PharmacyWarehouse.Api.Data.Migrations
 
                     b.Property<Guid>("LocationId")
                         .HasColumnType("TEXT");
+
+                    b.Property<Guid>("PeriodId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue(new Guid("b0000000-0000-0000-0000-000000000001"));
 
                     b.Property<DateTime>("StartedAtUtc")
                         .HasColumnType("TEXT");
@@ -663,12 +707,16 @@ namespace PharmacyWarehouse.Api.Data.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CategoryId");
+
                     b.HasIndex("ClosedAtUtc");
 
                     b.HasIndex("LocationId")
                         .IsUnique()
                         .HasDatabaseName("IX_Stocktakes_OpenLocation")
                         .HasFilter("\"ClosedAtUtc\" IS NULL");
+
+                    b.HasIndex("PeriodId");
 
                     b.ToTable("Stocktakes");
                 });
@@ -690,6 +738,16 @@ namespace PharmacyWarehouse.Api.Data.Migrations
 
                     b.Property<int>("Counted")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("DismissNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DismissedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("DismissedById")
+                        .HasColumnType("TEXT");
 
                     b.Property<int>("ExpectedOnHand")
                         .HasColumnType("INTEGER");
@@ -713,6 +771,92 @@ namespace PharmacyWarehouse.Api.Data.Migrations
                     b.HasIndex("BatchId", "AtUtc");
 
                     b.ToTable("StocktakeCounts");
+                });
+
+            modelBuilder.Entity("PharmacyWarehouse.Api.Data.StocktakePeriod", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ClosedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("ClosedById")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("StartedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("StartedById")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClosedAtUtc");
+
+                    b.ToTable("StocktakePeriods");
+                });
+
+            modelBuilder.Entity("PharmacyWarehouse.Api.Data.StocktakePeriodCategory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("CategoryId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("PeriodId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CategoryId");
+
+                    b.HasIndex("PeriodId", "CategoryId")
+                        .IsUnique();
+
+                    b.ToTable("StocktakePeriodCategories");
+                });
+
+            modelBuilder.Entity("PharmacyWarehouse.Api.Data.StocktakePeriodLocation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("LocationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("PeriodId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LocationId");
+
+                    b.HasIndex("PeriodId", "LocationId")
+                        .IsUnique();
+
+                    b.ToTable("StocktakePeriodLocations");
                 });
 
             modelBuilder.Entity("PharmacyWarehouse.Api.Data.StorageLocation", b =>
@@ -883,6 +1027,11 @@ namespace PharmacyWarehouse.Api.Data.Migrations
 
             modelBuilder.Entity("PharmacyWarehouse.Api.Data.Product", b =>
                 {
+                    b.HasOne("PharmacyWarehouse.Api.Data.ProductCategory", null)
+                        .WithMany()
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("PharmacyWarehouse.Api.Data.StorageLocation", null)
                         .WithMany()
                         .HasForeignKey("LocationId")
@@ -951,9 +1100,20 @@ namespace PharmacyWarehouse.Api.Data.Migrations
 
             modelBuilder.Entity("PharmacyWarehouse.Api.Data.Stocktake", b =>
                 {
+                    b.HasOne("PharmacyWarehouse.Api.Data.ProductCategory", null)
+                        .WithMany()
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("PharmacyWarehouse.Api.Data.StorageLocation", null)
                         .WithMany()
                         .HasForeignKey("LocationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PharmacyWarehouse.Api.Data.StocktakePeriod", null)
+                        .WithMany()
+                        .HasForeignKey("PeriodId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
@@ -974,6 +1134,36 @@ namespace PharmacyWarehouse.Api.Data.Migrations
                     b.HasOne("PharmacyWarehouse.Api.Data.Stocktake", null)
                         .WithMany()
                         .HasForeignKey("StocktakeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PharmacyWarehouse.Api.Data.StocktakePeriodCategory", b =>
+                {
+                    b.HasOne("PharmacyWarehouse.Api.Data.ProductCategory", null)
+                        .WithMany()
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PharmacyWarehouse.Api.Data.StocktakePeriod", null)
+                        .WithMany()
+                        .HasForeignKey("PeriodId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PharmacyWarehouse.Api.Data.StocktakePeriodLocation", b =>
+                {
+                    b.HasOne("PharmacyWarehouse.Api.Data.StorageLocation", null)
+                        .WithMany()
+                        .HasForeignKey("LocationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PharmacyWarehouse.Api.Data.StocktakePeriod", null)
+                        .WithMany()
+                        .HasForeignKey("PeriodId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

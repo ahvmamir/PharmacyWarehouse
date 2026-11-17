@@ -8,7 +8,10 @@
 <div class="withdraw-page">
     <div class="withdraw-user">
         <span class="withdraw-user-name"><AppIcon Name="user" Size="20" /> <bdi>@Session.CurrentUser?.DisplayName</bdi></span>
-        <a class="btn btn-quiet" href="my-withdrawals">برداشت‌های من</a>
+        @if (ShowHistoryLink)
+        {
+            <a class="btn btn-quiet" href="my-withdrawals">برداشت‌های من</a>
+        }
     </div>
 
     <section class="card-emu">
@@ -151,6 +154,9 @@
 </div>
 
 @code {
+    // در /stock-io زبانه‌ی «سابقه‌ی من» همین کار را می‌کند؛ پیوند فقط در صفحه‌ی مستقل /withdraw.
+    [Parameter] public bool ShowHistoryLink { get; set; } = true;
+
     // مقدار = دقیقه‌ی قبل؛ سرور «اکنون منهای این» را حساب می‌کند، پس ساعت گوشی دخیل نیست.
     private static readonly (string Minutes, string Label)[] WhenOptions =
     [
@@ -269,7 +275,34 @@
             return;
         }
 
+        var scan = _search?.TakeScan(item.Id);
         await StartProductAsync(item.Id);
+        if (scan?.Batch is { } lot) PreferScannedBatch(lot);
+    }
+
+    // اسکن GS1 (بخش ۹.۲ spec): جعبه‌ای که در دست است بچ خودش را دارد؛ همان بچ انتخاب می‌شود، نه پیشنهاد FEFO.
+    // بچی که در سیستم موجودی ندارد یعنی ثبت قبلی جابه‌جا بوده؛ FEFO می‌ماند و به انباردار گفته می‌شود.
+    private void PreferScannedBatch(string lot)
+    {
+        if (_allocation is not { } a) return;
+        var key = TextNormalizer.ScanKey(lot);
+        var batch = a.Available.FirstOrDefault(b => TextNormalizer.ScanKey(b.BatchNumber) == key);
+        if (batch is null)
+        {
+            _scanError = $"بچ روی جعبه ({lot}) در سیستم موجودی ندارد؛ پیشنهاد عادی آمد. به انباردار اطلاع دهید.";
+            return;
+        }
+
+        if (batch.IsExpired && !a.AllowExpiredWithdrawal)
+        {
+            _scanError = $"بچ روی جعبه ({lot}) منقضی است و برداشت ندارد.";
+            return;
+        }
+
+        _manualLines.Clear();
+        _manualLines[batch.BatchId] = 1;
+        _manual = true;
+        _quantity = 1;
     }
 
     private async Task StartProductAsync(Guid productId)

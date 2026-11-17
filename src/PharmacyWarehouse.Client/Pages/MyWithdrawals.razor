@@ -3,16 +3,22 @@
 @using PharmacyWarehouse.Domain.Stock
 @inject WithdrawalsClient WithdrawalsApi
 
-<PageTitle>برداشت‌های من | داروبار</PageTitle>
+@if (!Embedded)
+{
+    <PageTitle>برداشت‌های من | داروبار</PageTitle>
+}
 
 <RequirePermission Permission="@Permissions.WithdrawalCreate">
-<div class="page-head">
-    <div>
-        <h1>برداشت‌های من</h1>
-        <p>آخرین برداشت‌هایی که شما ثبت کرده‌اید و وضعیت بررسی آن‌ها.</p>
+@if (!Embedded)
+{
+    <div class="page-head">
+        <div>
+            <h1>برداشت‌های من</h1>
+            <p>آخرین برداشت‌هایی که شما ثبت کرده‌اید و وضعیت بررسی آن‌ها.</p>
+        </div>
+        <a class="btn btn-primary" href="withdraw">ثبت برداشت</a>
     </div>
-    <a class="btn btn-primary" href="withdraw">ثبت برداشت</a>
-</div>
+}
 
 @if (_error is not null)
 {
@@ -55,6 +61,9 @@ else
 </RequirePermission>
 
 @code {
+    // در «کارتابل» یا زبانه‌ی «سابقه‌ی من» بدون عنوان صفحه نمایش داده می‌شود.
+    [Parameter] public bool Embedded { get; set; }
+
     private List<WithdrawalItem>? _items;
     private string? _error;
 

@@ -36,7 +36,7 @@ public class DashboardTests : ApiTestBase
             (await (await Keeper.PostAsJsonAsync(ApiRoutes.Locations, new SaveStorageLocationRequest { Name = name, ParentId = parent }))
                 .Content.ReadFromJsonAsync<StorageLocationItem>())!.Id;
         async Task<StocktakeDetail> StartAsync(Guid location) =>
-            (await (await Keeper.PostAsJsonAsync(ApiRoutes.Stocktakes, new StartStocktakeRequest { LocationId = location }))
+            (await (await Keeper.PostAsJsonAsync(ApiRoutes.Stocktakes, new StartStocktakeRequest { LocationId = location, PeriodId = await App.PeriodIdAsync(Keeper) }))
                 .Content.ReadFromJsonAsync<StocktakeDetail>())!;
 
         var counted = await LocationAsync("TEST-LOC-A");

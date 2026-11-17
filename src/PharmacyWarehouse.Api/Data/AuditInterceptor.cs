@@ -159,15 +159,25 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         {
             (StorageLocation, "ParentId") or (Product or Batch, "LocationId") => typeof(StorageLocation),
             (Batch or ProductBarcode or ReceiptLine, "ProductId") => typeof(Product),
+            (StocktakePeriodLocation, "LocationId") => typeof(StorageLocation),
+            (Product or Stocktake or StocktakePeriodCategory, "CategoryId") => typeof(ProductCategory),
             _ => null
         };
         if (kind is null) return id.ToString();
+
+        // قلم یا دسته‌ای که در همین SaveChanges ساخته می‌شود هنوز در دیتابیس نیست (قلم تازه داخل ورود جنس).
+        if (!names.ContainsKey(id) && kind == typeof(Product) && db.Products.Local.FirstOrDefault(p => p.Id == id) is { } local)
+        {
+            names[id] = local.Name;
+        }
 
         if (!names.TryGetValue(id, out var name))
         {
             name = kind == typeof(StorageLocation)
                 ? await db.StorageLocations.AsNoTracking().Where(l => l.Id == id).Select(l => l.Name).FirstOrDefaultAsync(ct)
-                : await db.Products.AsNoTracking().Where(p => p.Id == id).Select(p => p.Name).FirstOrDefaultAsync(ct);
+                : kind == typeof(ProductCategory)
+                    ? await db.ProductCategories.AsNoTracking().Where(c => c.Id == id).Select(c => c.Name).FirstOrDefaultAsync(ct)
+                    : await db.Products.AsNoTracking().Where(p => p.Id == id).Select(p => p.Name).FirstOrDefaultAsync(ct);
             names[id] = name;
         }
 

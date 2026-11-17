@@ -1,0 +1,324 @@
+@using PharmacyWarehouse.Domain.Stock
+@inject ProductsClient ProductsApi
+@inject LocationsClient LocationsApi
+@inject CategoriesClient CategoriesApi
+@inject ToastService Toasts
+@inject DraftStore Drafts
+
+@* فرم تعریف و ویرایش قلم؛ هم در پنجره‌ی کناری (اقلام، جزئیات قلم) و هم در صفحه‌ی /products/new برای پیوند مستقیم.
+   پیش‌نویس با همان کلید قبلی (product-new یا product-{id}) می‌ماند. *@
+
+@if (_loadError is not null)
+{
+    <div class="form-alert" role="alert"><AppIcon Name="warning" /> <span>@_loadError</span></div>
+}
+else if (!_ready)
+{
+    <div class="loading-line">در حال بارگذاری…</div>
+}
+else
+{
+    <EditForm Model="_request" OnSubmit="SaveAsync">
+        <section class="card-emu">
+            <div class="form-grid">
+                <div class="form-field">
+                    <label for="product-name">نام و دوز <span class="required">*</span></label>
+                    <input id="product-name" class="form-control" @ref="_nameInput" @bind="_request.Name" maxlength="@ProductRules.MaxName" />
+                    <FieldError Field="Name" Errors="_errors" />
+                </div>
+                <div class="form-field">
+                    <label for="product-brand">برند</label>
+                    <input id="product-brand" class="form-control" @bind="_request.Brand" maxlength="@ProductRules.MaxBrand" />
+                    <FieldError Field="Brand" Errors="_errors" />
+                </div>
+                <div class="form-field">
+                    <label for="product-pack">محتوای بسته</label>
+                    <input id="product-pack" class="form-control" @bind="_request.PackDescription" maxlength="@ProductRules.MaxPack" />
+                    <div class="form-hint">مثلاً «۳۰ عدد» یا «۱۰۰ سی‌سی».</div>
+                    <FieldError Field="PackDescription" Errors="_errors" />
+                </div>
+                <div class="form-field">
+                    <label for="product-location">محل</label>
+                    <LocationPicker InputId="product-location" Items="LocationOptions()" @bind-Value="_locationId" />
+                    <FieldError Field="LocationId" Errors="_errors" />
+                </div>
+                <div class="form-field">
+                    <label for="product-category">دسته</label>
+                    @* فهرست دسته‌ها کوتاه و تخت است؛ اگر بلند شد به Combobox تبدیل شود (بخش ۱۵.۱ spec). *@
+                    <select id="product-category" class="form-select" value="@(_request.CategoryId?.ToString() ?? "")" @onchange="OnCategoryChanged">
+                        <option value="">— بدون دسته —</option>
+                        @foreach (var category in CategoryOptions())
+                        {
+                            <option value="@category.Id">@category.Name@(category.IsActive ? "" : " (غیرفعال)")</option>
+                        }
+                    </select>
+                    <FieldError Field="CategoryId" Errors="_errors" />
+                </div>
+                <div class="form-field">
+                    <label for="product-min">حداقل موجودی (جعبه)</label>
+                    <input id="product-min" class="form-control" type="number" min="0" dir="ltr" @bind="_request.MinStock" />
+                    <div class="form-hint">خالی یعنی بدون هشدار.</div>
+                    <FieldError Field="MinStock" Errors="_errors" />
+                </div>
+            </div>
+
+            <div class="form-check mt-3">
+                <input id="product-requires-expiry" type="checkbox" class="form-check-input" @bind="_request.RequiresExpiry" />
+                <label for="product-requires-expiry" class="form-check-label">انقضا لازم است</label>
+            </div>
+
+            <div class="form-check mt-2">
+                <input id="product-allow-expired" type="checkbox" class="form-check-input" @bind="_request.AllowExpiredWithdrawal" />
+                <label for="product-allow-expired" class="form-check-label">برداشت از بچ منقضی مجاز است</label>
+            </div>
+            <div class="form-alert warning mt-2 mb-0">
+                <AppIcon Name="warning" /> <span>برای کالای غیردارویی؛ خروج داروی منقضی خطر دارد</span>
+            </div>
+
+            @if (_errors.TryGetValue("", out var general))
+            {
+                <div class="form-alert mt-3 mb-0" role="alert">@string.Join(" ", general)</div>
+            }
+            @if (_formError is not null)
+            {
+                <div class="form-alert mt-3 mb-0" role="alert">@_formError</div>
+            }
+
+            <div class="modal-actions">
+                <button type="submit" class="btn btn-primary" disabled="@_busy">@(_busy ? "در حال ذخیره…" : "ذخیره")</button>
+                @if (IsNew)
+                {
+                    <button type="button" class="btn btn-quiet" disabled="@_busy" @onclick="SaveAndNextAsync">ثبت و قلم بعدی</button>
+                }
+                <button type="button" class="btn btn-quiet" disabled="@_busy" @onclick="() => OnCancel.InvokeAsync()">انصراف</button>
+            </div>
+            <DraftBar State="_draft" OnClear="ClearDraftAsync" />
+        </section>
+    </EditForm>
+}
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+    // بعد از «ذخیره» (نه «ثبت و قلم بعدی»)؛ صاحب فرم تصمیم می‌گیرد کجا برود یا پنجره را ببندد.
+    [Parameter] public EventCallback<ProductDetail> OnSaved { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+    // بعد از هر ثبت موفق، از جمله «ثبت و قلم بعدی»، تا فهرست پشت پنجره تازه شود.
+    [Parameter] public EventCallback<ProductDetail> OnAnySaved { get; set; }
+
+    private readonly SaveProductRequest _request = new();
+    private Dictionary<string, string[]> _errors = [];
+    private List<StorageLocationItem> _locations = [];
+    private List<CategoryItem> _categories = [];
+    private Guid? _originalCategory;
+    private Guid? _originalLocation;
+    private Guid? _locationId;
+    private ElementReference _nameInput;
+    private bool _focusName;
+    private string? _loadError;
+    private string? _formError;
+    private bool _ready;
+    private bool _busy;
+    private Guid? _loadedId;
+    private Draft<SaveProductRequest>? _draft;
+    private SaveProductRequest? _baseline;
+
+    private bool IsNew => Id is null;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_ready && _loadedId == Id) return;
+
+        _ready = false;
+        _loadError = null;
+        _loadedId = Id;
+
+        var locations = await LocationsApi.ListAsync();
+        if (!locations.IsSuccess)
+        {
+            _loadError = locations.ErrorMessage;
+            return;
+        }
+
+        _locations = locations.Value!;
+
+        var categories = await CategoriesApi.ListAsync();
+        _categories = categories.Value ?? [];
+
+        if (Id is { } id)
+        {
+            var result = await ProductsApi.GetAsync(id);
+            if (!result.IsSuccess)
+            {
+                _loadError = result.Outcome == ApiOutcome.NotFound ? "این قلم پیدا نشد." : result.ErrorMessage;
+                return;
+            }
+
+            Fill(result.Value!);
+        }
+
+        await RestoreDraftAsync();
+        _ready = true;
+    }
+
+    private void Fill(ProductDetail detail)
+    {
+        _request.Name = detail.Summary.Name;
+        _request.Brand = detail.Summary.Brand;
+        _request.PackDescription = detail.Summary.PackDescription;
+        _request.MinStock = detail.Summary.MinStock;
+        _request.RequiresExpiry = detail.RequiresExpiry;
+        _request.AllowExpiredWithdrawal = detail.AllowExpiredWithdrawal;
+        _request.Version = detail.Summary.Version;
+        _originalLocation = detail.LocationId;
+        _originalCategory = detail.CategoryId;
+        _request.CategoryId = detail.CategoryId;
+        _locationId = detail.LocationId;
+    }
+
+    private SaveProductRequest Snapshot() => new()
+    {
+        Name = _request.Name,
+        Brand = _request.Brand,
+        PackDescription = _request.PackDescription,
+        LocationId = _locationId,
+        CategoryId = _request.CategoryId,
+        MinStock = _request.MinStock,
+        RequiresExpiry = _request.RequiresExpiry,
+        AllowExpiredWithdrawal = _request.AllowExpiredWithdrawal
+    };
+
+    private static bool Same(SaveProductRequest a, SaveProductRequest b) =>
+        a.Name == b.Name && a.Brand == b.Brand && a.PackDescription == b.PackDescription && a.LocationId == b.LocationId
+        && a.CategoryId == b.CategoryId && a.MinStock == b.MinStock && a.RequiresExpiry == b.RequiresExpiry && a.AllowExpiredWithdrawal == b.AllowExpiredWithdrawal;
+
+    // Version هرگز در پیش‌نویس نمی‌ماند؛ همیشه از سرور تازه گرفته می‌شود.
+    private async Task RestoreDraftAsync()
+    {
+        _baseline = IsNew ? null : Snapshot();
+        _draft = Drafts.Open<SaveProductRequest>($"product-{(Id?.ToString() ?? "new")}");
+        if (await _draft.LoadAsync() is not { } d) return;
+
+        _request.Name = d.Name;
+        _request.Brand = d.Brand;
+        _request.PackDescription = d.PackDescription;
+        _request.MinStock = d.MinStock;
+        _request.RequiresExpiry = d.RequiresExpiry;
+        _request.AllowExpiredWithdrawal = d.AllowExpiredWithdrawal;
+        _request.CategoryId = d.CategoryId;
+        _locationId = d.LocationId;
+    }
+
+    // ورود جدید: وقتی نام خالی است چیزی نگه داشته نمی‌شود. ویرایش: وقتی چیزی نسبت به سرور عوض نشده.
+    private async Task SaveDraftAsync()
+    {
+        if (_draft is null) return;
+
+        var snap = Snapshot();
+        var empty = IsNew ? string.IsNullOrWhiteSpace(snap.Name) : _baseline is not null && Same(snap, _baseline);
+        var before = _draft.Saved;
+        await _draft.SaveAsync(empty ? null : snap);
+        if (_draft.Saved != before) StateHasChanged();
+    }
+
+    private async Task ClearDraftAsync()
+    {
+        if (_draft is null) return;
+
+        await _draft.ClearAsync();
+        if (_baseline is { } b)
+        {
+            _request.Name = b.Name; _request.Brand = b.Brand; _request.PackDescription = b.PackDescription;
+            _request.MinStock = b.MinStock; _request.RequiresExpiry = b.RequiresExpiry;
+            _request.AllowExpiredWithdrawal = b.AllowExpiredWithdrawal; _locationId = b.LocationId; _request.CategoryId = b.CategoryId;
+        }
+        else
+        {
+            _request.Name = ""; _request.Brand = null; _request.PackDescription = null; _request.MinStock = null;
+            _request.RequiresExpiry = true; _request.AllowExpiredWithdrawal = false; _locationId = null; _request.CategoryId = null;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_ready) await SaveDraftAsync();
+
+        if (!_focusName) return;
+
+        _focusName = false;
+        await _nameInput.FocusAsync();
+    }
+
+    // فقط محل‌های قابل‌استفاده، به‌اضافه‌ی محل فعلیِ قلم؛ فهرست از سرور به ترتیب درخت می‌آید.
+    private IEnumerable<StorageLocationItem> LocationOptions() =>
+        _locations.Where(l => l.IsUsable || l.Id == _originalLocation);
+
+    private void OnCategoryChanged(ChangeEventArgs e) =>
+        _request.CategoryId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
+
+    // دسته‌های فعال، به‌اضافه‌ی دسته‌ی فعلیِ قلم حتی اگر غیرفعال شده باشد (سرور نگه داشتنش را می‌پذیرد).
+    private IEnumerable<CategoryItem> CategoryOptions() =>
+        _categories.Where(c => c.IsActive || c.Id == _originalCategory);
+
+    private async Task SaveAsync()
+    {
+        var saved = await SaveCoreAsync();
+        if (saved is null) return;
+
+        if (_draft is { } d) { _draft = null; await d.ClearAsync(); }
+        Toasts.Show($"ذخیره شد: {saved.Summary.Name}");
+        await OnSaved.InvokeAsync(saved);
+    }
+
+    // محل و بسته‌بندی برای ورود پشت‌سرهم می‌ماند. تیک‌ها عمداً به پیش‌فرض برمی‌گردند،
+    // تا «برداشت از بچ منقضی مجاز است» از یک قلم به قلم بعدی نرود.
+    private async Task SaveAndNextAsync()
+    {
+        var saved = await SaveCoreAsync();
+        if (saved is null) return;
+
+        Toasts.Show($"ذخیره شد: {saved.Summary.Name}");
+        _request.Name = "";
+        _request.Brand = null;
+        _request.MinStock = null;
+        _request.RequiresExpiry = true;
+        _request.AllowExpiredWithdrawal = false;
+        _focusName = true;
+        if (_draft is not null) await _draft.ClearAsync();
+    }
+
+    private async Task<ProductDetail?> SaveCoreAsync()
+    {
+        if (_busy) return null;
+
+        _busy = true;
+        _errors = [];
+        _formError = null;
+
+        _request.LocationId = _locationId;
+        var result = await ProductsApi.SaveAsync(Id, _request);
+        _busy = false;
+
+        if (!result.IsSuccess)
+        {
+            // ناسازگاری Version: مقدارهای تازه‌ی سرور را بارگذاری می‌کنیم تا تلاش بعدی با Version درست برود.
+            // ۴۰۹ تکراری بودن نام/برند/بسته جدا می‌ماند و فقط پیام سرور را می‌گیرد.
+            if (Id is { } id && result.Outcome == ApiOutcome.Conflict && result.Problem?.Type == ProblemTypes.VersionConflict)
+            {
+                var fresh = await ProductsApi.GetAsync(id);
+                if (fresh.IsSuccess)
+                {
+                    Fill(fresh.Value!);
+                    _formError = "این قلم در این فاصله تغییر کرد؛ مقدارهای تازه بارگذاری شد. تغییرتان را دوباره اعمال کنید.";
+                    return null;
+                }
+            }
+
+            if (result.Problem is { Errors.Count: > 0 } problem) _errors = problem.Errors;
+            if (_errors.Count == 0) _formError = result.ErrorMessage;
+            return null;
+        }
+
+        await OnAnySaved.InvokeAsync(result.Value!);
+        return result.Value!;
+    }
+}

@@ -28,10 +28,11 @@ public static class StocktakeEndpoints
     private static List<LocationNode> Nodes(IEnumerable<StorageLocation> locations) =>
         locations.Select(l => new LocationNode(l.Id, l.ParentId, l.Name, l.SortOrder)).ToList();
 
-    private sealed record ScopedBatch(Batch Batch, Product Product, Guid? EffectiveLocation);
+    internal sealed record ScopedBatch(Batch Batch, Product Product, Guid? EffectiveLocation);
 
     // محل مؤثر بچ: محل خودش، وگرنه محل قلم. فهرست‌ها کوچک‌اند و مثل بقیه‌ی پروژه در حافظه فیلتر می‌شوند.
-    private static async Task<List<ScopedBatch>> ScopedBatchesAsync(WarehouseDbContext db, HashSet<Guid> scope, Guid? productId = null)
+    // categories خالی یعنی همه‌ی دسته‌ها؛ دامنه‌ی نوبت = زیرشاخه‌ی محل ∩ دسته‌ها (بخش ۱۵.۳ spec).
+    internal static async Task<List<ScopedBatch>> ScopedBatchesAsync(WarehouseDbContext db, HashSet<Guid>? scope, IReadOnlyCollection<Guid> categories, Guid? productId = null)
     {
         var rows = await (
             from b in db.Batches.AsNoTracking()
@@ -41,43 +42,56 @@ public static class StocktakeEndpoints
 
         return rows
             .Select(r => new ScopedBatch(r.Batch, r.Product, r.Batch.LocationId ?? r.Product.LocationId))
-            .Where(r => r.EffectiveLocation is { } location && scope.Contains(location))
+            .Where(r => StocktakeRules.InScope(r.EffectiveLocation, r.Product.CategoryId, scope, categories))
             .ToList();
     }
 
-    private static string? ExpiryText(Batch b) =>
+    // دسته‌های نوبت: دسته‌ی خودش، وگرنه دسته‌های دوره (خالی = همه).
+    internal static async Task<List<Guid>> SessionCategoriesAsync(WarehouseDbContext db, Stocktake stocktake) =>
+        stocktake.CategoryId is { } category
+            ? [category]
+            : await db.StocktakePeriodCategories.AsNoTracking().Where(c => c.PeriodId == stocktake.PeriodId).Select(c => c.CategoryId).ToListAsync();
+
+    internal static string? ExpiryText(Batch b) =>
         b.ExpiryDate is { } d ? ExpiryDate.Display(new ExpiryValue(d, b.ExpiryPrecision, b.ExpiryCalendar)) : null;
 
     private static string? PathOf(IReadOnlyDictionary<Guid, string> paths, Guid? id) =>
         id is { } g && paths.TryGetValue(g, out var path) ? path : null;
 
-    private static async Task<Dictionary<Guid, string>> UserNamesAsync(WarehouseDbContext db, IEnumerable<Guid> ids)
+    internal static async Task<Dictionary<Guid, string>> UserNamesAsync(WarehouseDbContext db, IEnumerable<Guid> ids)
     {
         var list = ids.Distinct().ToList();
         return await db.Users.AsNoTracking().Where(u => list.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.UserName ?? "—");
     }
 
     // آخرین شمارش هر بچ؛ شمارش‌های قبلی همان بچ جایگزین شده‌اند.
-    private static List<StocktakeCount> Latest(IEnumerable<StocktakeCount> counts) => counts
+    internal static List<StocktakeCount> Latest(IEnumerable<StocktakeCount> counts) => counts
         .GroupBy(c => c.BatchId)
         .Select(g => g.OrderByDescending(c => c.AtUtc).ThenByDescending(c => c.Id).First())
         .ToList();
 
-    private static async Task<IResult> ListAsync(WarehouseDbContext db)
+    private static async Task<IResult> ListAsync(WarehouseDbContext db, Guid? periodId = null) =>
+        Results.Ok(await ListItemsAsync(db, periodId));
+
+    internal static async Task<List<StocktakeListItem>> ListItemsAsync(WarehouseDbContext db, Guid? periodId)
     {
         var stocktakes = await db.Stocktakes.AsNoTracking()
-            .OrderBy(s => s.ClosedAtUtc != null).ThenByDescending(s => s.StartedAtUtc).Take(MaxList).ToListAsync();
+            .Where(s => periodId == null || s.PeriodId == periodId)
+            .OrderBy(s => s.ClosedAtUtc != null).ThenByDescending(s => s.StartedAtUtc).Take(periodId == null ? MaxList : 500).ToListAsync();
         var ids = stocktakes.Select(s => s.Id).ToList();
         var counts = (await db.StocktakeCounts.AsNoTracking().Where(c => ids.Contains(c.StocktakeId)).ToListAsync()).ToLookup(c => c.StocktakeId);
         var paths = LocationTree.Paths(Nodes(await db.StorageLocations.AsNoTracking().ToListAsync()));
         var names = await UserNamesAsync(db, stocktakes.Select(s => s.StartedById));
+        var periods = await db.StocktakePeriods.AsNoTracking().ToDictionaryAsync(p => p.Id, p => p.Name);
+        var categories = await db.ProductCategories.AsNoTracking().ToDictionaryAsync(c => c.Id, c => c.Name);
 
-        return Results.Ok(stocktakes.Select(s =>
+        return stocktakes.Select(s =>
         {
             var latest = Latest(counts[s.Id]);
             return new StocktakeListItem(s.Id, s.LocationId, PathOf(paths, s.LocationId) ?? "—", names.GetValueOrDefault(s.StartedById, "—"),
-                s.StartedAtUtc, s.ClosedAtUtc, latest.Count, latest.Count(c => c.Counted != c.ExpectedOnHand), s.Version);
-        }).ToList());
+                s.StartedAtUtc, s.ClosedAtUtc, latest.Count, latest.Count(c => c.Counted != c.ExpectedOnHand), s.Version,
+                s.PeriodId, periods.GetValueOrDefault(s.PeriodId), s.CategoryId is { } c ? categories.GetValueOrDefault(c) : null);
+        }).ToList();
     }
 
     private static async Task<IResult> StartAsync(StartStocktakeRequest request, WarehouseDbContext db, AuditContext audit)
@@ -90,8 +104,27 @@ public static class StocktakeEndpoints
         var usable = LocationTree.EffectivelyActive(locations.Select(l => (new LocationNode(l.Id, l.ParentId, l.Name, l.SortOrder), l.IsActive)));
         if (!usable.Contains(request.LocationId)) return ApiProblems.Validation("LocationId", "این محل غیرفعال است.");
 
-        // نوبت باز روی همان محل، والد یا زیرشاخه‌ی آن یعنی یک بچ در دو نوبت شمرده می‌شود.
+        // هر نوبت زیر یک دوره‌ی باز است و محل و دسته‌اش داخل دامنه‌ی همان دوره (بخش ۱۵.۳ spec).
         var nodes = Nodes(locations);
+        if (request.PeriodId is not { } periodId) return ApiProblems.Validation("PeriodId", "دوره‌ی انبارگردانی را انتخاب کنید.");
+        var period = await db.StocktakePeriods.AsNoTracking().FirstOrDefaultAsync(p => p.Id == periodId);
+        if (period is null) return ApiProblems.Validation("PeriodId", "دوره پیدا نشد.");
+        if (period.ClosedAtUtc is not null) return ApiProblems.Conflict("این دوره بسته شده است؛ دوره‌ی باز دیگری انتخاب کنید.");
+
+        var periodLocations = await db.StocktakePeriodLocations.AsNoTracking().Where(l => l.PeriodId == periodId).Select(l => l.LocationId).ToListAsync();
+        if (!StocktakeRules.LocationInPeriod(request.LocationId, periodLocations, id => LocationTree.Subtree(nodes, id)))
+        {
+            return ApiProblems.Validation("LocationId", "این محل در دامنه‌ی دوره نیست.");
+        }
+
+        if (request.CategoryId is { } categoryId)
+        {
+            if (!await db.ProductCategories.AnyAsync(c => c.Id == categoryId)) return ApiProblems.Validation("CategoryId", "دسته پیدا نشد.");
+            var periodCategories = await db.StocktakePeriodCategories.AsNoTracking().Where(c => c.PeriodId == periodId).Select(c => c.CategoryId).ToListAsync();
+            if (periodCategories.Count > 0 && !periodCategories.Contains(categoryId)) return ApiProblems.Validation("CategoryId", "این دسته در دامنه‌ی دوره نیست.");
+        }
+
+        // نوبت باز روی همان محل، والد یا زیرشاخه‌ی آن یعنی یک بچ در دو نوبت شمرده می‌شود.
         var scope = LocationTree.Subtree(nodes, request.LocationId);
         var open = await db.Stocktakes.AsNoTracking().Where(s => s.ClosedAtUtc == null).Select(s => s.LocationId).ToListAsync();
         if (open.Any(other => scope.Contains(other) || LocationTree.Subtree(nodes, other).Contains(request.LocationId)))
@@ -99,7 +132,11 @@ public static class StocktakeEndpoints
             return ApiProblems.Conflict("برای این محل، والد یا زیرشاخه‌ی آن نوبت بازی هست؛ اول همان را ببندید.");
         }
 
-        var stocktake = new Stocktake { Id = Guid.NewGuid(), LocationId = request.LocationId, StartedById = userId, StartedAtUtc = DateTime.UtcNow };
+        var stocktake = new Stocktake
+        {
+            Id = Guid.NewGuid(), PeriodId = periodId, CategoryId = request.CategoryId, LocationId = request.LocationId,
+            StartedById = userId, StartedAtUtc = DateTime.UtcNow
+        };
         db.Stocktakes.Add(stocktake);
         try
         {
@@ -119,7 +156,11 @@ public static class StocktakeEndpoints
         var nodes = Nodes(locations);
         var paths = LocationTree.Paths(nodes);
         var latest = Latest(await db.StocktakeCounts.AsNoTracking().Where(c => c.StocktakeId == stocktake.Id).ToListAsync());
-        var scoped = await ScopedBatchesAsync(db, LocationTree.Subtree(nodes, stocktake.LocationId));
+        var scoped = await ScopedBatchesAsync(db, LocationTree.Subtree(nodes, stocktake.LocationId), await SessionCategoriesAsync(db, stocktake));
+        var period = await db.StocktakePeriods.AsNoTracking().FirstAsync(p => p.Id == stocktake.PeriodId);
+        var categoryName = stocktake.CategoryId is { } categoryId
+            ? await db.ProductCategories.AsNoTracking().Where(c => c.Id == categoryId).Select(c => c.Name).FirstOrDefaultAsync()
+            : null;
 
         // بچ شمرده‌شده ممکن است پس از شمارش جابه‌جا شده باشد؛ پس جدا و بدون فیلتر محل خوانده می‌شود.
         var countedIds = latest.Select(c => c.BatchId).ToList();
@@ -139,6 +180,10 @@ public static class StocktakeEndpoints
             StartedAtUtc = stocktake.StartedAtUtc,
             ClosedAtUtc = stocktake.ClosedAtUtc,
             Version = stocktake.Version,
+            PeriodId = period.Id,
+            PeriodName = period.Name,
+            PeriodOpen = period.ClosedAtUtc is null,
+            CategoryName = categoryName,
             Counts = latest
                 .OrderByDescending(c => c.Counted != c.ExpectedOnHand).ThenByDescending(c => c.AtUtc).ThenBy(c => c.Id)
                 .Select(c =>
@@ -174,7 +219,7 @@ public static class StocktakeEndpoints
 
         var nodes = Nodes(await db.StorageLocations.AsNoTracking().ToListAsync());
         var paths = LocationTree.Paths(nodes);
-        var scoped = await ScopedBatchesAsync(db, LocationTree.Subtree(nodes, stocktake.LocationId), productId);
+        var scoped = await ScopedBatchesAsync(db, LocationTree.Subtree(nodes, stocktake.LocationId), await SessionCategoriesAsync(db, stocktake), productId);
         return Results.Ok(scoped
             .OrderBy(s => s.Batch.ExpiryDate is null).ThenBy(s => s.Batch.ExpiryDate).ThenBy(s => s.Batch.BatchNumber, StringComparer.Ordinal)
             .Select(s => ToBatchItem(s, paths))
@@ -190,15 +235,22 @@ public static class StocktakeEndpoints
         var stocktake = await db.Stocktakes.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id);
         if (stocktake is null) return ApiProblems.NotFound();
         if (stocktake.ClosedAtUtc is not null) return ApiProblems.Conflict("این نوبت بسته شده است.");
+        if (await db.StocktakePeriods.AnyAsync(p => p.Id == stocktake.PeriodId && p.ClosedAtUtc != null)) return ApiProblems.Conflict("دوره‌ی این نوبت بسته شده است.");
 
         var batch = await db.Batches.AsNoTracking().FirstOrDefaultAsync(b => b.Id == request.BatchId);
         if (batch is null) return ApiProblems.Validation("BatchId", "بچ پیدا نشد.");
 
         var nodes = Nodes(await db.StorageLocations.AsNoTracking().ToListAsync());
-        var productLocation = await db.Products.AsNoTracking().Where(p => p.Id == batch.ProductId).Select(p => p.LocationId).FirstAsync();
-        if ((batch.LocationId ?? productLocation) is not { } location || !LocationTree.Subtree(nodes, stocktake.LocationId).Contains(location))
+        var product = await db.Products.AsNoTracking().Where(p => p.Id == batch.ProductId).Select(p => new { p.LocationId, p.CategoryId }).FirstAsync();
+        if ((batch.LocationId ?? product.LocationId) is not { } location || !LocationTree.Subtree(nodes, stocktake.LocationId).Contains(location))
         {
             return ApiProblems.Validation("BatchId", "این بچ در محل این نوبت نیست.");
+        }
+
+        var categories = await SessionCategoriesAsync(db, stocktake);
+        if (categories.Count > 0 && (product.CategoryId is not { } category || !categories.Contains(category)))
+        {
+            return ApiProblems.Validation("BatchId", "دسته‌ی این قلم در دامنه‌ی این نوبت نیست.");
         }
 
         db.StocktakeCounts.Add(new StocktakeCount
@@ -245,31 +297,8 @@ public static class StocktakeEndpoints
         var count = await db.StocktakeCounts.FirstOrDefaultAsync(c => c.Id == countId && c.StocktakeId == id);
         if (stocktake is null || count is null) return ApiProblems.NotFound();
         if (count.Version != request.Version) return ApiProblems.VersionConflict();
-        if (stocktake.ClosedAtUtc is null) return ApiProblems.Conflict("اختلاف‌ها پس از بستن نوبت تأیید می‌شوند.");
-        if (count.AdjustmentId is not null) return ApiProblems.Conflict("این اختلاف قبلاً تأیید شده است.");
 
-        var difference = count.Counted - count.ExpectedOnHand;
-        if (difference == 0) return ApiProblems.Conflict("این شمارش اختلافی ندارد.");
-
-        var newer = await db.StocktakeCounts.AnyAsync(c => c.BatchId == count.BatchId && c.Id != count.Id && c.AtUtc >= count.AtUtc);
-        if (newer) return ApiProblems.Conflict("برای این بچ شمارش تازه‌تری هست؛ این شمارش دیگر معتبر نیست.");
-
-        // اصلاح دستی پس از شمارش احتمالاً همین اختلاف را درست کرده؛ اعمال دوباره موجودی را دو بار عوض می‌کرد.
-        var adjustedLater = await db.StockMovements.AnyAsync(m => m.BatchId == count.BatchId && m.Kind == StockMovementKind.Adjustment && m.AtUtc > count.AtUtc);
-        if (adjustedLater) return ApiProblems.Conflict("پس از این شمارش اصلاح دیگری روی این بچ ثبت شده است؛ موجودی را از جزئیات قلم بررسی کنید.");
-
-        var batch = await db.Batches.FirstAsync(b => b.Id == count.BatchId);
-        if (batch.OnHand + difference < 0)
-        {
-            return ApiProblems.Conflict($"موجودی فعلی ({batch.OnHand}) کمتر از کسری ({-difference}) است؛ برداشت‌های پس از شمارش را بررسی و با اصلاح دستی درست کنید.");
-        }
-
-        db.ExpectVersion(count, request.Version);
-        // نسخه‌ی خوانده‌شده‌ی همین درخواست: برداشت هم‌زمان ۴۰۹ می‌شود تا محاسبه روی موجودی کهنه نماند.
-        db.ExpectVersion(batch, batch.Version);
-        var movement = ledger.Post(batch, StockMovementKind.Adjustment, difference, count.AtUtc,
-            $"انبارگردانی: شمرده‌شده {count.Counted}، مورد انتظار {count.ExpectedOnHand}", stocktakeCountId: count.Id);
-        count.AdjustmentId = movement.Id;
+        if (await PrepareAdjustmentAsync(db, ledger, stocktake, count, request.Version) is { } problem) return ApiProblems.Conflict(problem);
 
         try
         {
@@ -285,5 +314,37 @@ public static class StocktakeEndpoints
         }
 
         return Results.Ok(await ToDetailAsync(db, stocktake));
+    }
+
+    // قاعده‌های اصلاح یک شمارش، مشترک «تأیید» نوبت و «رفع گروهی» دوره. ذخیره نمی‌کند؛ پیام خطا یا null برمی‌گرداند.
+    internal static async Task<string?> PrepareAdjustmentAsync(WarehouseDbContext db, StockLedger ledger, Stocktake stocktake, StocktakeCount count, int version)
+    {
+        if (stocktake.ClosedAtUtc is null) return "اختلاف‌ها پس از بستن نوبت تأیید می‌شوند.";
+        if (count.AdjustmentId is not null) return "این اختلاف قبلاً تأیید شده است.";
+        if (count.DismissedAtUtc is not null) return "از این اختلاف صرف‌نظر شده است.";
+
+        var difference = count.Counted - count.ExpectedOnHand;
+        if (difference == 0) return "این شمارش اختلافی ندارد.";
+
+        var newer = await db.StocktakeCounts.AnyAsync(c => c.BatchId == count.BatchId && c.Id != count.Id && c.AtUtc >= count.AtUtc);
+        if (newer) return "برای این بچ شمارش تازه‌تری هست؛ این شمارش دیگر معتبر نیست.";
+
+        // اصلاح دستی پس از شمارش احتمالاً همین اختلاف را درست کرده؛ اعمال دوباره موجودی را دو بار عوض می‌کرد.
+        var adjustedLater = await db.StockMovements.AnyAsync(m => m.BatchId == count.BatchId && m.Kind == StockMovementKind.Adjustment && m.AtUtc > count.AtUtc);
+        if (adjustedLater) return "پس از این شمارش اصلاح دیگری روی این بچ ثبت شده است؛ موجودی را از جزئیات قلم بررسی کنید.";
+
+        var batch = await db.Batches.FirstAsync(b => b.Id == count.BatchId);
+        if (batch.OnHand + difference < 0)
+        {
+            return $"موجودی فعلی ({batch.OnHand}) کمتر از کسری ({-difference}) است؛ برداشت‌های پس از شمارش را بررسی و با اصلاح دستی درست کنید.";
+        }
+
+        db.ExpectVersion(count, version);
+        // نسخه‌ی خوانده‌شده‌ی همین درخواست: برداشت هم‌زمان ۴۰۹ می‌شود تا محاسبه روی موجودی کهنه نماند.
+        db.ExpectVersion(batch, batch.Version);
+        var movement = ledger.Post(batch, StockMovementKind.Adjustment, difference, count.AtUtc,
+            $"انبارگردانی: شمرده‌شده {count.Counted}، مورد انتظار {count.ExpectedOnHand}", stocktakeCountId: count.Id);
+        count.AdjustmentId = movement.Id;
+        return null;
     }
 }

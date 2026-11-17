@@ -8,6 +8,7 @@ public sealed class SaveProductRequest
     public string? Brand { get; set; }
     public string? PackDescription { get; set; }
     public Guid? LocationId { get; set; }
+    public Guid? CategoryId { get; set; }
     public int? MinStock { get; set; }
     public bool RequiresExpiry { get; set; } = true;
     public bool AllowExpiredWithdrawal { get; set; }
@@ -23,7 +24,8 @@ public sealed class AddBarcodeRequest
 // UsableOnHand: موجودی بچ‌های منقضی‌نشده و بی‌تاریخ (امروز به وقت LocalDay).
 public sealed record ProductListItem(
     Guid Id, string Name, string? Brand, string? PackDescription, string? LocationPath,
-    int OnHand, int UsableOnHand, int? MinStock, DateOnly? NearestExpiry, string? NearestExpiryText, bool IsActive, int Version);
+    int OnHand, int UsableOnHand, int? MinStock, DateOnly? NearestExpiry, string? NearestExpiryText, bool IsActive, int Version,
+    string? CategoryName = null);
 
 // نتیجه‌ی combobox قلم. ExactBarcodeId فقط وقتی پر است که متن دقیقاً بارکد یک قلم باشد؛ آن قلم اول فهرست است
 // و حتی اگر غیرفعال باشد می‌آید تا کلاینت پیام درست بدهد. بقیه‌ی نتیجه‌ها فقط پیشنهادند و خودکار انتخاب نمی‌شوند.
@@ -46,6 +48,7 @@ public sealed class ProductDetail
     public bool RequiresExpiry { get; set; }
     public bool AllowExpiredWithdrawal { get; set; }
     public Guid? LocationId { get; set; }
+    public Guid? CategoryId { get; set; }
     public List<BatchItem> Batches { get; set; } = [];
     public List<BarcodeItem> Barcodes { get; set; } = [];
 }

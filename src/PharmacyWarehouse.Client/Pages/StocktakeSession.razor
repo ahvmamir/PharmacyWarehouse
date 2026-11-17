@@ -31,7 +31,12 @@ else
         <div>
             <h1>انبارگردانی: <bdi>@_detail.LocationPath</bdi></h1>
             <p>
-                شروع <bdi>@JalaliDate.Format(_detail.StartedAtUtc)</bdi> توسط <bdi>@_detail.StartedByName</bdi>
+                دوره: <a href="stocktake-periods/@_detail.PeriodId"><bdi>@_detail.PeriodName</bdi></a>
+                @if (_detail.CategoryName is { } category)
+                {
+                    <span> · دسته: <bdi>@category</bdi></span>
+                }
+                · شروع <bdi>@JalaliDate.Format(_detail.StartedAtUtc)</bdi> توسط <bdi>@_detail.StartedByName</bdi>
                 @if (_detail.ClosedAtUtc is { } closed)
                 {
                     <span> · بسته‌شده <bdi>@JalaliDate.Format(closed)</bdi></span>
@@ -48,8 +53,10 @@ else
 
     @if (isOpen)
     {
+        <ScanCountPanel StocktakeId="Id" OnCommitted="LoadAsync" />
+
         <section class="card-emu">
-            <h2>شمارش</h2>
+            <h2>شمارش دستی</h2>
             <div style="max-width:420px;">
                 <ProductCombobox @ref="_combo" InputId="stocktake-product" OnPick="PickProductAsync" />
             </div>

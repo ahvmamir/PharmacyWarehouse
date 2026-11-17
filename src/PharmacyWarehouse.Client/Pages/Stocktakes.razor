@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @inject StockClient StockApi
 @inject LocationsClient LocationsApi
+@inject CategoriesClient CategoriesApi
 @inject NavigationManager Navigation
 
 <PageTitle>انبارگردانی | داروبار</PageTitle>
@@ -12,28 +13,56 @@
         <h1>انبارگردانی</h1>
         <p>شمارش بچ‌های یک محل و زیرشاخه‌هایش؛ اختلاف‌ها پس از بستن نوبت تأیید می‌شوند.</p>
     </div>
+    <button type="button" class="btn btn-primary" @onclick="() => _starting = true"><AppIcon Name="plus" Size="15" /> نوبت تازه</button>
 </div>
 
-<section class="card-emu">
-    <h2>شروع نوبت تازه</h2>
-    <div class="form-alert warning">
-        <AppIcon Name="warning" />
-        <span>پیش از شروع از همه بخواهید برداشت‌های ثبت‌نشده را ثبت کنند؛ وگرنه کسری آن‌ها به‌اشتباه به‌عنوان اختلاف انبارگردانی دیده می‌شود.</span>
-    </div>
-    <div class="form-field mt-3" style="max-width:420px;">
-        <label for="stocktake-location">محل (جست‌وجو یا اسکن برچسب محل)</label>
-        <LocationPicker InputId="stocktake-location" AutoPick="true" EmptyLabel="محل را انتخاب کنید" Items="_locations" @bind-Value="_locationId" />
-    </div>
-    @if (_startError is not null)
-    {
-        <div class="form-alert mt-3 mb-0" role="alert">@_startError</div>
-    }
-    <div class="mt-3">
-        <button type="button" class="btn btn-primary" disabled="@(_busy || _locationId is null)" @onclick="StartAsync">
-            <AppIcon Name="scan" Size="15" /> @(_busy ? "در حال شروع…" : "شروع انبارگردانی")
-        </button>
-    </div>
-</section>
+@if (_starting)
+{
+    <ModalDialog Side="true" Title="شروع نوبت تازه" OnClose="() => _starting = false">
+        <div class="form-alert warning">
+            <AppIcon Name="warning" />
+            <span>پیش از شروع از همه بخواهید برداشت‌های ثبت‌نشده را ثبت کنند؛ وگرنه کسری آن‌ها به‌اشتباه به‌عنوان اختلاف انبارگردانی دیده می‌شود.</span>
+        </div>
+        <div class="form-field mt-3">
+            <label for="stocktake-period">دوره <span class="required">*</span></label>
+            <select id="stocktake-period" class="form-select" value="@(_periodId?.ToString() ?? "")" @onchange="e => _periodId = Guid.TryParse(e.Value?.ToString(), out var p) ? p : null">
+                <option value="">— دوره را انتخاب کنید —</option>
+                @foreach (var period in _periods)
+                {
+                    <option value="@period.Id">@period.Name</option>
+                }
+            </select>
+            @if (_periods.Count == 0)
+            {
+                <div class="form-hint">دوره‌ی بازی نیست؛ اول از «دوره‌ها» یک دوره بسازید.</div>
+            }
+        </div>
+        <div class="form-field mt-3">
+            <label for="stocktake-category">دسته (اختیاری)</label>
+            <select id="stocktake-category" class="form-select" value="@(_categoryId?.ToString() ?? "")" @onchange="e => _categoryId = Guid.TryParse(e.Value?.ToString(), out var c) ? c : null">
+                <option value="">همه‌ی دسته‌های دوره</option>
+                @foreach (var category in _categories)
+                {
+                    <option value="@category.Id">@category.Name</option>
+                }
+            </select>
+        </div>
+        <div class="form-field mt-3">
+            <label for="stocktake-location">محل (جست‌وجو یا اسکن برچسب محل)</label>
+            <LocationPicker InputId="stocktake-location" AutoPick="true" EmptyLabel="محل را انتخاب کنید" Items="_locations" @bind-Value="_locationId" />
+        </div>
+        @if (_startError is not null)
+        {
+            <div class="form-alert mt-3 mb-0" role="alert">@_startError</div>
+        }
+        <div class="modal-actions">
+            <button type="button" class="btn btn-primary" disabled="@(_busy || _locationId is null || _periodId is null)" @onclick="StartAsync">
+                <AppIcon Name="scan" Size="15" /> @(_busy ? "در حال شروع…" : "شروع انبارگردانی")
+            </button>
+            <button type="button" class="btn btn-quiet" @onclick="() => _starting = false">انصراف</button>
+        </div>
+    </ModalDialog>
+}
 
 @if (_error is not null)
 {
@@ -52,7 +81,10 @@
 }
 else if (_items.Count == 0)
 {
-    <div class="empty-state"><p>هنوز انبارگردانی‌ای ثبت نشده.</p></div>
+    <div class="empty-state">
+        <AppIcon Name="scan" Size="36" />
+        <p>هنوز انبارگردانی‌ای ثبت نشده. با «نوبت تازه» شمارش یک محل را شروع کنید.</p>
+    </div>
 }
 else
 {
@@ -96,6 +128,12 @@ else
     private string? _error;
     private string? _startError;
     private bool _busy;
+    private bool _starting;
+    private List<PeriodListItem> _periods = [];
+    private List<CategoryItem> _categories = [];
+    private Guid? _periodId;
+    private Guid? _categoryId;
+    [SupplyParameterFromQuery(Name = "period")] public Guid? PeriodQuery { get; set; }
 
     protected override Task OnInitializedAsync() => LoadAsync();
 
@@ -109,6 +147,12 @@ else
         var locations = await LocationsApi.ListAsync();
         if (locations.IsSuccess) _locations = locations.Value!.Where(l => l.IsUsable).ToList();
         else _error ??= locations.ErrorMessage;
+
+        // نوبت فقط زیر دوره‌ی باز (بخش ۱۵.۳ spec)؛ آمدن از صفحه‌ی دوره آن را از پیش انتخاب و کشو را باز می‌کند.
+        _periods = (await StockApi.PeriodsAsync()).Value?.Where(p => p.IsOpen).ToList() ?? [];
+        _categories = (await CategoriesApi.ListAsync()).Value?.Where(c => c.IsActive).ToList() ?? [];
+        _periodId ??= PeriodQuery is { } q && _periods.Any(p => p.Id == q) ? q : _periods.Count == 1 ? _periods[0].Id : null;
+        if (PeriodQuery is not null && _periodId is not null) _starting = true;
     }
 
     private async Task StartAsync()
@@ -117,7 +161,7 @@ else
 
         _busy = true;
         _startError = null;
-        var result = await StockApi.StartStocktakeAsync(locationId);
+        var result = await StockApi.StartStocktakeAsync(locationId, _periodId!.Value, _categoryId);
         _busy = false;
 
         if (result.IsSuccess)

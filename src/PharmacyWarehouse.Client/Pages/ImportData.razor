@@ -133,7 +133,7 @@
                 <table class="table-emu import-table">
                     <thead>
                         <tr>
-                            <th aria-label="انتخاب"></th><th>شیت / ردیف</th><th>نام دارو و دوز</th><th>نام تجاری</th><th>تعداد</th><th>در بسته</th><th>بچ نامبر</th><th>انقضا</th><th>انقضا لازم نیست</th><th>محل</th><th>بارکد</th><th>حداقل</th><th>قیمت</th><th>وضعیت</th>
+                            <th aria-label="انتخاب"></th><th>شیت / ردیف</th><th>نام دارو و دوز</th><th>نام تجاری</th><th>تعداد</th><th>در بسته</th><th>بچ نامبر</th><th>انقضا</th><th>انقضا لازم نیست</th><th>محل</th><th>بارکد</th><th>حداقل</th><th>دسته</th><th>قیمت</th><th>وضعیت</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -154,6 +154,7 @@
                                 <td><input class="form-control" value="@row.Location" aria-label="محل" @onchange="e => Edit(row, r => r.Location = Val(e))" /></td>
                                 <td><input class="form-control" dir="ltr" value="@row.Barcode" aria-label="بارکد" @onchange="e => Edit(row, r => r.Barcode = Val(e))" /></td>
                                 <td><input class="form-control import-narrow" dir="ltr" value="@row.MinStock" aria-label="حداقل موجودی" @onchange="e => Edit(row, r => r.MinStock = Val(e))" /></td>
+                                <td><input class="form-control" value="@row.Category" aria-label="دسته" @onchange="e => Edit(row, r => r.Category = Val(e))" /></td>
                                 <td><input class="form-control import-narrow" dir="ltr" value="@row.UnitCost" aria-label="قیمت" @onchange="e => Edit(row, r => r.UnitCost = Val(e))" /></td>
                                 <td>
                                     @if (status.Severity == ImportSeverity.Error) { <span class="status-badge status-expired">خطا</span> }
@@ -200,7 +201,7 @@
     private static readonly (string Key, string Label)[] BulkFields =
     [
         ("location", "محل"), ("expiry", "انقضا"), ("notrequired", "انقضا لازم نیست"), ("brand", "نام تجاری"),
-        ("pack", "در بسته"), ("minstock", "حداقل"), ("cost", "قیمت")
+        ("pack", "در بسته"), ("minstock", "حداقل"), ("category", "دسته"), ("cost", "قیمت")
     ];
 
     private readonly HashSet<int> _selected = [];
@@ -244,6 +245,7 @@
                 case "brand": row.Brand = value; break;
                 case "pack": row.UnitsPerPack = value; break;
                 case "minstock": row.MinStock = value; break;
+                case "category": row.Category = value; break;
                 case "cost": row.UnitCost = value; break;
             }
         }

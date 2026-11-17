@@ -1,6 +1,9 @@
-@* پنجره‌ی ساده بدون اسکریپت Bootstrap؛ حالت باز بودن را صفحه‌ی صاحب آن نگه می‌دارد. *@
+@* پنجره‌ی ساده بدون اسکریپت Bootstrap؛ حالت باز بودن را صفحه‌ی صاحب آن نگه می‌دارد.
+   Side: کشوی کناری برای فرم‌های بلند (تعریف قلم، ورود جنس، شروع نوبت)؛ بدون آن پنجره‌ی وسط برای تأیید و فرم کوتاه.
+   زیر ۷۶۸ پیکسل هر دو از پایین صفحه بالا می‌آیند (بخش ۱۵.۳ spec). *@
 <div class="modal-backdrop-emu" @onclick="OnBackdropClick"></div>
-<div class="modal-emu @(Wide ? "modal-emu-wide" : "") @(ExtraWide ? "modal-emu-xl" : "")" role="dialog" aria-modal="true" aria-label="@Title">
+<div class="modal-emu @(Side ? "modal-emu-side" : "") @(Wide ? "modal-emu-wide" : "") @(ExtraWide ? "modal-emu-xl" : "")" role="dialog" aria-modal="true" aria-label="@Title"
+     tabindex="-1" @ref="_dialog" @onkeydown="OnKeyDown">
     <header class="modal-emu-head">
         <h2>@Title</h2>
         <button type="button" class="icon-button" title="بستن" aria-label="بستن" @onclick="() => OnClose.InvokeAsync()">
@@ -14,10 +17,28 @@
 
 @code {
     [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public bool Side { get; set; }
+    // false وقتی صاحب پنجره خودش فیلدی داخل آن را فوکوس می‌کند (Esc باز هم کار می‌کند، چون keydown بالا می‌آید).
+    [Parameter] public bool AutoFocus { get; set; } = true;
     [Parameter] public bool Wide { get; set; }
     [Parameter] public bool ExtraWide { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
+
+    private ElementReference _dialog;
+
+    // پنجره هنگام باز شدن فوکوس می‌گیرد تا Esc کار کند (وگرنه فوکوس روی دکمه‌ی پشت پنجره می‌ماند).
+    // فرمی که خودش فیلدی را فوکوس می‌کند بعد از این اجرا می‌شود و برنده است.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && AutoFocus) await _dialog.FocusAsync(preventScroll: true);
+    }
+
+    // Esc می‌بندد؛ فرم‌های بلند پیش‌نویس دارند، پس چیزی گم نمی‌شود.
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") await OnClose.InvokeAsync();
+    }
 
     // کلیک بیرون پنجره عمداً نمی‌بندد تا فرم نیمه‌پر با یک کلیک اشتباه گم نشود.
     private static void OnBackdropClick()

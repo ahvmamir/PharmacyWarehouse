@@ -14,11 +14,12 @@ public sealed class ProductsClient
     }
 
     // filter: zero، belowMin، expiring یا خالی.
-    public Task<ApiResult<List<ProductListItem>>> ListAsync(string? q = null, Guid? locationId = null, string? filter = null, bool includeInactive = false)
+    public Task<ApiResult<List<ProductListItem>>> ListAsync(string? q = null, Guid? locationId = null, string? filter = null, bool includeInactive = false, Guid? categoryId = null)
     {
         var query = new List<string>();
         if (!string.IsNullOrWhiteSpace(q)) query.Add($"q={Uri.EscapeDataString(q)}");
         if (locationId is { } location) query.Add($"locationId={location}");
+        if (categoryId is { } category) query.Add($"categoryId={category}");
         if (!string.IsNullOrEmpty(filter)) query.Add($"filter={Uri.EscapeDataString(filter)}");
         if (includeInactive) query.Add("includeInactive=true");
         var url = query.Count == 0 ? ApiRoutes.Products : $"{ApiRoutes.Products}?{string.Join('&', query)}";

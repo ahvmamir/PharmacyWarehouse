@@ -57,6 +57,19 @@
             link.click();
             URL.revokeObjectURL(url);
         };
+        // صدای اسکن در شمارش بی‌دست (بخش ۹.۲ spec): بدون فایل، با WebAudio. ok=true بوق کوتاه زیر، false دو بوق بم.
+        window.pwBeep = (ok) => {
+            try {
+                const ctx = window.pwAudio ??= new (window.AudioContext || window.webkitAudioContext)();
+                const play = (freq, start, length) => {
+                    const osc = ctx.createOscillator(), gain = ctx.createGain();
+                    osc.frequency.value = freq; gain.gain.value = 0.15;
+                    osc.connect(gain); gain.connect(ctx.destination);
+                    osc.start(ctx.currentTime + start); osc.stop(ctx.currentTime + start + length);
+                };
+                if (ok) play(1320, 0, 0.08); else { play(220, 0, 0.18); play(180, 0.25, 0.25); }
+            } catch { }
+        };
         window.pwScrollIntoView = (id) => document.getElementById(id)?.scrollIntoView({ block: "nearest" });
         // Blazor نمی‌تواند preventDefault را بر اساس کلید تصمیم بگیرد؛ پس اینجا: Enter در combobox فرم را نمی‌فرستد.
         document.addEventListener("keydown", (e) => {

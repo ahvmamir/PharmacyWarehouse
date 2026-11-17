@@ -5,15 +5,25 @@
 @inject LocationsClient LocationsApi
 @inject ToastService Toasts
 
-<PageTitle>بررسی ورودها | داروبار</PageTitle>
+@if (!Embedded)
+{
+    <PageTitle>بررسی ورودها | داروبار</PageTitle>
+}
 
 <RequirePermission Permission="@Permissions.StockReceive">
-<div class="page-head">
-    <div>
-        <h1>بررسی ورودها</h1>
-        <p>ورودهای ثبت‌شده توسط پرسنل. موجودی از قبل زیاد شده است؛ اینجا مشخصات را تکمیل کنید، قلم موقت را با قلم موجود یکی کنید و تأیید یا رد کنید.</p>
+@if (!Embedded)
+{
+    <div class="page-head">
+        <div>
+            <h1>بررسی ورودها</h1>
+            <p>ورودهای ثبت‌شده توسط پرسنل. موجودی از قبل زیاد شده است؛ اینجا مشخصات را تکمیل کنید، قلم موقت را با قلم موجود یکی کنید و تأیید یا رد کنید.</p>
+        </div>
     </div>
-    <button type="button" class="btn btn-quiet" disabled="@_loading" @onclick="LoadAsync"><AppIcon Name="history" /> تازه‌سازی</button>
+}
+
+<div class="list-toolbar">
+    <span class="list-toolbar-note">ورودهای در انتظار، قدیمی‌ترین اول</span>
+    <button type="button" class="btn btn-sm btn-quiet" disabled="@_loading" @onclick="LoadAsync"><AppIcon Name="history" Size="15" /> تازه‌سازی</button>
 </div>
 
 @if (_error is not null)
@@ -31,101 +41,123 @@ else if (_items.Count == 0)
 }
 else
 {
-    @foreach (var receipt in _items)
-    {
-        var edits = _edits[receipt.Id];
-        var dirty = edits.Any(e => e.Changed);
-        <section class="card-emu" @key="receipt.Id">
-            <div class="d-flex align-items-center gap-2">
-                <strong style="flex:1;"><bdi>@receipt.UserName</bdi> — <bdi>@JalaliDate.Format(receipt.AtUtc)</bdi></strong>
-                <span class="status-badge status-pending">در انتظار</span>
-            </div>
-            @if (!string.IsNullOrEmpty(receipt.Note)) { <div class="cell-sub">یادداشت: @receipt.Note</div> }
-
-            @foreach (var edit in edits)
-            {
-                var line = edit.Source;
-                <div class="rv-line" @key="line.Id">
-                    <div class="d-flex align-items-center gap-2 flex-wrap">
-                        <strong>@line.ProductName</strong>
-                        @if (line.IsProvisional) { <span class="status-badge status-pending" title="با نام آزاد ساخته شده؛ تکمیل یا ادغام کنید">قلم موقت</span> }
-                        <span class="cell-sub">بچ <bdi>@line.BatchNumber</bdi> — انقضا: @(line.ExpiryText ?? "ثبت‌نشده") — موجودی فعلی بچ: @JalaliDate.ToPersianDigits(line.OnHand.ToString())</span>
-                    </div>
-
-                    <div class="rv-grid">
-                        <div class="form-field">
-                            <label for="n-@line.Id">نام</label>
-                            <input id="n-@line.Id" class="form-control" autocomplete="off" @bind="edit.Name" @bind:event="oninput" disabled="@(edit.MergeId is not null)" />
-                        </div>
-                        <div class="form-field">
-                            <label for="b-@line.Id">برند</label>
-                            <input id="b-@line.Id" class="form-control" autocomplete="off" @bind="edit.Brand" @bind:event="oninput" disabled="@(edit.MergeId is not null)" />
-                        </div>
-                        <div class="form-field">
-                            <label for="p-@line.Id">بسته‌بندی</label>
-                            <input id="p-@line.Id" class="form-control" autocomplete="off" @bind="edit.Pack" @bind:event="oninput" disabled="@(edit.MergeId is not null)" />
-                        </div>
-                        <div class="form-field">
-                            <label for="q-@line.Id">تعداد</label>
-                            <input id="q-@line.Id" class="form-control" type="number" min="1" inputmode="numeric" @bind="edit.Quantity" @bind:event="oninput" />
-                        </div>
-                    </div>
-
-                    <div class="rv-grid">
-                        <div class="form-field">
-                            <label for="pl-@line.Id">محل قلم</label>
-                            <LocationPicker InputId="@("pl-" + line.Id)" Items="_locations" @bind-Value="edit.ProductLocationId" Disabled="@(edit.MergeId is not null)" />
-                        </div>
-                        <div class="form-field">
-                            <label for="bl-@line.Id">محل این بچ (خالی = محل قلم)</label>
-                            <LocationPicker InputId="@("bl-" + line.Id)" Items="_locations" @bind-Value="edit.BatchLocationId" />
-                        </div>
-                        <div class="form-field">
-                            <label class="d-flex align-items-center gap-2">
-                                <input type="checkbox" class="form-check-input" @bind="edit.RequiresExpiry" disabled="@(edit.MergeId is not null)" /> این قلم تاریخ انقضا دارد
-                            </label>
-                        </div>
-                    </div>
-
-                    <ExpiryFields IdPrefix="@("e-" + line.Id)" @bind-Value="edit.Expiry" Required="@edit.RequiresExpiry" />
-
-                    @if (line.IsProvisional)
-                    {
-                        <div class="form-field">
-                            <label>ادغام در قلم موجود</label>
-                            @if (edit.MergeId is null)
+    @* هر ورود یک ردیف خلاصه؛ تکمیل و تأیید در کشوی کناری (بخش ۱۵.۳ spec). *@
+    <section class="table-card">
+        <table class="data-table">
+            <thead><tr><th>ثبت‌کننده</th><th>زمان</th><th>اقلام</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var row in _items)
+                {
+                    var provisional = row.Lines.Count(l => l.IsProvisional);
+                    <tr @key="row.Id" class="@(_formErrors.ContainsKey(row.Id) ? "row-selected" : null)">
+                        <td><bdi>@row.UserName</bdi></td>
+                        <td><bdi>@JalaliDate.Format(row.AtUtc)</bdi></td>
+                        <td>
+                            <bdi>@string.Join("، ", row.Lines.Select(l => l.ProductName).Distinct().Take(3))</bdi>@(row.Lines.Count > 3 ? "…" : "")
+                            <small class="cell-sub d-block">@JalaliDate.ToPersianDigits(row.Lines.Count.ToString()) ردیف، @JalaliDate.ToPersianDigits(row.Lines.Sum(l => l.Quantity).ToString()) جعبه</small>
+                            @if (provisional > 0)
                             {
-                                <ProductCombobox InputId="@("m-" + line.Id)" AutoFocus="false" Placeholder="قلم موجود را جست‌وجو کنید (اختیاری)" OnPick="p => PickMerge(edit, p)" />
+                                <span class="status-badge status-pending">@JalaliDate.ToPersianDigits(provisional.ToString()) قلم موقت</span>
                             }
-                            else
-                            {
-                                <div class="d-flex align-items-center gap-2">
-                                    <span>ادغام در: <strong>@edit.MergeName</strong></span>
-                                    <button type="button" class="btn btn-quiet" @onclick="() => ClearMerge(edit)">لغو ادغام</button>
-                                </div>
-                            }
-                        </div>
-                    }
+                        </td>
+                        <td class="text-start"><button type="button" class="btn btn-sm btn-primary" @onclick="() => _openId = row.Id">بررسی</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+}
 
-                    @foreach (var message in edit.Errors)
-                    {
-                        <div class="field-error" role="alert">@message</div>
-                    }
+@if (_items?.FirstOrDefault(r => r.Id == _openId) is { } receipt && _edits.ContainsKey(receipt.Id))
+{
+    var edits = _edits[receipt.Id];
+    var dirty = edits.Any(e => e.Changed);
+    <ModalDialog Side="true" Wide="true" Title="@($"ورود {receipt.UserName} — {JalaliDate.Format(receipt.AtUtc)}")" OnClose="() => _openId = null">
+                @if (!string.IsNullOrEmpty(receipt.Note)) { <div class="cell-sub">یادداشت: @receipt.Note</div> }
+
+                @foreach (var edit in edits)
+                {
+                    var line = edit.Source;
+                    <div class="rv-line" @key="line.Id">
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <strong>@line.ProductName</strong>
+                            @if (line.IsProvisional) { <span class="status-badge status-pending" title="با نام آزاد ساخته شده؛ تکمیل یا ادغام کنید">قلم موقت</span> }
+                            <span class="cell-sub">بچ <bdi>@line.BatchNumber</bdi> — انقضا: @(line.ExpiryText ?? "ثبت‌نشده") — موجودی فعلی بچ: @JalaliDate.ToPersianDigits(line.OnHand.ToString())</span>
+                        </div>
+
+                        <div class="rv-grid">
+                            <div class="form-field">
+                                <label for="n-@line.Id">نام</label>
+                                <input id="n-@line.Id" class="form-control" autocomplete="off" @bind="edit.Name" @bind:event="oninput" disabled="@(edit.MergeId is not null)" />
+                            </div>
+                            <div class="form-field">
+                                <label for="b-@line.Id">برند</label>
+                                <input id="b-@line.Id" class="form-control" autocomplete="off" @bind="edit.Brand" @bind:event="oninput" disabled="@(edit.MergeId is not null)" />
+                            </div>
+                            <div class="form-field">
+                                <label for="p-@line.Id">بسته‌بندی</label>
+                                <input id="p-@line.Id" class="form-control" autocomplete="off" @bind="edit.Pack" @bind:event="oninput" disabled="@(edit.MergeId is not null)" />
+                            </div>
+                            <div class="form-field">
+                                <label for="q-@line.Id">تعداد</label>
+                                <input id="q-@line.Id" class="form-control" type="number" min="1" inputmode="numeric" @bind="edit.Quantity" @bind:event="oninput" />
+                            </div>
+                        </div>
+
+                        <div class="rv-grid">
+                            <div class="form-field">
+                                <label for="pl-@line.Id">محل قلم</label>
+                                <LocationPicker InputId="@("pl-" + line.Id)" Items="_locations" @bind-Value="edit.ProductLocationId" Disabled="@(edit.MergeId is not null)" />
+                            </div>
+                            <div class="form-field">
+                                <label for="bl-@line.Id">محل این بچ (خالی = محل قلم)</label>
+                                <LocationPicker InputId="@("bl-" + line.Id)" Items="_locations" @bind-Value="edit.BatchLocationId" />
+                            </div>
+                            <div class="form-field">
+                                <label class="d-flex align-items-center gap-2">
+                                    <input type="checkbox" class="form-check-input" @bind="edit.RequiresExpiry" disabled="@(edit.MergeId is not null)" /> این قلم تاریخ انقضا دارد
+                                </label>
+                            </div>
+                        </div>
+
+                        <ExpiryFields IdPrefix="@("e-" + line.Id)" @bind-Value="edit.Expiry" Required="@edit.RequiresExpiry" />
+
+                        @if (line.IsProvisional)
+                        {
+                            <div class="form-field">
+                                <label>ادغام در قلم موجود</label>
+                                @if (edit.MergeId is null)
+                                {
+                                    <ProductCombobox InputId="@("m-" + line.Id)" AutoFocus="false" Placeholder="قلم موجود را جست‌وجو کنید (اختیاری)" OnPick="p => PickMerge(edit, p)" />
+                                }
+                                else
+                                {
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span>ادغام در: <strong>@edit.MergeName</strong></span>
+                                        <button type="button" class="btn btn-quiet" @onclick="() => ClearMerge(edit)">لغو ادغام</button>
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        @foreach (var message in edit.Errors)
+                        {
+                            <div class="field-error" role="alert">@message</div>
+                        }
+                    </div>
+                }
+
+                @if (_formErrors.TryGetValue(receipt.Id, out var formError))
+                {
+                    <div class="form-alert mt-2" role="alert">@formError</div>
+                }
+
+                <div class="mt-2 d-flex gap-2 flex-wrap">
+                    <button type="button" class="btn btn-primary" disabled="@(_busy || !dirty)" @onclick="() => SaveAsync(receipt)">ذخیره‌ی تغییرات</button>
+                    <button type="button" class="btn btn-primary" disabled="@(_busy || dirty)" title="@(dirty ? "ابتدا تغییرات را ذخیره کنید" : "")" @onclick="() => ApproveAsync(receipt)">تأیید</button>
+                    <button type="button" class="btn btn-quiet" disabled="@(_busy || dirty)" @onclick="() => StartReject(receipt)">رد…</button>
                 </div>
-            }
-
-            @if (_formErrors.TryGetValue(receipt.Id, out var formError))
-            {
-                <div class="form-alert mt-2" role="alert">@formError</div>
-            }
-
-            <div class="mt-2 d-flex gap-2 flex-wrap">
-                <button type="button" class="btn btn-primary" disabled="@(_busy || !dirty)" @onclick="() => SaveAsync(receipt)">ذخیره‌ی تغییرات</button>
-                <button type="button" class="btn btn-primary" disabled="@(_busy || dirty)" title="@(dirty ? "ابتدا تغییرات را ذخیره کنید" : "")" @onclick="() => ApproveAsync(receipt)">تأیید</button>
-                <button type="button" class="btn btn-quiet" disabled="@(_busy || dirty)" @onclick="() => StartReject(receipt)">رد…</button>
-            </div>
-        </section>
-    }
+    </ModalDialog>
 }
 
 @if (_rejecting is { } target)
@@ -149,6 +181,9 @@ else
 </RequirePermission>
 
 @code {
+    // در «کارتابل» یا زبانه‌ی «سابقه‌ی من» بدون عنوان صفحه نمایش داده می‌شود.
+    [Parameter] public bool Embedded { get; set; }
+
     // حالت ویرایش یک ردیف؛ مقدارهای اولیه از ReceiptLineItem. Expiry خالی = بدون تغییر.
     private sealed class LineEdit
     {
@@ -320,12 +355,16 @@ else
 
     private void StartReject(ReceiptItem receipt)
     {
+        _openId = null;
         _rejecting = receipt;
         _rejectNote = "";
         _rejectError = null;
     }
 
     private void CancelReject() => _rejecting = null;
+
+    // کشوی بررسی باز؛ پنجره‌ی «رد» روی آن باز نمی‌شود (پنجره داخل پنجره نه)، پس اول کشو بسته می‌شود.
+    private Guid? _openId;
 
     private async Task RejectAsync()
     {

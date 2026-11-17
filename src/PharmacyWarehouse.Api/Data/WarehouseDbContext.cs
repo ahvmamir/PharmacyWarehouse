@@ -14,6 +14,7 @@ public class WarehouseDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>,
     }
 
     public DbSet<StorageLocation> StorageLocations => Set<StorageLocation>();
+    public DbSet<ProductCategory> ProductCategories => Set<ProductCategory>();
     public DbSet<Product> Products => Set<Product>();
     public DbSet<ProductBarcode> ProductBarcodes => Set<ProductBarcode>();
     public DbSet<Batch> Batches => Set<Batch>();
@@ -21,6 +22,9 @@ public class WarehouseDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>,
     public DbSet<Withdrawal> Withdrawals => Set<Withdrawal>();
     public DbSet<Receipt> Receipts => Set<Receipt>();
     public DbSet<ReceiptLine> ReceiptLines => Set<ReceiptLine>();
+    public DbSet<StocktakePeriod> StocktakePeriods => Set<StocktakePeriod>();
+    public DbSet<StocktakePeriodLocation> StocktakePeriodLocations => Set<StocktakePeriodLocation>();
+    public DbSet<StocktakePeriodCategory> StocktakePeriodCategories => Set<StocktakePeriodCategory>();
     public DbSet<Stocktake> Stocktakes => Set<Stocktake>();
     public DbSet<StocktakeCount> StocktakeCounts => Set<StocktakeCount>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
@@ -51,7 +55,16 @@ public class WarehouseDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>,
             product.Property(p => p.SearchText).IsRequired();
             product.Property(p => p.Version).IsConcurrencyToken();
             product.HasOne<StorageLocation>().WithMany().HasForeignKey(p => p.LocationId).OnDelete(DeleteBehavior.Restrict);
+            product.HasOne<ProductCategory>().WithMany().HasForeignKey(p => p.CategoryId).OnDelete(DeleteBehavior.Restrict);
             product.HasIndex(p => new { p.NameKey, p.BrandKey, p.PackKey }).IsUnique();
+        });
+
+        builder.Entity<ProductCategory>(category =>
+        {
+            category.Property(c => c.Name).IsRequired().HasMaxLength(CategoryRules.MaxName);
+            category.Property(c => c.NameKey).IsRequired().HasMaxLength(CategoryRules.MaxName);
+            category.Property(c => c.Version).IsConcurrencyToken();
+            category.HasIndex(c => c.NameKey).IsUnique();
         });
 
         builder.Entity<ProductBarcode>(barcode =>
@@ -123,9 +136,34 @@ public class WarehouseDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>,
             line.HasIndex(l => l.BatchId);
         });
 
+        builder.Entity<StocktakePeriod>(period =>
+        {
+            period.Property(p => p.Name).IsRequired().HasMaxLength(StocktakeRules.MaxPeriodName);
+            period.Property(p => p.Version).IsConcurrencyToken();
+            period.HasIndex(p => p.ClosedAtUtc);
+        });
+        builder.Entity<StocktakePeriodLocation>(scope =>
+        {
+            scope.Property(s => s.Version).IsConcurrencyToken();
+            scope.HasOne<StocktakePeriod>().WithMany().HasForeignKey(s => s.PeriodId).OnDelete(DeleteBehavior.Restrict);
+            scope.HasOne<StorageLocation>().WithMany().HasForeignKey(s => s.LocationId).OnDelete(DeleteBehavior.Restrict);
+            scope.HasIndex(s => new { s.PeriodId, s.LocationId }).IsUnique();
+        });
+        builder.Entity<StocktakePeriodCategory>(scope =>
+        {
+            scope.Property(s => s.Version).IsConcurrencyToken();
+            scope.HasOne<StocktakePeriod>().WithMany().HasForeignKey(s => s.PeriodId).OnDelete(DeleteBehavior.Restrict);
+            scope.HasOne<ProductCategory>().WithMany().HasForeignKey(s => s.CategoryId).OnDelete(DeleteBehavior.Restrict);
+            scope.HasIndex(s => new { s.PeriodId, s.CategoryId }).IsUnique();
+        });
+
         builder.Entity<Stocktake>(stocktake =>
         {
             stocktake.Property(s => s.Version).IsConcurrencyToken();
+            // پیش‌فرض ستون برای ردیف‌های پیش از دوره‌بندی است؛ کد همیشه PeriodId را خودش می‌دهد.
+            stocktake.Property(s => s.PeriodId).HasDefaultValue(StocktakePeriod.LegacyId);
+            stocktake.HasOne<StocktakePeriod>().WithMany().HasForeignKey(s => s.PeriodId).OnDelete(DeleteBehavior.Restrict);
+            stocktake.HasOne<ProductCategory>().WithMany().HasForeignKey(s => s.CategoryId).OnDelete(DeleteBehavior.Restrict);
             stocktake.HasOne<StorageLocation>().WithMany().HasForeignKey(s => s.LocationId).OnDelete(DeleteBehavior.Restrict);
             // دو نوبت باز روی یک محل ممکن نیست؛ هم‌پوشانی با والد و فرزند را endpoint می‌سنجد.
             stocktake.HasIndex(s => s.LocationId).IsUnique().HasFilter("\"ClosedAtUtc\" IS NULL").HasDatabaseName("IX_Stocktakes_OpenLocation");
@@ -139,6 +177,7 @@ public class WarehouseDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>,
             count.HasOne<Batch>().WithMany().HasForeignKey(c => c.BatchId).OnDelete(DeleteBehavior.Restrict);
             count.HasOne<StockMovement>().WithMany().HasForeignKey(c => c.AdjustmentId).OnDelete(DeleteBehavior.Restrict);
             count.HasIndex(c => new { c.BatchId, c.AtUtc });
+            count.Property(c => c.DismissNote).HasMaxLength(ProductRules.MaxNote);
             count.HasIndex(c => c.StocktakeId);
         });
 

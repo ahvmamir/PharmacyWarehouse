@@ -2,6 +2,8 @@
 @inject ApiAuthenticationStateProvider Session
 @inject AppInfoState AppInfo
 @inject IJSRuntime JS
+@inject InboxClient Inbox
+@inject NavigationManager Navigation
 
 @* نوار کناری شناور (سمت راست). حالت جمع‌شده (فقط آیکون) و گروه‌های بازشده در localStorage می‌مانند.
    در موبایل کشوی کنار صفحه است و با TopBar باز و بسته می‌شود. *@
@@ -25,41 +27,31 @@
     <nav class="sidebar-nav">
         @if (Session.CurrentUser is { MustChangePassword: false })
         {
-            @* پرکاربردها: بدون عنوان *@
+            @* ترتیب بر اساس تکرار کار روزانه (بخش ۱۵.۳ spec): ثبت، کار منتظر، جست‌وجو؛ بعد گروه‌ها. *@
             @if (CanStockIo)
             {
                 @Item("stock-io", "upload", "ورود و خروج")
+            }
+            @if (CanInbox)
+            {
+                @Item("inbox", "check", "کارتابل", badge: InboxTotal)
             }
             @if (Session.Can(Permissions.StockView))
             {
                 @Item("", "box", "اقلام", NavLinkMatch.All)
             }
-            @if (Session.Can(Permissions.DashboardView))
-            {
-                @Item("dashboard", "dashboard", "داشبورد")
-            }
 
-            @if (Session.Can(Permissions.WithdrawalReview) || Session.Can(Permissions.StockReceive) || Session.Can(Permissions.ReportsView))
+            @if (Session.Can(Permissions.StockAdjust))
             {
-                @GroupStart("review", "بررسی")
-                @if (IsOpen("review"))
+                @GroupStart("stocktake", "انبارگردانی")
+                @if (IsOpen("stocktake"))
                 {
-                    @if (Session.Can(Permissions.WithdrawalReview))
-                    {
-                        @Item("review", "check", "بررسی برداشت‌ها")
-                    }
-                    @if (Session.Can(Permissions.StockReceive))
-                    {
-                        @Item("receipts/review", "verified", "بررسی ورودها")
-                    }
-                    @if (Session.Can(Permissions.ReportsView))
-                    {
-                        @Item("reports", "report", "گزارش‌ها")
-                    }
+                    @Item("stocktake-periods", "list", "دوره‌ها")
+                    @Item("stocktakes", "scan", "نوبت‌ها")
                 }
             }
 
-            @if (Session.Can(Permissions.StockView) || Session.Can(Permissions.StockAdjust) || Session.Can(Permissions.ProductsManage) || Session.Can(Permissions.StockReceive) || Session.Can(Permissions.WithdrawalCreate))
+            @if (Session.Can(Permissions.StockView) || Session.Can(Permissions.ProductsManage))
             {
                 @GroupStart("stock", "انبار")
                 @if (IsOpen("stock"))
@@ -67,22 +59,27 @@
                     @if (Session.Can(Permissions.StockView))
                     {
                         @Item("locations", "location", "محل‌ها")
-                    }
-                    @if (Session.Can(Permissions.StockAdjust))
-                    {
-                        @Item("stocktakes", "scan", "انبارگردانی")
+                        @Item("categories", "list", "دسته‌ها")
                     }
                     @if (Session.Can(Permissions.ProductsManage))
                     {
                         @Item("labels", "barcode", "برچسب")
                     }
-                    @if (Session.Can(Permissions.StockReceive))
+                }
+            }
+
+            @if (Session.Can(Permissions.DashboardView) || Session.Can(Permissions.ReportsView))
+            {
+                @GroupStart("reports", "گزارش")
+                @if (IsOpen("reports"))
+                {
+                    @if (Session.Can(Permissions.DashboardView))
                     {
-                        @Item("receive", "download", "ورود جنس کامل")
+                        @Item("dashboard", "dashboard", "داشبورد")
                     }
-                    @if (Session.Can(Permissions.WithdrawalCreate))
+                    @if (Session.Can(Permissions.ReportsView))
                     {
-                        @Item("my-withdrawals", "history", "برداشت‌های من")
+                        @Item("reports", "report", "گزارش‌ها")
                     }
                 }
             }
@@ -106,17 +103,40 @@
     private string? _organization;
     private readonly HashSet<string> _closedGroups = [];
 
-    private bool CanStockIo => Session.Can(Permissions.WithdrawalCreate) || Session.Can(Permissions.ReceiptSubmit);
+    private bool CanStockIo => Session.Can(Permissions.WithdrawalCreate) || Session.Can(Permissions.ReceiptSubmit) || Session.Can(Permissions.StockReceive);
 
     // در حالت جمع‌شده همه‌ی آیتم‌ها دیده می‌شوند (عنوان گروه نیست که بازش کنند).
     private bool IsOpen(string group) => _collapsed || !_closedGroups.Contains(group);
 
-    private RenderFragment Item(string href, string icon, string text, NavLinkMatch match = NavLinkMatch.Prefix) => __builder =>
+    private bool CanInbox => Session.Can(Permissions.WithdrawalReview) || Session.Can(Permissions.StockReceive);
+    private int InboxTotal => (_inbox?.PendingWithdrawals ?? 0) + (_inbox?.PendingReceipts ?? 0);
+
+    private RenderFragment Item(string href, string icon, string text, NavLinkMatch match = NavLinkMatch.Prefix, int badge = 0) => __builder =>
     {
-        <NavLink class="sidebar-link" href="@href" Match="match" title="@text" aria-label="@text" @onclick="CloseDrawer">
+        var label = badge > 0 ? $"{text}، {badge} مورد در انتظار" : text;
+        <NavLink class="sidebar-link" href="@href" Match="match" title="@label" aria-label="@label" @onclick="CloseDrawer">
             <AppIcon Name="@icon" /> <span class="nav-text">@text</span>
+            @if (badge > 0)
+            {
+                <span class="nav-badge" aria-hidden="true">@JalaliDate.ToPersianDigits(badge > 99 ? "99+" : badge.ToString())</span>
+            }
         </NavLink>
     };
+
+    // شمارنده‌ی کارتابل با هر جابه‌جایی صفحه، حداکثر یک بار در ۳۰ ثانیه (مثل زنگوله‌ی TopBar)؛ نه پیوسته.
+    private InboxCounts? _inbox;
+    private DateTime _inboxCheck = DateTime.MinValue;
+
+    private async Task RefreshInboxAsync(bool force = false)
+    {
+        if (!CanInbox || Session.CurrentUser is not { MustChangePassword: false }) { _inbox = null; return; }
+        if (!force && DateTime.UtcNow - _inboxCheck < TimeSpan.FromSeconds(30)) return;
+        _inboxCheck = DateTime.UtcNow;
+        _inbox = (await Inbox.CountsAsync()).Value;
+        StateHasChanged();
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => _ = InvokeAsync(() => RefreshInboxAsync());
 
     private RenderFragment GroupStart(string key, string title) => __builder =>
     {
@@ -139,11 +159,13 @@
     protected override void OnInitialized()
     {
         Session.StatusChanged += OnStatusChanged;
+        Navigation.LocationChanged += OnLocationChanged;
         _ = InvokeAsync(async () =>
         {
             var info = await AppInfo.LoadAsync();
             _organization = info.Organization;
             StateHasChanged();
+            await RefreshInboxAsync(force: true);
         });
     }
 
@@ -160,7 +182,12 @@
         catch (JSException) { }
     }
 
-    private void OnStatusChanged() => _ = InvokeAsync(StateHasChanged);
+    // ورود، خروج یا تغییر مجوز: منو باید دوباره رسم شود، حتی اگر کارتابل در کار نباشد.
+    private void OnStatusChanged() => _ = InvokeAsync(async () =>
+    {
+        StateHasChanged();
+        await RefreshInboxAsync(force: true);
+    });
 
     private async Task ToggleCollapsed()
     {
@@ -187,5 +214,9 @@
         await DrawerOpenChanged.InvokeAsync(false);
     }
 
-    public void Dispose() => Session.StatusChanged -= OnStatusChanged;
+    public void Dispose()
+    {
+        Session.StatusChanged -= OnStatusChanged;
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
 }
